@@ -91,7 +91,7 @@ func Open(_ context.Context, raw Config) (result *Runtime, openErr error) {
 			_ = sqlDB.Close()
 		}
 	}
-	if err := database.ConfigurePool(db); err != nil {
+	if err := database.ConfigurePool(db, cfg.DatabaseDriver); err != nil {
 		cleanupDB()
 		return nil, err
 	}

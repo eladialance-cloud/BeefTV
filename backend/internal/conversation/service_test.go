@@ -51,7 +51,7 @@ func openConversationFixture(t *testing.T) (*gorm.DB, string, *conversation.Serv
 		t.Fatal(err)
 	}
 	// Match the desktop's shared SQLite pool before racing service writers.
-	if err := database.ConfigurePool(db); err != nil {
+	if err := database.ConfigurePool(db, ""); err != nil {
 		t.Fatal(err)
 	}
 	sqlDB, err := db.DB()
@@ -72,7 +72,7 @@ func reopenConversationFixture(t *testing.T, path string) (*gorm.DB, *conversati
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := database.ConfigurePool(db); err != nil {
+	if err := database.ConfigurePool(db, ""); err != nil {
 		t.Fatal(err)
 	}
 	sqlDB, err := db.DB()

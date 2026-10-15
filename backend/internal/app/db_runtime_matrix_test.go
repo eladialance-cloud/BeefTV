@@ -214,7 +214,7 @@ func openDBRuntimeMatrix(t *testing.T, dir string) (*Service, *gorm.DB) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = database.ConfigurePool(db); err != nil {
+	if err = database.ConfigurePool(db, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err = database.MigrateLocalSchema(db); err != nil {

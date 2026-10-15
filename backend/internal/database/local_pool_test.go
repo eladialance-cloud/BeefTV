@@ -18,7 +18,7 @@ func TestSQLitePoolUsesSingleWriterWithoutLockFailures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ConfigurePool(db); err != nil {
+	if err := ConfigurePool(db, ""); err != nil {
 		t.Fatal(err)
 	}
 	sqlDB, _ := db.DB()
