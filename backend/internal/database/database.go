@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -21,6 +21,29 @@ const (
 	DriverSQLite   = "sqlite"
 	DriverPostgres = "postgres"
 )
+
+// PostgreSQL 驱动由 server-only 包通过 RegisterPostgresOpener 注入。
+// 这样 gorm.io/driver/postgres 不会进入桌面二进制的依赖图（仓库有守卫用例）。
+var (
+	postgresOpenerMu sync.RWMutex
+	postgresOpener   func(dsn string) (*gorm.DB, error)
+)
+
+func RegisterPostgresOpener(open func(dsn string) (*gorm.DB, error)) {
+	postgresOpenerMu.Lock()
+	defer postgresOpenerMu.Unlock()
+	postgresOpener = open
+}
+
+func openPostgres(dsn string) (*gorm.DB, error) {
+	postgresOpenerMu.RLock()
+	open := postgresOpener
+	postgresOpenerMu.RUnlock()
+	if open == nil {
+		return nil, fmt.Errorf("postgres 驱动未注册，请由服务端入口注入")
+	}
+	return open(dsn)
+}
 
 // NormalizeDriver 统一驱动名，空值按 sqlite 处理。
 func NormalizeDriver(driver string) string {
@@ -57,7 +80,7 @@ func Open(config Config) (*gorm.DB, error) {
 		if dsn == "" {
 			return nil, fmt.Errorf("postgres 需要 DATABASE_URL")
 		}
-		return gorm.Open(postgres.Open(dsn), &gorm.Config{})
+		return openPostgres(dsn)
 	default:
 		return nil, fmt.Errorf("不支持的数据库驱动：%s", driver)
 	}

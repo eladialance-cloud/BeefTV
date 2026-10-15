@@ -15,6 +15,10 @@ import (
 	"time"
 
 	"infinite-canvas/backend/internal/bootstrap"
+	_ "infinite-canvas/backend/internal/database/postgresdriver"
+	"infinite-canvas/backend/internal/hostedapi"
+	"infinite-canvas/backend/internal/model"
+	"infinite-canvas/backend/internal/storageconfig"
 
 	"github.com/gin-gonic/gin"
 )
@@ -25,6 +29,16 @@ func main() {
 	if err := run(ctx); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// registerHostedRoutes 是服务端专属装配点：对象存储后台入口只在这里出现，
+// 因此 cmd/desktop 的依赖图不会包含托管包。
+func registerHostedRoutes(hosted bootstrap.HostedContext) error {
+	storageConfig := storageconfig.New(hosted.Repository, hosted.DataDir, storageconfig.NewS3Prober())
+	hostedapi.RegisterStorageAdminRoutes(hosted.API, storageConfig,
+		func(*gin.Context) (*model.User, error) { return hosted.Service.WorkspaceOwner(hosted.WorkspaceID) },
+		hosted.Service.RequireAdmin)
+	return nil
 }
 
 func run(ctx context.Context) error {
@@ -48,6 +62,7 @@ func run(ctx context.Context) error {
 		DatabaseURL:      os.Getenv("DATABASE_URL"),
 		ListenAddr:       env("CANVAS_BACKEND_ADDR", ":8080"),
 		AutoMigrate:      autoMigrate,
+		HostedRoutes:     registerHostedRoutes,
 		ShutdownTimeout:  workerTimeout,
 		RouterMiddleware: []gin.HandlerFunc{corsMiddleware},
 	})

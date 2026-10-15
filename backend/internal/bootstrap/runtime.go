@@ -22,11 +22,9 @@ import (
 	"infinite-canvas/backend/internal/database"
 	"infinite-canvas/backend/internal/eagle"
 	canvasHandler "infinite-canvas/backend/internal/handler"
-	"infinite-canvas/backend/internal/hostedapi"
 	"infinite-canvas/backend/internal/localapp"
 	"infinite-canvas/backend/internal/repository"
 	"infinite-canvas/backend/internal/runtimeinfo"
-	"infinite-canvas/backend/internal/storageconfig"
 	httptransport "infinite-canvas/backend/internal/transport/http"
 	"infinite-canvas/backend/internal/workspace"
 
@@ -237,11 +235,15 @@ func Open(_ context.Context, raw Config) (result *Runtime, openErr error) {
 		Eagle:              eagle.New(),
 		DesktopTrust:       desktopTrust(launchToken, uiBootstrapToken),
 	})
-	// 管理后台只在 server profile 装配：桌面路由图不得出现托管入口。
-	if cfg.Profile == ProfileServer {
-		storageConfig := storageconfig.New(repo, cfg.DataDir, storageconfig.NewS3Prober())
-		hostedapi.RegisterStorageAdminRoutes(api, storageConfig,
-			hostedapi.WorkspaceOwnerResolver(svc, scope.ID), svc.RequireAdmin)
+	// 托管后台路由由服务端入口注入：bootstrap 不 import 托管包，
+	// 桌面二进制的依赖图才能继续排除后台、支付与对象存储实现。
+	if cfg.Profile == ProfileServer && cfg.HostedRoutes != nil {
+		if hookErr := cfg.HostedRoutes(HostedContext{
+			API: api, Service: svc, Repository: repo, DataDir: cfg.DataDir, WorkspaceID: scope.ID,
+		}); hookErr != nil {
+			cleanupService()
+			return nil, hookErr
+		}
 	}
 	businessCatalog := canvasHandler.NewBusinessCatalog(router.Routes())
 	canvasHandler.RegisterBusinessDiscovery(api, businessCatalog, svc)

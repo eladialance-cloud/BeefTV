@@ -1,4 +1,4 @@
-package database
+package database_test
 
 import (
 	"fmt"
@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"infinite-canvas/backend/internal/database"
+	_ "infinite-canvas/backend/internal/database/postgresdriver"
 
 	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 )
@@ -21,8 +24,9 @@ func freePort(t *testing.T) uint32 {
 	return uint32(listener.Addr().(*net.TCPAddr).Port)
 }
 
-// 真实 PostgreSQL 上验证：驱动可用、托管迁移不删表、连接池按驱动分流。
-// 需要 BEEFTV_TEST_POSTGRES=1 才运行。
+// 真实 PostgreSQL 上验证：驱动注册、托管迁移不删表、连接池按驱动分流。
+// 需要 BEEFTV_TEST_POSTGRES=1 才运行。本用例必须放在 database_test 包，
+// 以便 import 只在服务端装配的 postgresdriver（避免桌面依赖图被污染）。
 func TestPostgresHostedSchemaMigration(t *testing.T) {
 	if os.Getenv("BEEFTV_TEST_POSTGRES") != "1" {
 		t.Skip("设置 BEEFTV_TEST_POSTGRES=1 才运行 PostgreSQL 集成测试")
@@ -45,11 +49,11 @@ func TestPostgresHostedSchemaMigration(t *testing.T) {
 	defer func() { _ = instance.Stop() }()
 
 	dsn := fmt.Sprintf("host=127.0.0.1 port=%d user=beeftv password=beeftv dbname=beeftv_test sslmode=disable", port)
-	db, err := Open(Config{Driver: DriverPostgres, DSN: dsn})
+	db, err := database.Open(database.Config{Driver: database.DriverPostgres, DSN: dsn})
 	if err != nil {
 		t.Fatalf("连接 PostgreSQL 失败: %v", err)
 	}
-	if err := ConfigurePool(db, DriverPostgres); err != nil {
+	if err := database.ConfigurePool(db, database.DriverPostgres); err != nil {
 		t.Fatalf("配置连接池失败: %v", err)
 	}
 	sqlDB, err := db.DB()
@@ -62,7 +66,7 @@ func TestPostgresHostedSchemaMigration(t *testing.T) {
 	if err := db.Exec("CREATE TABLE credit_accounts (id TEXT PRIMARY KEY, balance BIGINT)").Error; err != nil {
 		t.Fatalf("建托管表失败: %v", err)
 	}
-	if err := MigrateHostedSchema(db); err != nil {
+	if err := database.MigrateHostedSchema(db); err != nil {
 		t.Fatalf("托管迁移失败: %v", err)
 	}
 	if !db.Migrator().HasTable("credit_accounts") {
@@ -70,5 +74,8 @@ func TestPostgresHostedSchemaMigration(t *testing.T) {
 	}
 	if !db.Migrator().HasTable("projects") {
 		t.Fatal("托管迁移必须建出 projects 表")
+	}
+	if !db.Migrator().HasTable("storage_locations") {
+		t.Fatal("托管迁移必须建出 storage_locations 表")
 	}
 }

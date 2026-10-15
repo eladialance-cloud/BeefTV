@@ -3,6 +3,9 @@ package bootstrap
 import (
 	"time"
 
+	"infinite-canvas/backend/internal/app"
+	"infinite-canvas/backend/internal/repository"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,6 +26,18 @@ type Config struct {
 	AutoMigrate      bool
 	ShutdownTimeout  time.Duration
 	RouterMiddleware []gin.HandlerFunc
+	// HostedRoutes 由服务端入口注入，用于挂载只在 hosted profile 存在的后台路由。
+	// bootstrap 不直接 import 托管包，桌面二进制的依赖图才能保持干净。
+	HostedRoutes func(HostedContext) error
+}
+
+// HostedContext 是托管路由扩展能拿到的共享运行时对象。
+type HostedContext struct {
+	API         *gin.RouterGroup
+	Service     *app.Service
+	Repository  *repository.Repository
+	DataDir     string
+	WorkspaceID string
 }
 
 func (c Config) withDefaults() Config {
