@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"infinite-canvas/backend/internal/model"
+
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -50,5 +52,21 @@ func TestRequireHostedSchemaFailsOnEmptyDatabase(t *testing.T) {
 	db := openHostedTestDB(t, "empty.db")
 	if err := RequireHostedSchema(db); err == nil {
 		t.Fatal("空库必须报缺少核心表")
+	}
+}
+
+// 托管表必须由托管迁移建立，且不能进入本地模型清单。
+func TestMigrateHostedSchemaCreatesStorageLocations(t *testing.T) {
+	db := openHostedTestDB(t, "storage-locations.db")
+	if err := MigrateHostedSchema(db); err != nil {
+		t.Fatalf("托管迁移失败: %v", err)
+	}
+	if !db.Migrator().HasTable("storage_locations") {
+		t.Fatal("托管迁移必须建出 storage_locations")
+	}
+	for _, item := range LocalModels() {
+		if _, ok := item.(*model.StorageLocation); ok {
+			t.Fatal("storage_locations 属于托管表，不得进入 LocalModels")
+		}
 	}
 }
