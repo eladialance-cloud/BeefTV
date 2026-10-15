@@ -40,6 +40,32 @@
 | 本地资源存储 | `dataDir/resources` 本地目录 | 必须改造成可配置的对象存储 |
 | 任务执行 | 进程内 local task worker | 必须换外置队列 |
 | 前端 | Vite SPA，`web/src/router.tsx` 无登录路由 | 新增登录、充值、管理后台页面 |
+| PostgreSQL 驱动 | `backend/go.mod` 仅有 `gorm.io/driver/sqlite` | 必须新增驱动与连接池分支 |
+
+### 2.1 上游托管层的遗留线索（重要）
+
+`backend/internal/database/local_schema.go` 里的 `hostedTables()` 列出了上游托管版**曾经存在、并在开源版被移除**的表。这是上游自研的托管 SaaS 数据模型，正好覆盖本设计要做的三件事：
+
+```text
+身份认证      auth_sessions, user_identities, oauth_states,
+              email_verification_codes, users
+对象存储      user_oss_settings, storage_locations
+钱包与计费    model_pricings, credit_accounts, credit_ledger_entries,
+              billing_orders, billing_reviews, topup_products,
+              channel_model_price_tiers, logical_model_price_skus
+支付          payment_provider_configs, payment_orders, payment_notifications,
+              payment_reconciliation_runs, payment_reconciliation_items
+兑换与活动    redeem_batches, redeem_codes
+内容分发      announcements, announcement_image_drafts, user_announcement_reads,
+              banner_announcements, canvas_shares
+```
+
+两条结论：
+
+1. **本设计的表结构应与上游命名对齐**，而不是另起一套。这样 `hostedTables()` 清单、上游既有约定与后续可能拿到的托管代码都能对齐，迁移与回滚成本最低。本文档中的表名已按此调整。
+2. 这些表对应的 **Go 模型、service 与路由在本仓库中已不存在**（`CreditAccount`、`PaymentOrder`、`PaymentProviderConfig` 等在全仓 0 命中）。开源版只保留了「表名清单」用于**删除**这些表。
+
+由此引出一条硬约束，见第 8 节第 6 条。
 
 ## 3. 系统分层与角色
 
@@ -74,22 +100,22 @@
 
 ### 4.3 价格规则
 
-价格规则落库，管理员可改，不需要发版：
+价格规则落库，管理员可改，不需要发版。命名对齐上游：
 
-| 维度 | 说明 |
+| 表 | 用途 |
 | --- | --- |
-| 渠道 / 模型 | 哪个渠道的哪个模型 |
-| 能力 | 文本、图片、视频、音频 |
-| 分辨率 / 时长档 | 视频按秒计价时使用 |
-| 单价 | `credits_per_unit`，按单位（秒、张、千 token） |
-| 生效区间 | 支持改价后新老任务分区计费 |
+| `model_pricings` | 模型级价格 |
+| `channel_model_price_tiers` | 渠道 × 模型的价格档 |
+| `logical_model_price_skus` | 逻辑模型 SKU 选择器与价格 |
+
+定价维度：渠道 / 模型、能力（文本 / 图片 / 视频 / 音频）、分辨率与时长档、单价、生效区间。改价后新老任务按生效区间分区计费。
 
 ### 4.4 账本与不变量
 
-两张表：
+两张表，命名对齐上游：
 
-- `credit_account`：用户余额与冻结额，带 `version` 做乐观锁，避免并发提交导致的超扣；
-- `credit_ledger`：不可变流水，含幂等键、任务 ID、类型（充值、消费、退还、赠送、人工调整）、变更前后余额、操作人、原因。
+- `credit_accounts`：用户余额与冻结额，带 `version` 做乐观锁，避免并发提交导致的超扣；
+- `credit_ledger_entries`：不可变流水，含幂等键、任务 ID、类型（充值、消费、退还、赠送、人工调整）、变更前后余额、操作人、原因。
 
 必须成立的不变量：
 
@@ -109,11 +135,21 @@
 
 渠道不写死在代码里，见 5.5；新增渠道通过后台配置接入，代码侧只维护渠道适配器。
 
-### 5.3 支付合同
+### 5.3 支付合同与表
 
-- `payment_order`：`out_trade_no`（唯一）、用户、金额、对应积分、状态、渠道交易号、支付时间；
-- 回调幂等：以 `out_trade_no` 收敛，重复回调不重复入账；
-- 对账：每日拉取渠道账单与本地订单核对，差异进入后台待处理列表；
+| 表 | 用途 |
+| --- | --- |
+| `topup_products` | 充值商品（积分包 / 创作套餐） |
+| `payment_provider_configs` | 支付渠道配置（后台添加） |
+| `payment_orders` | 充值订单，`out_trade_no` 唯一 |
+| `payment_notifications` | 渠道回调原始记录，用于幂等与排障 |
+| `payment_reconciliation_runs` | 每日对账批次 |
+| `payment_reconciliation_items` | 对账差异明细 |
+| `billing_orders` | 账务订单，与积分入账关联 |
+| `billing_reviews` | 异常订单人工复核 |
+
+- 回调幂等：以 `out_trade_no` 收敛，重复回调不重复入账，原始回调写入 `payment_notifications`；
+- 对账：每日拉取渠道账单与本地订单核对，差异写入 `payment_reconciliation_items`；
 - 退款：后台发起、原路退回，同时在积分流水写负向记录；
 - 风控：单笔与单日充值上限、异常订单人工审核开关，均由后台配置。
 
@@ -134,7 +170,12 @@
 
 ## 6. 对象存储配置入口（管理后台）
 
-后台提供「对象存储 → 添加」入口，管理员表单化新增存储配置：
+对象存储配置落两张表，命名对齐上游：
+
+- `storage_locations`：平台级存储配置，管理员添加；
+- `user_oss_settings`：用户或租户级存储绑定（保留给后期 BYO 存储场景，本期可只读占位）。
+
+后台提供「对象存储 → 添加」入口：
 
 - 可选类型：S3 兼容、阿里云 OSS、腾讯云 COS、七牛，首发至少支持 S3 兼容与 OSS；
 - 填写项：配置名称、接入点 / Endpoint、Region、Bucket、AccessKey、SecretKey、CDN 或自定义域名、路径前缀、是否默认；
@@ -166,13 +207,14 @@
 
 ## 8. 多用户基础设施改造
 
-五件必须做的事：
+六件必须做的事：
 
 1. 认证：新增 `internal/auth`，会话中间件注入用户后，全仓 `currentUser(c, svc)` 的调用点无需修改，这是最低侵入的切入点；
 2. 租户隔离：`workspace` 包从单 owner 改为按会话用户取工作区，所有 repository 查询强制带用户归属；
 3. 对象存储：把本地资源目录抽象为存储端口，具体实现由后台配置驱动（见第 6 节），否则多机部署读不到文件；
 4. 任务队列：进程内 worker 换为外置队列，视频生成耗时长，多用户并发必然阻塞；
-5. 数据库：SQLite 换 PostgreSQL，并补齐迁移与备份。
+5. 数据库：SQLite 换 PostgreSQL，并补齐迁移与备份；
+6. **迁移按 Profile 分流（硬约束）**：`bootstrap/runtime.go` 目前**不区分 Profile**，无论 server 还是 desktop 都执行 `database.MigrateLocalSchema`；而该函数会调用 `dropHostedTables()` **删除**第 2.1 节列出的全部托管表。这意味着只要 server profile 继续走本地迁移路径，新加的 `credit_accounts`、`payment_orders`、`storage_locations` 等表会在启动时被删掉。改造必须先让 schema 迁移按 Profile 分流：desktop 继续走本地 schema，server 走独立的托管 schema 迁移路径，且 `dropHostedTables` 只允许在 desktop/本地路径执行。
 
 ## 9. 漫剧老李 Skill 融入
 
@@ -185,7 +227,7 @@
 
 | 阶段 | 内容 | 预估 |
 | --- | --- | --- |
-| P0 | 网页版可访问：PostgreSQL + 对象存储（含后台添加入口）+ 部署，暂用共享账号 | 3~4 周 |
+| P0 | 托管运行基座：PostgreSQL 驱动与连接池、Profile 分流的 schema 迁移、对象存储端口与后台添加入口、部署 | 3~5 周 |
 | P1 | 账号体系 + 积分账本 + 管理员发积分 + 渠道后台 | 4~6 周 |
 | P2 | 支付充值：支付渠道配置入口、下单、回调、入账、对账、退款 | 3~4 周 |
 | P3 | 漫剧老李技能包接入 + 六道锁向导 | 3~4 周 |
@@ -199,6 +241,7 @@
 
 ## 11. 风险
 
+- **托管表被本地迁移删除**：见第 8 节第 6 条，这是当前代码里最直接的数据丢失风险，必须在引入任何托管表之前先完成 Profile 分流；
 - 支付资质申请周期不可控，需与 P2 开发并行准备，且要准备未获批时的降级路径（管理员发积分）；
 - 切换对象存储后，历史资源必须仍能按原位置读取，跨存储迁移需要单独的迁移任务与校验；
 - 存储与支付密钥进入数据库后，密钥轮换与备份加密策略必须同步确定，否则数据库备份会成为凭据泄露面；
