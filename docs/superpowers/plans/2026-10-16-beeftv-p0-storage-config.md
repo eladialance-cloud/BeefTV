@@ -241,3 +241,19 @@ git commit -m "feat(backend): 对象存储 - 新增托管存储配置模型与�
 - **Spec 覆盖**：本计划覆盖设计文档第 6 节（对象存储配置入口）与第 7 节第 6 项（后台对象存储配置），不覆盖 S3 实际承载用户资源读写（那是「存储端口切换」的独立计划）。
 - **明确不在本计划内**：把 `BlobStore` 从 `FileStore` 换成对象存储适配器、历史资源跨存储迁移、`user_oss_settings`（BYO 存储）。
 - **已知未验证项**：本机无 Docker、内嵌 PostgreSQL 二进制崩溃，PostgreSQL 侧的迁移与探针只能在 Linux/CI 或真实对象存储上验证。
+
+---
+
+## 已交付：S3 字节后端（原计划外新增）
+
+`internal/storageconfig/s3blobstore.go` 已实现 `asset.BlobStore` 的四个方法，用 `s3.PutObject/GetObject/DeleteObject/HeadObject` 对接 S3 兼容存储，并用进程内 S3 桩（`s3blobstore_test.go`）端到端验证了写入、前缀、Open 后的 Seek/Stat、删除与存在性。它已在 server 依赖图中、不在桌面依赖图。
+
+## 下一步：资源存储端口切换（独立计划）
+
+要把新资源真正写进对象存储，还需解决三处现有约束，都需要自己的实施计划：
+
+1. **`Provider != "local"` 硬门槛**：`internal/asset/open.go` 的 `OpenOwnedRange` 和 `PrepareOwnedDelivery` 对非 `local` 资源直接返回 `ResourceNotLocal()`，切换前必须改成按存储位置解析后端。
+2. **`BlobStore` 端口形状**：`Open(string) (*os.File, error)` 要求可 `Seek` 且可 `Stat`，所以 S3 实现必须把对象取回临时文件（Windows 无法 unlink-on-open，现已由 `PruneTempFiles` 兜底）。若要真正流式 Range 读取，需先把端口改宽为 `io.ReadSeekCloser` + `Stat`。
+3. **写锁身份 `writeSpace()`**：`internal/asset/service.go` 通过类型断言 `*FileStore` 取串行化锁的标识；换成路由型 BlobStore 后这个标识会退化成 `service:%p`，失去跨 Service 实例的串行化保证，必须重新设计锁身份。
+
+另需：`model.Resource.StorageSettingID` 已存在且带索引，但 `WriteObject` 目前把它固定写成空串，切换时要按默认存储回填；历史资源继续按记录的位置读取，跨存储迁移另行立项。
