@@ -7,6 +7,28 @@ description: BeefTV后端核心持久化表与状态边界
 
 后端通过 GORM 管理本地 SQLite 表结构。Backend 启动时按版本顺序应用缺失迁移并写入 `local_schema_migrations`。业务写路径必须通过 service 和 repository 的状态约束，不能直接依赖前端状态。
 
+## 数据库驱动与托管形态
+
+Backend 支持两种驱动：`sqlite`（默认）和 `postgres`。驱动名会去空格并小写，`postgresql`、`pg` 等同义词归一到 `postgres`。
+
+选择 `postgres` 时 `DATABASE_URL` 必填，因此仅用 `CANVAS_DATABASE_DRIVER=postgres` 不能启动；缺少连接串会在建立连接时直接报错。hosted/server 形态的启用方式是在 server profile 设置：
+
+```sh
+CANVAS_DATABASE_DRIVER=postgres
+DATABASE_URL=postgres://beeftv:beeftv@postgres:5432/beeftv?sslmode=disable
+```
+
+迁移路径按驱动分流，这是托管形态能否保住历史表的关键：
+
+| 驱动 | `CANVAS_AUTO_MIGRATE=true` | `CANVAS_AUTO_MIGRATE=false` |
+| --- | --- | --- |
+| `sqlite`（desktop/local） | `MigrateLocalSchema`，应用本地版本迁移 | `RequireLocalSchema` |
+| `postgres`（server/hosted） | `MigrateHostedSchema`，只做 AutoMigrate | `RequireHostedSchema` |
+
+`MigrateLocalSchema` 会执行本地 v2 `retire-hosted-schema` 并调用 `dropHostedTables`，删除 `credit_accounts`、`billing_orders`、`users`、`storage_locations` 等托管遗留表。server profile 不得走这条路径，否则每次重启都会丢掉托管表。`MigrateHostedSchema` 只对托管模型执行 GORM AutoMigrate，不修改、不删除任何历史托管表；`RequireHostedSchema` 在关闭自动迁移时校验核心表是否就绪，缺失时拒绝启动。
+
+连接池也按驱动分流：SQLite 串行写，固定单连接；PostgreSQL 面向并发 web 用户，最大 25 个连接、5 个空闲连接，连接最长存活 30 分钟。
+
 ## 结构迁移与版本
 
 ### 本地模型配置加密

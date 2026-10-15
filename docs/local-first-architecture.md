@@ -23,6 +23,8 @@ Wails
 - 本地素材选择器不枚举或写入外部插件素材源；外部模型调用仍只有在用户主动生成时发生。
 - 画布、项目、素材、任务和模型配置都以本地工作区为唯一数据源。
 
+server/hosted 形态与桌面形态共用同一套 runtime，但数据库驱动不同：在 server profile 设置 `CANVAS_DATABASE_DRIVER=postgres` 并提供 `DATABASE_URL` 即启用托管形态，此时启动走托管迁移路径，不删除托管表；桌面形态固定使用 `sqlite`，仍走本地迁移，行为不受影响。驱动与迁移分流的细节见 [后端数据库](content/docs/backend/backend-database.mdx)。
+
 ## 数据流
 
 1. 用户导入素材：文件写入本地资源服务，SQLite 保存资源元数据。

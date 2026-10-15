@@ -12,6 +12,7 @@ services:
       CANVAS_LOCAL_MODE: ${CANVAS_LOCAL_MODE:-true}
       CANVAS_SHUTDOWN_TIMEOUT: ${CANVAS_SHUTDOWN_TIMEOUT:-10m}
       CANVAS_DATABASE_DRIVER: ${CANVAS_DATABASE_DRIVER:-sqlite}
+      DATABASE_URL: ${DATABASE_URL:-postgres://beeftv:beeftv@postgres:5432/beeftv?sslmode=disable}
       CANVAS_WORKER_CONCURRENCY: ${CANVAS_WORKER_CONCURRENCY:-3}
       CANVAS_CHANNEL_CONCURRENCY: ${CANVAS_CHANNEL_CONCURRENCY:-3}
       CANVAS_REGISTRATION_ENABLED: ${CANVAS_REGISTRATION_ENABLED:-false}
@@ -21,8 +22,26 @@ services:
       GIN_MODE: release
     volumes:
       - backend-data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     stop_grace_period: ${CANVAS_SHUTDOWN_TIMEOUT:-10m}
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${CANVAS_POSTGRES_DB:-beeftv}
+      POSTGRES_USER: ${CANVAS_POSTGRES_USER:-beeftv}
+      POSTGRES_PASSWORD: ${CANVAS_POSTGRES_PASSWORD:-beeftv}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CANVAS_POSTGRES_USER:-beeftv} -d ${CANVAS_POSTGRES_DB:-beeftv}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
 
   web:
     image: beeftv-web:local
@@ -38,3 +57,4 @@ services:
 
 volumes:
   backend-data:
+  postgres-data:
