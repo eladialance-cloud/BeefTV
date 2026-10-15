@@ -96,9 +96,17 @@ func Open(_ context.Context, raw Config) (result *Runtime, openErr error) {
 		return nil, err
 	}
 	if cfg.AutoMigrate {
-		err = database.MigrateLocalSchema(db)
+		if database.IsSQLite(cfg.DatabaseDriver) {
+			err = database.MigrateLocalSchema(db)
+		} else {
+			err = database.MigrateHostedSchema(db)
+		}
 	} else {
-		err = database.RequireLocalSchema(db)
+		if database.IsSQLite(cfg.DatabaseDriver) {
+			err = database.RequireLocalSchema(db)
+		} else {
+			err = database.RequireHostedSchema(db)
+		}
 	}
 	if err != nil {
 		cleanupDB()
