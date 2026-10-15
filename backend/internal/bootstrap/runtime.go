@@ -22,9 +22,11 @@ import (
 	"infinite-canvas/backend/internal/database"
 	"infinite-canvas/backend/internal/eagle"
 	canvasHandler "infinite-canvas/backend/internal/handler"
+	"infinite-canvas/backend/internal/hostedapi"
 	"infinite-canvas/backend/internal/localapp"
 	"infinite-canvas/backend/internal/repository"
 	"infinite-canvas/backend/internal/runtimeinfo"
+	"infinite-canvas/backend/internal/storageconfig"
 	httptransport "infinite-canvas/backend/internal/transport/http"
 	"infinite-canvas/backend/internal/workspace"
 
@@ -235,6 +237,12 @@ func Open(_ context.Context, raw Config) (result *Runtime, openErr error) {
 		Eagle:              eagle.New(),
 		DesktopTrust:       desktopTrust(launchToken, uiBootstrapToken),
 	})
+	// 管理后台只在 server profile 装配：桌面路由图不得出现托管入口。
+	if cfg.Profile == ProfileServer {
+		storageConfig := storageconfig.New(repo, cfg.DataDir, storageconfig.NewS3Prober())
+		hostedapi.RegisterStorageAdminRoutes(api, storageConfig,
+			hostedapi.WorkspaceOwnerResolver(svc, scope.ID), svc.RequireAdmin)
+	}
 	businessCatalog := canvasHandler.NewBusinessCatalog(router.Routes())
 	canvasHandler.RegisterBusinessDiscovery(api, businessCatalog, svc)
 	router.NoRoute(func(c *gin.Context) {
