@@ -256,6 +256,18 @@ func (s *Service) Execute(userID, id string, cmd Command) (*model.Task, error) {
 	if s.deps.Tasks == nil {
 		return nil, kernel.NewAppError(kernel.CodeInternal, "任务准入端口不可用")
 	}
+	// 报价与冻结必须在事务外完成：创作事务占着一个连接，内层再开积分事务会死锁。
+	if err = s.deps.Tasks.ReserveCost(userID, quoted.Task); err != nil {
+		return nil, err
+	}
+	reserved := true
+	releaseReservation := func() {
+		if !reserved {
+			return
+		}
+		reserved = false
+		_ = s.deps.Tasks.ReleaseCost(userID, quoted.Task.ID)
+	}
 	var admitted *model.Task
 	err = s.repo.MutateCreationRun(userID, id, func(current *model.CreationRun, repo *repository.Repository) error {
 		if e := validateGuard(current, cmd.Guard, s.deps.now()); e != nil {
@@ -297,7 +309,15 @@ func (s *Service) Execute(userID, id string, cmd Command) (*model.Task, error) {
 		return repo.SaveCreationSubmission(fresh)
 	})
 	if err != nil {
+		releaseReservation()
 		return nil, MapError(err)
+	}
+	if admitted == nil {
+		releaseReservation()
+		return nil, kernel.NewAppError(kernel.CodeInternal, msgAdmitNilTask)
+	}
+	if admitted.ID != quoted.Task.ID {
+		releaseReservation()
 	}
 	return admitted, nil
 }

@@ -19,8 +19,16 @@ type taskTerminalCoordinator struct {
 	replay            taskReplayLifecycle
 	logger            taskLifecycleLogger
 	outputs           taskOutputLifecycle
+	cost              taskCostLifecycle
 	userFacingMessage func(error) string
 	logFailedAttempt  func(model.Task, error)
+}
+
+// taskCostLifecycle 是终态计费侧面：成功结算、其余终态释放。实现由托管形态注入，
+// 桌面形态拿到的是 nil，整个链路退化成空操作。
+type taskCostLifecycle interface {
+	SettleTaskCost(userID, taskID string, actualCredits int64, reason string) error
+	ReleaseTaskCost(userID, taskID, reason string) error
 }
 
 type taskTerminalRepository interface {
@@ -79,6 +87,7 @@ func newTaskTerminalCoordinator(s *Service) *taskTerminalCoordinator {
 		replay:            adapter,
 		logger:            adapter,
 		outputs:           adapter,
+		cost:              taskCostLifecycleAdapter{s},
 		userFacingMessage: s.UserFacingErrorMessage,
 		logFailedAttempt:  s.ensureFailedProviderAttemptLogged,
 	}
@@ -95,6 +104,7 @@ func (s *Service) terminalCoordinator() *taskTerminalCoordinator {
 func (c *taskTerminalCoordinator) markPreparationFailure(task *model.Task, stage string, err error, _ bool, _ string) error {
 	captureTaskFailureDiagnostics(task, err, "unknown")
 	c.ensureFailedAttemptLogged(task, err)
+	c.releaseCost(task, "任务准备失败")
 	task.Status = model.TaskStatusFailed
 	task.Stage = stage
 	task.Error = c.userFacingMessage(err)
@@ -109,6 +119,7 @@ func (c *taskTerminalCoordinator) markPreparationFailure(task *model.Task, stage
 // “按产品边界拒绝执行”本身就是正确的终态结果，不是 worker 执行失败。
 func (c *taskTerminalCoordinator) refuse(task *model.Task, stage string, message string) error {
 	c.ensureFailedAttemptLogged(task, errors.New(message))
+	c.releaseCost(task, "任务被产品边界拒绝")
 	task.Status = model.TaskStatusFailed
 	task.Stage = stage
 	task.Error = message
@@ -127,6 +138,7 @@ func (c *taskTerminalCoordinator) handleExecutionFailure(task *model.Task, err e
 		task.Status = model.TaskStatusCancelled
 		task.Stage = "任务已取消"
 		task.Error = "任务已取消"
+		c.releaseCost(task, "任务已取消")
 		if terminalErr := c.markTerminalState(task); terminalErr != nil {
 			return terminalErr
 		}
@@ -142,6 +154,7 @@ func (c *taskTerminalCoordinator) handleExecutionFailure(task *model.Task, err e
 	captureTaskFailureDiagnostics(task, err, source)
 	task.Status = model.TaskStatusFailed
 	c.ensureFailedAttemptLogged(task, err)
+	c.releaseCost(task, "任务执行失败")
 	task.Stage = "任务失败"
 	var imageRecovery imageRecoveryError
 	var unknown providerSubmissionUnknownError
@@ -158,12 +171,14 @@ func (c *taskTerminalCoordinator) handleExecutionFailure(task *model.Task, err e
 }
 
 func (c *taskTerminalCoordinator) handleAlreadyCancelled(task model.Task) error {
+	c.releaseCost(&task, "任务已取消")
 	c.finalizeReplay(&task, model.TaskStatusCancelled, "文本回放草稿归并失败")
 	_ = c.logger.log(task.UserID, task.ID, "warn", "任务已取消，worker 已停止执行", "")
 	return nil
 }
 
 func (c *taskTerminalCoordinator) handleCancelledResult(task model.Task) error {
+	c.releaseCost(&task, "用户取消任务")
 	c.finalizeReplay(&task, model.TaskStatusCancelled, "文本回放草稿归并失败")
 	_ = c.logger.log(task.UserID, task.ID, "warn", "任务已取消，丢弃生成结果", "")
 	return nil
@@ -185,6 +200,7 @@ func (c *taskTerminalCoordinator) handleResultPersistenceFailure(task *model.Tas
 	task.Status = model.TaskStatusFailed
 	captureTaskFailureDiagnostics(task, saveErr, "local_result")
 	task.Stage = "任务结果保存失败"
+	c.releaseCost(task, "任务结果保存失败")
 	task.Error = c.userFacingMessage(saveErr)
 	if terminalErr := c.markTerminalState(task); terminalErr != nil {
 		return false, errors.Join(saveErr, terminalErr)
@@ -202,6 +218,7 @@ func (c *taskTerminalCoordinator) ensureFailedAttemptLogged(task *model.Task, er
 }
 
 func (c *taskTerminalCoordinator) handleSuccess(task *model.Task) error {
+	c.settleCost(task)
 	c.finalizeReplay(task, model.TaskStatusSucceeded, "文本回放窗口更新失败")
 	var completionErr error
 	completedTask, fetchErr := c.repo.Task(task.ID)
@@ -243,5 +260,27 @@ func (c *taskTerminalCoordinator) markTerminalState(task *model.Task) error {
 func (c *taskTerminalCoordinator) finalizeReplay(task *model.Task, status model.TaskStatus, message string) {
 	if err := c.replay.finalizeTaskTextReplay(task.ID, status); err != nil {
 		_ = c.logger.log(task.UserID, task.ID, "error", message, err.Error())
+	}
+}
+
+// settleCost closes a succeeded task's freeze. 结算失败只记日志：任务已经成功交付，
+// 不能因钱包写入异常把用户看到的结果改写成失败；账目可由预留快照重放。
+func (c *taskTerminalCoordinator) settleCost(task *model.Task) {
+	if c.cost == nil || task == nil || task.UserID == "" || task.ID == "" {
+		return
+	}
+	if err := c.cost.SettleTaskCost(task.UserID, task.ID, 0, "任务完成结算"); err != nil {
+		_ = c.logger.log(task.UserID, task.ID, "error", "任务完成但积分结算失败", err.Error())
+	}
+}
+
+// releaseCost returns a non-successful task's freeze. It is idempotent and
+// safe to call on legacy tasks that never froze anything.
+func (c *taskTerminalCoordinator) releaseCost(task *model.Task, reason string) {
+	if c.cost == nil || task == nil || task.UserID == "" || task.ID == "" {
+		return
+	}
+	if err := c.cost.ReleaseTaskCost(task.UserID, task.ID, reason); err != nil {
+		_ = c.logger.log(task.UserID, task.ID, "error", "任务未成功但释放冻结积分失败", err.Error())
 	}
 }

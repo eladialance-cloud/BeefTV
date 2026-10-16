@@ -184,9 +184,12 @@ func TestMigrateHostedSchemaCreatesPricingTables(t *testing.T) {
 			t.Fatalf("托管迁移必须建出 %s", table)
 		}
 	}
+	if !db.Migrator().HasTable("task_cost_charges") {
+		t.Fatal("托管迁移必须建出任务计费快照表 task_cost_charges")
+	}
 	for _, item := range LocalModels() {
 		switch item.(type) {
-		case *model.ModelPricing, *model.ChannelModelPriceTier, *model.LogicalModelPriceSKU:
+		case *model.ModelPricing, *model.ChannelModelPriceTier, *model.LogicalModelPriceSKU, *model.TaskCostCharge:
 			t.Fatalf("价格规则表属于托管表，不得进入 LocalModels: %T", item)
 		}
 	}

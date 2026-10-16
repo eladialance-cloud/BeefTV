@@ -99,6 +99,17 @@ func (a creationTasksAdapter) Admit(userID string, repo *repository.Repository, 
 	return task, nil
 }
 
+// ReserveCost 在创作事务之外完成报价与冻结；Admit 只负责事务内写任务，
+// 这样 SQLite 单连接不会被嵌套的积分事务卡死。
+func (a creationTasksAdapter) ReserveCost(userID string, task *model.Task) error {
+	_, err := a.s.TaskService().ReserveTaskCost(userID, task, false)
+	return err
+}
+
+func (a creationTasksAdapter) ReleaseCost(userID, taskID string) error {
+	return a.s.TaskService().ReleaseTaskCost(userID, taskID, "创作执行项未入库")
+}
+
 type creationSecretsAdapter struct{ s *Service }
 
 func (a creationSecretsAdapter) Protect(input map[string]any) error {

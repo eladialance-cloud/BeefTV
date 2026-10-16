@@ -164,6 +164,7 @@ func TestLocalSchemaExcludesHostedCommerceTables(t *testing.T) {
 		"topup_products", "payment_provider_configs", "payment_orders", "payment_notifications",
 		"payment_reconciliation_runs", "payment_reconciliation_items", "redeem_batches", "redeem_codes",
 		"channel_model_price_tiers", "logical_model_price_skus",
+		"task_cost_charges",
 	} {
 		if db.Migrator().HasTable(table) {
 			t.Fatalf("local schema unexpectedly contains hosted commerce table %q", table)

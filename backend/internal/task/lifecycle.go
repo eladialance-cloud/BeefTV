@@ -83,7 +83,17 @@ func (s *Service) Retry(userID, id string) (*model.Task, error) {
 	if err := s.deps.Projects.EnsureActive(userID, task.ProjectID); err != nil {
 		return nil, err
 	}
-	task, err = s.store.Retry(userID, task, limit)
+	// 重试是新的计费尝试：先冻结本次预估，入库失败就释放，避免状态回滚。
+	reservation, reserveErr := s.ReserveTaskCost(userID, task, true)
+	if reserveErr != nil {
+		return nil, reserveErr
+	}
+	retried, retryErr := s.store.Retry(userID, task, limit)
+	if retryErr != nil {
+		s.releaseReservation(userID, task.ID, reservation, "任务重试入队失败")
+	}
+	task = retried
+	err = retryErr
 	if errors.Is(err, repository.ErrActiveTaskLimit) {
 		return nil, activeLimitError(limit)
 	}
@@ -144,6 +154,11 @@ func (s *Service) Cancel(ctx context.Context, userID, id string) (*model.Task, e
 	task.Error = "任务已取消"
 	task.CompletedAt = &now
 	s.deps.Runtime.StopLocalWait(task.ID)
+
+	// 取消已落库，冻结额立即释放；释放失败只记日志，不回滚取消结果。
+	if releaseErr := s.ReleaseTaskCost(task.UserID, task.ID, "用户取消任务"); releaseErr != nil {
+		s.log(task.UserID, task.ID, "error", "取消任务后释放冻结积分失败", releaseErr.Error())
+	}
 
 	if s.deps.TextReplay != nil {
 		if err := s.deps.TextReplay.Finalize(task.ID, model.TaskStatusCancelled); err != nil {

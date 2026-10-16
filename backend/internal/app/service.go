@@ -46,6 +46,8 @@ type Service struct {
 	coordinator              *platform.Coordinator
 	platform                 *platform.Service
 	taskTerminalCoordinator  *taskTerminalCoordinator
+	taskCostMu               sync.RWMutex
+	taskCostPort             localtask.Cost
 	taskRouteExecutor        *taskRouteExecutor
 	taskWorkerCoordinator    *taskWorkerCoordinator
 	taskLifecycleCoordinator *taskLifecycleCoordinator

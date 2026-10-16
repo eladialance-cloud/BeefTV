@@ -210,16 +210,22 @@ func (w *taskWorkerCoordinator) executeClaimed(session taskruntime.Session) task
 }
 
 func (w *taskWorkerCoordinator) specialTaskOutcome(session taskruntime.Session, run func(*model.Task, context.Context) error) taskruntime.Outcome {
-	err := run(session.Task(), session.Context())
+	task := session.Task()
+	err := run(task, session.Context())
 	if session.Lost() {
 		return leaseLostOutcome(session, false)
 	}
+	// 本地执行器自己写终态，不走 taskTerminalCoordinator，所以计费收尾在这里补。
+	terminal := w.service.terminalCoordinator()
 	if err == nil {
+		terminal.settleCost(task)
 		return taskruntime.Outcome{Kind: taskruntime.KindCompleted, Applied: true}
 	}
 	if errors.Is(err, context.Canceled) {
+		terminal.releaseCost(task, "任务已取消")
 		return taskruntime.Outcome{Kind: taskruntime.KindCancelled, Err: err}
 	}
+	terminal.releaseCost(task, "任务执行失败")
 	return taskruntime.Outcome{Kind: taskruntime.KindFailed, Err: err}
 }
 

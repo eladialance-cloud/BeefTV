@@ -45,6 +45,7 @@ func (s *Service) taskDependencies() localtask.Dependencies {
 		Present:                taskPresenterAdapter{s},
 		Logs:                   taskLogAdapter{s},
 		Activity:               taskActivityAdapter{s},
+		Cost:                   taskCostBinding{s},
 		OwnedMedia:             taskOwnedMediaAdapter{s},
 		Features:               taskFeaturesAdapter{s},
 		NewID:                  newID,

@@ -2,6 +2,7 @@ package credits
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -59,10 +60,40 @@ func SettleKey(taskID string) string { return "task:" + taskID + ":settle" }
 // ReleaseKey is the stable idempotency key for a task's refund.
 func ReleaseKey(taskID string) string { return "task:" + taskID + ":release" }
 
+// AttemptReserveKey scopes the freeze to one billing attempt so a user retry
+// never replays the previous attempt's idempotency key. Attempt 0 keeps the
+// legacy single-attempt key shape.
+func AttemptReserveKey(taskID string, attempt int) string {
+	return attemptKey(taskID, attempt, "reserve")
+}
+
+// AttemptSettleKey scopes a settlement to one billing attempt.
+func AttemptSettleKey(taskID string, attempt int) string {
+	return attemptKey(taskID, attempt, "settle")
+}
+
+// AttemptReleaseKey scopes a release to one billing attempt.
+func AttemptReleaseKey(taskID string, attempt int) string {
+	return attemptKey(taskID, attempt, "release")
+}
+
+func attemptKey(taskID string, attempt int, stage string) string {
+	if attempt <= 0 {
+		return "task:" + taskID + ":" + stage
+	}
+	return "task:" + taskID + ":" + strconv.Itoa(attempt) + ":" + stage
+}
+
 // Reserve freezes amount for an in-flight task. The balance is untouched;
 // available (balance - frozen) must cover the estimate or the call is refused
 // and nothing is written.
 func (s *Service) Reserve(userID string, taskID string, amount int64) (*Result, error) {
+	return s.ReserveAttempt(userID, taskID, 0, amount)
+}
+
+// ReserveAttempt is Reserve scoped to one billing attempt. Retries pass the
+// new attempt number so the previous freeze can never be replayed.
+func (s *Service) ReserveAttempt(userID string, taskID string, attempt int, amount int64) (*Result, error) {
 	if err := requirePositive(amount, "冻结积分必须大于零"); err != nil {
 		return nil, err
 	}
@@ -73,7 +104,7 @@ func (s *Service) Reserve(userID string, taskID string, amount int64) (*Result, 
 	entry := &model.CreditLedgerEntry{
 		ID:             kernel.NewID(),
 		UserID:         userID,
-		IdempotencyKey: ReserveKey(taskID),
+		IdempotencyKey: AttemptReserveKey(taskID, attempt),
 		Kind:           KindFreeze,
 		Stage:          StageReserve,
 		TaskID:         taskID,
@@ -94,6 +125,11 @@ func (s *Service) Reserve(userID string, taskID string, amount int64) (*Result, 
 // exceed the reservation when a task overshoots its estimate, in which case the
 // balance must cover the difference; otherwise the call is refused.
 func (s *Service) Settle(userID string, taskID string, reserved int64, actual int64) (*Result, error) {
+	return s.SettleAttempt(userID, taskID, 0, reserved, actual)
+}
+
+// SettleAttempt is Settle scoped to one billing attempt.
+func (s *Service) SettleAttempt(userID string, taskID string, attempt int, reserved int64, actual int64) (*Result, error) {
 	if err := requirePositive(reserved, "冻结积分必须大于零"); err != nil {
 		return nil, err
 	}
@@ -107,7 +143,7 @@ func (s *Service) Settle(userID string, taskID string, reserved int64, actual in
 	entry := &model.CreditLedgerEntry{
 		ID:             kernel.NewID(),
 		UserID:         userID,
-		IdempotencyKey: SettleKey(taskID),
+		IdempotencyKey: AttemptSettleKey(taskID, attempt),
 		Kind:           KindConsume,
 		Stage:          StageSettle,
 		TaskID:         taskID,
@@ -130,6 +166,11 @@ func (s *Service) Settle(userID string, taskID string, reserved int64, actual in
 // Release refunds a failed or cancelled task by returning the whole reserved
 // amount to available. The balance is untouched.
 func (s *Service) Release(userID string, taskID string, reserved int64) (*Result, error) {
+	return s.ReleaseAttempt(userID, taskID, 0, reserved)
+}
+
+// ReleaseAttempt is Release scoped to one billing attempt.
+func (s *Service) ReleaseAttempt(userID string, taskID string, attempt int, reserved int64) (*Result, error) {
 	if err := requirePositive(reserved, "冻结积分必须大于零"); err != nil {
 		return nil, err
 	}
@@ -140,7 +181,7 @@ func (s *Service) Release(userID string, taskID string, reserved int64) (*Result
 	entry := &model.CreditLedgerEntry{
 		ID:             kernel.NewID(),
 		UserID:         userID,
-		IdempotencyKey: ReleaseKey(taskID),
+		IdempotencyKey: AttemptReleaseKey(taskID, attempt),
 		Kind:           KindUnfreeze,
 		Stage:          StageRelease,
 		TaskID:         taskID,

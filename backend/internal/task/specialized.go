@@ -287,7 +287,15 @@ func (s *Service) admitSpecialized(userID string, req specializedAdmission) (*mo
 	if s.deps.Present == nil {
 		return nil, unavailable()
 	}
+	// 本地执行器也走同一套报价：有价格规则就冻结，没有则按免费放行。
+	reservation, err := s.ReserveTaskCost(userID, &task, false)
+	if err != nil {
+		return nil, err
+	}
 	err = s.deps.Persist.CreateAdmitted(&task, limit)
+	if err != nil {
+		s.releaseReservation(userID, task.ID, reservation, "任务入库失败")
+	}
 	if mapped, mapErr := mapPersistError(err, fingerprintReq, s.deps.Present, limit); mapErr != nil || mapped != nil {
 		return mapped, mapErr
 	}

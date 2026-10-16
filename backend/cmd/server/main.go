@@ -55,6 +55,10 @@ func registerHostedRoutes(hosted bootstrap.HostedContext) error {
 	pricingService := credits.NewPricing(hosted.Repository, credits.Config{})
 	hostedapi.RegisterPricingAdminRoutes(hosted.API, pricingService, creditActor, hosted.Service.RequireAdmin)
 
+	// 任务计费：提交时按价格规则冻结，成功结算，失败/取消释放。
+	// 实现只存在于服务端组合根，桌面二进制不会链接 credits。
+	hosted.Service.SetTaskCostPort(newTaskCostAdapter(hosted.Repository, creditService, pricingService))
+
 	storageConfig := storageconfig.New(hosted.Repository, hosted.DataDir, storageconfig.NewS3Prober())
 	hostedapi.RegisterStorageAdminRoutes(hosted.API, storageConfig,
 		hostedapi.SessionUserResolver(authService),

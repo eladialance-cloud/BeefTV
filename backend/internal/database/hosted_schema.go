@@ -62,6 +62,8 @@ func HostedModels() []any {
 		&model.CreditAccount{}, &model.CreditLedgerEntry{},
 		// 模型价格规则（托管专属，运行时按生效区间解析）。
 		&model.ModelPricing{}, &model.ChannelModelPriceTier{}, &model.LogicalModelPriceSKU{},
+		// 任务报价快照与冻结额（托管专属，按任务尝试记账）。
+		&model.TaskCostCharge{},
 		// 支付渠道配置（托管专属，密钥加密存储）。
 		&model.PaymentProviderConfig{},
 		// 充值商品、支付订单与回调记录（托管专属）。

@@ -147,6 +147,64 @@ type Activity interface {
 	Record(userID, kind string, n int)
 }
 
+// Cost is the hosted-only task cost seam. It prices an admitted task, freezes
+// the estimate before the row is persisted, and then settles or releases the
+// freeze when the task reaches a terminal state. The real implementation lives
+// in the server composition root so the domain never imports the credits or
+// pricing packages. A nil port means "billing is not enabled" (desktop), in
+// which case every method is a no-op.
+type Cost interface {
+	ReserveTaskCost(request CostReserveRequest) (*CostReservation, error)
+	SettleTaskCost(request CostSettleRequest) error
+	ReleaseTaskCost(request CostReleaseRequest) error
+}
+
+// CostReserveRequest carries only facts the task domain already owns: the
+// resolved route identity and the normalized input JSON. Capability and
+// quantity are derived by the cost adapter from the task type and input.
+type CostReserveRequest struct {
+	UserID         string
+	TaskID         string
+	TaskType       string
+	Operation      string
+	LogicalModelID string
+	ChannelModelID string
+	InputJSON      string
+	// Retry marks a user-initiated retry, which starts a new billing attempt
+	// instead of reusing the idempotency keys of the previous one.
+	Retry bool
+}
+
+// CostReservation is the durable outcome of a successful freeze. Free is true
+// for a task type that has no effective price rule and is intentionally not
+// charged (local executors).
+type CostReservation struct {
+	ChargeID         string
+	Attempt          int
+	RuleID           string
+	RuleKind         string
+	BillingMode      string
+	EstimatedCredits int64
+	Free             bool
+}
+
+// CostSettleRequest closes a task's freeze with real usage. ActualCredits <= 0
+// means "no upstream usage receipt yet": the adapter settles at the frozen
+// estimate rather than inventing a number.
+type CostSettleRequest struct {
+	UserID        string
+	TaskID        string
+	ActualCredits int64
+	Reason        string
+}
+
+// CostReleaseRequest returns a failed or cancelled task's freeze.
+type CostReleaseRequest struct {
+	UserID string
+	TaskID string
+	Reason string
+}
+
 // Dependencies are the explicit collaborators of the task domain.
 // NewService does not require every port so reads can omit provider-side
 // collaborators. Operations fail closed when a port needed on that path is
@@ -179,6 +237,7 @@ type Dependencies struct {
 	Present                Presenter
 	Logs                   Logger
 	Activity               Activity
+	Cost                   Cost
 	OwnedMedia             OwnedMedia
 	Features               Features
 	NewID                  func() string

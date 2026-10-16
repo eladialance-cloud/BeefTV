@@ -175,7 +175,19 @@ func (s *Service) admit(userID string, req CreateRequest) (*model.Task, error) {
 	if s.deps.Present == nil {
 		return nil, unavailable()
 	}
+	var reservation *CostReservation
+	if !textReplay {
+		// Price and freeze before the row is written: a user without enough
+		// available credits must not end up with a queued task.
+		reservation, err = s.ReserveTaskCost(userID, &task, false)
+		if err != nil {
+			return nil, err
+		}
+	}
 	err = s.deps.Persist.CreateAdmitted(&task, limit)
+	if err != nil {
+		s.releaseReservation(userID, task.ID, reservation, "任务入库失败")
+	}
 	if mapped, mapErr := mapPersistError(err, req, s.deps.Present, limit); mapErr != nil || mapped != nil {
 		return mapped, mapErr
 	}

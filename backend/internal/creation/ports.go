@@ -15,6 +15,12 @@ import (
 type Tasks interface {
 	Prepare(userID string, req TaskRequest) (*PreparedTask, error)
 	Admit(userID string, repo *repository.Repository, task *model.Task) (*model.Task, error)
+	// ReserveCost prices and freezes the admitted task before the run is
+	// mutated. It must run outside MutateCreationRun so SQLite never opens a
+	// second write transaction inside the run transaction.
+	ReserveCost(userID string, task *model.Task) error
+	// ReleaseCost returns the freeze when the run write fails after reserving.
+	ReleaseCost(userID, taskID string) error
 }
 
 // Secrets protects credentials after quoting and before durable submit.

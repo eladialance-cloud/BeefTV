@@ -79,8 +79,21 @@ type testTasks struct {
 	repo      *repository.Repository
 	prepareN  atomic.Int32
 	admitN    atomic.Int32
+	reserveN  atomic.Int32
+	releaseN  atomic.Int32
 	nilTask   bool
 	failAdmit error
+	failCost  error
+}
+
+func (t *testTasks) ReserveCost(userID string, task *model.Task) error {
+	t.reserveN.Add(1)
+	return t.failCost
+}
+
+func (t *testTasks) ReleaseCost(userID, taskID string) error {
+	t.releaseN.Add(1)
+	return nil
 }
 
 func (t *testTasks) Prepare(userID string, req TaskRequest) (*PreparedTask, error) {
