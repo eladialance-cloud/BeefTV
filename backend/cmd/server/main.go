@@ -20,6 +20,7 @@ import (
 	"infinite-canvas/backend/internal/credits"
 	_ "infinite-canvas/backend/internal/database/postgresdriver"
 	"infinite-canvas/backend/internal/hostedapi"
+	"infinite-canvas/backend/internal/payment"
 	"infinite-canvas/backend/internal/repository"
 	"infinite-canvas/backend/internal/storageconfig"
 
@@ -52,6 +53,12 @@ func registerHostedRoutes(hosted bootstrap.HostedContext) error {
 
 	storageConfig := storageconfig.New(hosted.Repository, hosted.DataDir, storageconfig.NewS3Prober())
 	hostedapi.RegisterStorageAdminRoutes(hosted.API, storageConfig,
+		hostedapi.SessionUserResolver(authService),
+		hosted.Service.RequireAdmin)
+
+	// 支付：渠道密钥加密落库，后台只增删改查，不下发明文。
+	paymentConfig := payment.New(hosted.Repository, hosted.DataDir)
+	hostedapi.RegisterPaymentAdminRoutes(hosted.API, paymentConfig,
 		hostedapi.SessionUserResolver(authService),
 		hosted.Service.RequireAdmin)
 	return nil

@@ -1,7 +1,7 @@
 # BeefTV 托管工作台（网页版前端）
 
 给 BeefTV 网页版（后端 `server` profile）用的独立前端：登录/注册、我的钱包与积分流水、
-管理后台的用户积分与对象存储配置。
+管理后台的用户积分、对象存储与支付渠道配置。
 
 ## 为什么单独一个目录
 
@@ -70,8 +70,12 @@ python -m http.server 4173
 | 连通性测试（管理员） | POST | `/api/admin/storage-locations/:id/test` |
 | 设为默认（管理员） | POST | `/api/admin/storage-locations/:id/default` |
 | 删除存储（管理员） | DELETE | `/api/admin/storage-locations/:id` |
+| 支付渠道列表（管理员） | GET | `/api/admin/payment-providers` |
+| 新增支付渠道（管理员） | POST | `/api/admin/payment-providers` |
+| 修改支付渠道（管理员） | PUT | `/api/admin/payment-providers/:id` |
+| 删除支付渠道（管理员） | DELETE | `/api/admin/payment-providers/:id` |
 
 ## 还没做
 
-- 充值下单与支付回调：等后端 `internal/payment` 落地后，这里再加「充值」与「支付渠道」两页。
+- 充值下单与支付回调：支付渠道配置已能管理，但还没接支付宝/微信的下单与回调接口。
 - 模型价格规则：等 Task 5b 的价格表落地。

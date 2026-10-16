@@ -28,6 +28,8 @@ func HostedModels() []any {
 		&model.StorageLocation{},
 		// 积分账户与不可变流水（托管专属）。
 		&model.CreditAccount{}, &model.CreditLedgerEntry{},
+		// 支付渠道配置（托管专属，密钥加密存储）。
+		&model.PaymentProviderConfig{},
 	)
 }
 

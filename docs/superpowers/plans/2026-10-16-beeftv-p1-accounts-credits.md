@@ -176,6 +176,30 @@
 
 **未做（依赖 P2）**：充值页与支付渠道页。后端 `internal/payment` 未落地前不放空壳表单。
 
+## Task 6b: 支付渠道管理后台（本次完成）
+
+**目标**：先把「支付渠道配置」的管理入口做实，为 P2 的充值下单 / 回调 / 对账打地基。
+
+**Files:**
+- Create: `backend/internal/model/models_payment.go`、`backend/internal/payment/{config,secrets}.go`、`backend/internal/repository/payment.go`
+- Create: `backend/internal/hostedapi/payment.go`、`backend/internal/payment/config_test.go`、`backend/internal/hostedapi/payment_test.go`
+- Modify: `backend/internal/database/hosted_schema.go`（只进 `HostedModels()`）、`backend/internal/database/hosted_schema_test.go`、`backend/cmd/server/main.go`、`web-hosted/app.js`、`web-hosted/README.md`
+
+**行为**
+
+- 管理员可增删改查支付宝 / 微信商户号：名称、AppID、商户号、回调地址、启用状态、排序。
+- 密钥（API Key / 应用私钥 / 平台公钥）打包成一个 JSON，AES-GCM 加密后落一列密文；响应只回显掩码与 `secretSet`。
+- 编辑时密钥留空 = 保留原密文，填了新值才覆盖。
+- 服务层与 HTTP 层都校验管理员身份，写操作全部入管理员审计。
+- `internal/payment` 已在 `TestDesktopDependencyBoundary` 禁用清单里，桌面二进制不会携带支付控制面。
+
+- [x] **Step 1: 写测试**：不支持渠道被拒；缺失密钥被拒；普通用户被拒；密钥加密且视图不含明文；留空保留原密钥；列表 / 新增 / 更新 / 删除 / 删除不存在 404。
+- [x] **Step 2: 实现服务、仓储、路由、托管建表与前端页**。
+- [x] **Step 3: 运行**：`go vet ./internal/payment/ ./internal/hostedapi/ ./cmd/server/ ./internal/database/`；`go test -count=1 ./internal/payment/ ./internal/hostedapi/`；`go test -run TestMigrateHostedSchema ./internal/database/`；`go test -run TestDesktopDependencyBoundary ./internal/bootstrap/`；`node --test web-hosted/test/format.test.js web-hosted/test/api-paths.test.js` 全通过。
+- [x] **Step 4: 提交**：`feat(backend): 支付 - 新增支付渠道管理后台入口`。
+
+**未做（P2）**：充值商品、支付订单、回调验签与幂等、对账、退款；支付宝电脑网站支付与微信 Native 的实际适配器。
+
 ## 自检结论
 
 - **Spec 覆盖**：覆盖设计文档第 3 节（角色与分层）、第 4 节（积分体系）、第 7 节第 2/3 类（积分与用户后台）、第 8 节第 1/2 条（认证与租户隔离）。

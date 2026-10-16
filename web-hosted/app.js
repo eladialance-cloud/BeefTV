@@ -15,6 +15,7 @@ const ROUTES = [
     { path: "/wallet", label: "我的钱包", section: "用户", icon: "wallet" },
     { path: "/admin/users", label: "用户积分", section: "管理后台", icon: "users", admin: true },
     { path: "/admin/storage", label: "对象存储", section: "管理后台", icon: "database", admin: true },
+    { path: "/admin/payment", label: "支付渠道", section: "管理后台", icon: "card", admin: true },
 ];
 
 const state = {
@@ -23,6 +24,7 @@ const state = {
     ledger: [],
     accounts: [],
     storage: [],
+    payments: [],
     busy: false,
     error: "",
     notice: "",
@@ -89,6 +91,7 @@ async function logout() {
         state.ledger = [];
         state.accounts = [];
         state.storage = [];
+        state.payments = [];
     }
 }
 
@@ -133,6 +136,20 @@ async function deleteStorage(id) {
     return api(`/admin/storage-locations/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
+async function loadPayments() {
+    const data = await api("/admin/payment-providers");
+    state.payments = data.items || [];
+}
+
+async function savePayment(id, input) {
+    if (id) return api(`/admin/payment-providers/${encodeURIComponent(id)}`, { method: "PUT", body: input });
+    return api("/admin/payment-providers", { method: "POST", body: input });
+}
+
+async function deletePayment(id) {
+    return api(`/admin/payment-providers/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
 /* ---------------- 小工具 ---------------- */
 
 const ICONS = {
@@ -140,6 +157,7 @@ const ICONS = {
     users: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 19v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 17.5V19"/><circle cx="10" cy="8" r="3.2"/><path d="M20 19v-1.5a3.5 3.5 0 0 0-2.6-3.4M15.5 5.2a3.2 3.2 0 0 1 0 5.6"/></svg>',
     database: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="7.5" ry="3"/><path d="M4.5 6v12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></svg>',
     logout: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 12H3.5"/><path d="m7 8-4 4 4 4"/><path d="M11 4h6a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/></svg>',
+    card: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M2.5 9.5h19"/><path d="M6.5 14.5h3"/></svg>',
 };
 
 function icon(name) {
@@ -200,6 +218,7 @@ function render() {
     const view = document.getElementById("view");
     if (route.path === "/admin/users") renderAdminUsers(view);
     else if (route.path === "/admin/storage") renderAdminStorage(view);
+    else if (route.path === "/admin/payment") renderAdminPayment(view);
     else renderWallet(view);
 }
 
@@ -487,6 +506,19 @@ document.addEventListener("click", (event) => {
             await loadStorage();
             state.notice = "配置已删除";
         });
+    } else if (action === "edit-payment") {
+        const item = state.payments.find((entry) => entry.id === target.dataset.id);
+        if (item) fillPaymentForm(item);
+    } else if (action === "reset-payment") {
+        fillPaymentForm(null);
+    } else if (action === "delete-payment") {
+        if (!window.confirm("删除这个支付渠道？已下订单不受影响，但之后无法再用它收款。")) return;
+        withBusy(async () => {
+            await deletePayment(target.dataset.id);
+            await loadPayments();
+            fillPaymentForm(null);
+            state.notice = "支付渠道已删除";
+        });
     }
 });
 
@@ -525,6 +557,24 @@ document.addEventListener("submit", (event) => {
             await loadStorage();
             state.notice = "配置已保存，请测试连通性";
         });
+    } else if (form.id === "payment-form") {
+        withBusy(async () => {
+            const paymentId = form.id.value.trim();
+            await savePayment(paymentId, {
+                provider: form.provider.value,
+                name: form.name.value.trim(),
+                appId: form.appId.value.trim(),
+                mchId: form.mchId.value.trim(),
+                notifyUrl: form.notifyUrl.value.trim(),
+                apiKey: form.apiKey.value,
+                privateKey: form.privateKey.value,
+                platformPublicKey: form.platformPublicKey.value,
+                enabled: form.enabled.checked,
+            });
+            await loadPayments();
+            fillPaymentForm(null);
+            state.notice = paymentId ? "支付渠道已更新" : "支付渠道已保存";
+        });
     }
 });
 
@@ -538,7 +588,97 @@ async function reloadCurrent() {
     const path = currentPath();
     if (path === "/admin/users") return loadAccounts();
     if (path === "/admin/storage") return loadStorage();
+    if (path === "/admin/payment") return loadPayments();
     return loadWallet();
+}
+
+function renderAdminPayment(view) {
+    view.innerHTML = `
+        <div class="page-head">
+            <div>
+                <h1 class="page-title">支付渠道</h1>
+                <p class="page-sub">配置支付宝 / 微信商户号。密钥加密落库，列表只回显掩码；编辑时留空表示沿用原密钥。</p>
+            </div>
+            <button class="btn btn-sm" data-action="refresh">刷新</button>
+        </div>
+        <div id="flash">${renderFlash()}</div>
+        <div class="panel">
+            <h2 class="panel-title" id="payment-form-title">添加支付渠道</h2>
+            <form id="payment-form">
+                <input type="hidden" name="id" />
+                <div class="form-grid">
+                    <label class="field"><span class="field-label">渠道名称</span><input class="input" name="name" required /></label>
+                    <label class="field"><span class="field-label">类型</span>
+                        <select class="select" name="provider">
+                            <option value="alipay">支付宝</option>
+                            <option value="wechat">微信支付</option>
+                        </select>
+                    </label>
+                    <label class="field"><span class="field-label">AppID</span><input class="input" name="appId" /></label>
+                    <label class="field"><span class="field-label">商户号 MchID</span><input class="input" name="mchId" /></label>
+                    <label class="field"><span class="field-label">回调地址 NotifyURL</span><input class="input" name="notifyUrl" placeholder="https://你的域名/api/payments/notify" /></label>
+                    <label class="field"><span class="field-label">API Key / APIv3 Key</span><input class="input" name="apiKey" type="password" autocomplete="new-password" placeholder="留空表示不修改" /></label>
+                    <label class="field"><span class="field-label">应用私钥（支付宝）</span><textarea class="textarea" name="privateKey" rows="3" placeholder="留空表示不修改"></textarea></label>
+                    <label class="field"><span class="field-label">平台公钥</span><textarea class="textarea" name="platformPublicKey" rows="3" placeholder="留空表示不修改"></textarea></label>
+                </div>
+                <div class="btn-row">
+                    <label class="muted"><input type="checkbox" name="enabled" checked /> 启用该渠道</label>
+                    <button class="btn btn-sm" type="button" data-action="reset-payment">清空表单</button>
+                    <button class="btn btn-primary" type="submit" ${state.busy ? "disabled" : ""}>保存渠道</button>
+                </div>
+            </form>
+        </div>
+        <div class="panel">
+            <h2 class="panel-title">已有渠道</h2>
+            ${renderPayments()}
+        </div>`;
+}
+
+function renderPayments() {
+    if (!state.payments.length) return `<div class="empty">还没有支付渠道，请先添加一条</div>`;
+    return `
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>名称</th><th>类型</th><th>AppID</th><th>商户号</th><th>密钥</th><th>状态</th><th></th></tr></thead>
+                <tbody>
+                    ${state.payments
+                        .map(
+                            (item) => `<tr>
+                                <td>${escapeHtml(item.name)}</td>
+                                <td class="muted">${item.provider === "wechat" ? "微信支付" : "支付宝"}</td>
+                                <td class="muted">${escapeHtml(item.appId || "-")}</td>
+                                <td class="muted">${escapeHtml(item.mchId || "-")}</td>
+                                <td class="muted">${escapeHtml(item.secretMasked || "-")}</td>
+                                <td>${item.enabled ? '<span class="tag tag-ok">启用</span>' : '<span class="tag tag-muted">停用</span>'}</td>
+                                <td>
+                                    <div class="btn-row">
+                                        <button class="btn btn-sm" data-action="edit-payment" data-id="${escapeHtml(item.id)}">编辑</button>
+                                        <button class="btn btn-sm btn-danger" data-action="delete-payment" data-id="${escapeHtml(item.id)}">删除</button>
+                                    </div>
+                                </td>
+                            </tr>`,
+                        )
+                        .join("")}
+                </tbody>
+            </table>
+        </div>`;
+}
+
+function fillPaymentForm(item) {
+    const form = document.getElementById("payment-form");
+    if (!form) return;
+    form.id.value = item ? item.id : "";
+    form.name.value = item ? item.name : "";
+    form.provider.value = item ? item.provider : "alipay";
+    form.appId.value = item ? item.appId || "" : "";
+    form.mchId.value = item ? item.mchId || "" : "";
+    form.notifyUrl.value = item ? item.notifyUrl || "" : "";
+    form.apiKey.value = "";
+    form.privateKey.value = "";
+    form.platformPublicKey.value = "";
+    form.enabled.checked = item ? item.enabled !== false : true;
+    const title = document.getElementById("payment-form-title");
+    if (title) title.textContent = item ? `编辑渠道：${item.name}` : "添加支付渠道";
 }
 
 async function boot() {

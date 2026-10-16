@@ -108,3 +108,19 @@ func TestMigrateHostedSchemaCreatesAccountTables(t *testing.T) {
 		}
 	}
 }
+
+// 支付渠道配置表同样只能由托管迁移建立，且不得进入本地模型清单。
+func TestMigrateHostedSchemaCreatesPaymentProviderTables(t *testing.T) {
+	db := openHostedTestDB(t, "payment-providers.db")
+	if err := MigrateHostedSchema(db); err != nil {
+		t.Fatalf("托管迁移失败: %v", err)
+	}
+	if !db.Migrator().HasTable("payment_provider_configs") {
+		t.Fatal("托管迁移必须建出 payment_provider_configs")
+	}
+	for _, item := range LocalModels() {
+		if _, ok := item.(*model.PaymentProviderConfig); ok {
+			t.Fatal("payment_provider_configs 属于托管表，不得进入 LocalModels")
+		}
+	}
+}
