@@ -60,6 +60,7 @@ func registerHostedRoutes(hosted bootstrap.HostedContext) error {
 	paymentConfig := payment.New(hosted.Repository, creditRecharger{service: creditService}, hosted.DataDir)
 	hostedapi.RegisterTopupRoutes(hosted.API, paymentConfig, creditActor)
 	hostedapi.RegisterTopupAdminRoutes(hosted.API, paymentConfig, creditActor, hosted.Service.RequireAdmin)
+	hostedapi.RegisterPaymentRoutes(hosted.API, paymentConfig, creditActor)
 	hostedapi.RegisterPaymentAdminRoutes(hosted.API, paymentConfig,
 		hostedapi.SessionUserResolver(authService),
 		hosted.Service.RequireAdmin)

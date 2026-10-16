@@ -20,6 +20,7 @@ type PaymentProviderConfig struct {
 	Name             string     `json:"name" gorm:"size:128"`
 	AppID            string     `json:"appId" gorm:"size:128"`
 	MchID            string     `json:"mchId" gorm:"size:128"`
+	MchSerialNo      string     `json:"mchSerialNo" gorm:"size:128"`
 	NotifyURL        string     `json:"notifyUrl" gorm:"size:255"`
 	SecretsEncrypted string     `json:"-" gorm:"type:text"`
 	Enabled          bool       `json:"enabled"`

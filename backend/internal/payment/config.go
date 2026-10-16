@@ -5,12 +5,14 @@ package payment
 
 import (
 	"errors"
+	"net/http"
 	"strings"
 	"time"
 
 	"infinite-canvas/backend/internal/kernel"
 	"infinite-canvas/backend/internal/localcrypto"
 	"infinite-canvas/backend/internal/model"
+	"infinite-canvas/backend/internal/outbound"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -40,10 +42,13 @@ type Repository interface {
 
 // Service is the admin-facing owner of payment-channel configuration.
 type Service struct {
-	repo    Repository
-	credits CreditRecharger
-	dataDir string
-	now     func() time.Time
+	repo                 Repository
+	credits              CreditRecharger
+	dataDir              string
+	now                  func() time.Time
+	httpClient           *http.Client
+	alipayEndpoint       string
+	wechatNativeEndpoint string
 }
 
 // CreditRecharger is the slice of the credit service the payment flow needs:
@@ -57,7 +62,11 @@ type CreditRecharger interface {
 // when only provider configuration is used; marking an order paid then fails
 // closed instead of silently dropping the points.
 func New(repo Repository, credits CreditRecharger, dataDir string) *Service {
-	return &Service{repo: repo, credits: credits, dataDir: dataDir, now: func() time.Time { return time.Now().UTC() }}
+	service := &Service{repo: repo, credits: credits, dataDir: dataDir, now: func() time.Time { return time.Now().UTC() }}
+	service.httpClient = outbound.OutboundHTTPClient(15 * time.Second)
+	service.alipayEndpoint = defaultAlipayEndpoint
+	service.wechatNativeEndpoint = defaultWechatNativeEndpoint
+	return service
 }
 
 // Input is the admin write payload. Secrets are write-only: leaving them empty
@@ -67,6 +76,7 @@ type Input struct {
 	Name              string `json:"name"`
 	AppID             string `json:"appId"`
 	MchID             string `json:"mchId"`
+	MchSerialNo       string `json:"mchSerialNo"`
 	NotifyURL         string `json:"notifyUrl"`
 	APIKey            string `json:"apiKey"`
 	PrivateKey        string `json:"privateKey"`
@@ -83,6 +93,7 @@ type View struct {
 	Name          string     `json:"name"`
 	AppID         string     `json:"appId"`
 	MchID         string     `json:"mchId"`
+	MchSerialNo   string     `json:"mchSerialNo"`
 	NotifyURL     string     `json:"notifyUrl"`
 	SecretMasked  string     `json:"secretMasked"`
 	SecretSet     bool       `json:"secretSet"`
@@ -205,6 +216,7 @@ func (s *Service) build(actor *model.User, input Input, existing *model.PaymentP
 	}
 	appID := pick(input.AppID, existing, func(item *model.PaymentProviderConfig) string { return item.AppID })
 	mchID := pick(input.MchID, existing, func(item *model.PaymentProviderConfig) string { return item.MchID })
+	mchSerialNo := pick(input.MchSerialNo, existing, func(item *model.PaymentProviderConfig) string { return item.MchSerialNo })
 	notifyURL := pick(input.NotifyURL, existing, func(item *model.PaymentProviderConfig) string { return item.NotifyURL })
 
 	stored := secrets{}
@@ -254,6 +266,7 @@ func (s *Service) build(actor *model.User, input Input, existing *model.PaymentP
 		Name:             name,
 		AppID:            appID,
 		MchID:            mchID,
+		MchSerialNo:      mchSerialNo,
 		NotifyURL:        notifyURL,
 		SecretsEncrypted: encrypted,
 		Enabled:          enabled,
@@ -275,6 +288,7 @@ func (s *Service) toView(item *model.PaymentProviderConfig) View {
 		Name:          item.Name,
 		AppID:         item.AppID,
 		MchID:         item.MchID,
+		MchSerialNo:   item.MchSerialNo,
 		NotifyURL:     item.NotifyURL,
 		SecretMasked:  masked,
 		SecretSet:     configured,

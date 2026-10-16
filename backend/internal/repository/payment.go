@@ -74,7 +74,8 @@ func (r *Repository) UpdatePaymentOrder(item *model.PaymentOrder) error {
 	return r.db.Model(&model.PaymentOrder{}).Where("id = ?", item.ID).Updates(map[string]any{
 		"status": item.Status, "provider_trade_no": item.ProviderTradeNo,
 		"paid_at": item.PaidAt, "settled_at": item.SettledAt, "settled_by": item.SettledBy,
-		"close_reason": item.CloseReason, "updated_at": item.UpdatedAt,
+		"provider_config_id": item.ProviderConfigID,
+		"close_reason":       item.CloseReason, "updated_at": item.UpdatedAt,
 	}).Error
 }
 
@@ -89,7 +90,7 @@ func (r *Repository) CreatePaymentNotification(item *model.PaymentNotification) 
 
 func (r *Repository) UpdatePaymentNotification(item *model.PaymentNotification) error {
 	return r.db.Model(&model.PaymentNotification{}).Where("id = ?", item.ID).Updates(map[string]any{
-		"processed": item.Processed, "error": item.Error,
+		"processed": item.Processed, "error": item.Error, "amount_fen": item.AmountFen,
 	}).Error
 }
 
@@ -121,7 +122,8 @@ func (r *Repository) UpdatePaymentProviderConfig(item *model.PaymentProviderConf
 		}
 		return tx.Model(&model.PaymentProviderConfig{}).Where("id = ?", item.ID).Updates(map[string]any{
 			"provider": item.Provider, "name": item.Name, "app_id": item.AppID, "mch_id": item.MchID,
-			"notify_url": item.NotifyURL, "secrets_encrypted": item.SecretsEncrypted,
+			"mch_serial_no": item.MchSerialNo,
+			"notify_url":    item.NotifyURL, "secrets_encrypted": item.SecretsEncrypted,
 			"enabled": item.Enabled, "sort_order": item.SortOrder,
 			"last_tested_at": item.LastTestedAt, "last_test_error": item.LastTestError,
 			"updated_at": item.UpdatedAt,

@@ -5,6 +5,7 @@ import (
 
 	"infinite-canvas/backend/internal/kernel"
 	"infinite-canvas/backend/internal/localcrypto"
+	"infinite-canvas/backend/internal/model"
 )
 
 // encryptSecrets serialises the credential bundle and wraps it in the shared
@@ -30,4 +31,19 @@ func decodeSecrets(plain string, target *secrets) error {
 		return nil
 	}
 	return json.Unmarshal([]byte(plain), target)
+}
+
+func decryptProviderSecrets(dataDir string, item *model.PaymentProviderConfig) (secrets, error) {
+	var stored secrets
+	if item == nil || item.SecretsEncrypted == "" {
+		return stored, nil
+	}
+	plain, err := localcrypto.Decrypt(dataDir, item.SecretsEncrypted)
+	if err != nil {
+		return stored, kernel.WrapAppError(kernel.CodeInternal, "支付渠道密钥解密失败，请重新填写", err)
+	}
+	if err := decodeSecrets(plain, &stored); err != nil {
+		return stored, kernel.WrapAppError(kernel.CodeInternal, "支付渠道密钥格式损坏，请重新填写", err)
+	}
+	return stored, nil
 }

@@ -198,7 +198,7 @@
 - [x] **Step 3: 运行**：`go vet ./internal/payment/ ./internal/hostedapi/ ./cmd/server/ ./internal/database/`；`go test -count=1 ./internal/payment/ ./internal/hostedapi/`；`go test -run TestMigrateHostedSchema ./internal/database/`；`go test -run TestDesktopDependencyBoundary ./internal/bootstrap/`；`node --test web-hosted/test/format.test.js web-hosted/test/api-paths.test.js` 全通过。
 - [x] **Step 4: 提交**：`feat(backend): 支付 - 新增支付渠道管理后台入口`。
 
-**未做（P2）**：充值商品、支付订单、回调验签与幂等、对账、退款；支付宝电脑网站支付与微信 Native 的实际适配器。
+**当时未做（后来由 Task 7、Task 8 完成）**：充值商品、支付订单、回调验签与幂等、支付宝电脑网站支付与微信 Native 的实际适配器。
 
 ## Task 7: 充值商品与支付订单（本次完成）
 
@@ -224,7 +224,40 @@
 - [x] **Step 3: 运行**：`go vet ./internal/payment/ ./internal/hostedapi/ ./internal/repository/ ./internal/database/ ./cmd/server/`；`go test ./internal/payment/ ./internal/hostedapi/`；`node --test test/format.test.js test/api-paths.test.js`。
 - [x] **Step 4: 提交**：`feat(backend): 充值 - 新增商品订单与确认入账`。
 
-**未做（P2 下半段）**：支付宝电脑网站支付 / 微信 Native 的拉起支付参数生成、回调验签与解密、订单超时自动关闭、退款与对账。
+**后续由 Task 8 完成**：支付宝电脑网站支付 / 微信 Native 的拉起支付参数生成、回调验签与解密。
+
+**仍未做**：订单超时自动关闭、退款与对账。
+
+## Task 8: 支付网关拉起与回调（本次完成）
+
+**目标**：把「订单已创建」接到真实支付宝/微信支付，并让回调直接驱动幂等入账。
+
+**Files:**
+- Create: `backend/internal/payment/{gateway,crypto,alipay,wechat}.go`
+- Create: `backend/internal/hostedapi/payment_gateway.go`
+- Create: `backend/internal/payment/gateway_test.go`、`backend/internal/hostedapi/payment_gateway_test.go`
+- Modify: `backend/internal/model/models_payment.go`（微信商户证书序列号）、`models_topup.go`（订单渠道配置、回调金额）
+- Modify: `backend/internal/payment/{config,secrets,topup}.go`、`repository/payment.go`、`cmd/server/main.go`、`web-hosted/app.js`、`README.md`
+
+**行为**
+- 用户下单时快照启用的支付渠道配置 ID；后续后台改渠道不会串到历史订单。
+- `POST /api/topup/orders/:id/pay`：
+  - 支付宝 RSA2 生成电脑网站支付跳转链接；
+  - 微信 APIv3 Native 下单，返回 `code_url`。
+- `POST /api/payments/:provider/notify`：
+  - 支付宝验 RSA2 签名、校验 `app_id`、金额、订单号；
+  - 微信验 `Wechatpay-*` 签名，AES-256-GCM 解密回调，校验商户号、AppID、金额、订单号；
+- 回调金额必须与订单快照金额一致；金额缺失或不一致不入账。
+- 入账仍走积分账本的同一幂等键，重复回调/网关重推不重复加积分。
+- 回调 HTTP 响应按网关契约返回：支付宝 `success`，微信 `{"code":"SUCCESS","message":"成功"}`。
+- 前端下单后自动调用拉起支付：支付宝跳转，微信先弹出可复制的支付链接。
+
+- [x] **Step 1: 写测试**：支付宝请求签名、回调验签与金额解析；微信 Native 请求签名、回调签名与密文解密；金额不一致拒绝入账；HTTP 回调原始请求体与响应契约。
+- [x] **Step 2: 实现适配器、路由、订单渠道快照与前端拉起**。
+- [x] **Step 3: 运行**：`go test ./internal/payment/ ./internal/hostedapi/`、`go vet`、托管迁移测试、桌面依赖边界测试、`node --test` 全通过。
+- [x] **Step 4: 提交**：`feat(backend): 支付 - 接入支付宝与微信网关回调`。
+
+**仍未做**：订单超时自动关闭、退款、对账、微信二维码图片渲染。
 
 ## 自检结论
 

@@ -40,6 +40,7 @@ type Notification struct {
 	ProviderTradeNo        string
 	OrderID                string
 	Status                 string
+	AmountFen              int64
 	PayloadJSON            string
 }
 
@@ -150,6 +151,12 @@ func (s *Service) CreatePaymentOrder(userID string, productID string, provider s
 	if _, ok := supportedProviders[provider]; !ok {
 		return nil, kernel.BadAuthRequest(ErrUnsupportedProvider.Error())
 	}
+	providerConfigID := ""
+	if config, configErr := s.firstEnabledProviderConfig(provider); configErr == nil {
+		providerConfigID = config.ID
+	} else if !errors.Is(configErr, gorm.ErrRecordNotFound) {
+		return nil, configErr
+	}
 	now := s.now()
 	order := &model.PaymentOrder{
 		ID:                uuid.NewString(),
@@ -157,6 +164,7 @@ func (s *Service) CreatePaymentOrder(userID string, productID string, provider s
 		ProductID:         product.ID,
 		ProductName:       product.Name,
 		Provider:          provider,
+		ProviderConfigID:  providerConfigID,
 		AmountFen:         product.PriceFen,
 		Credits:           product.TotalCredits(),
 		Status:            model.PaymentOrderPendingPayment,
@@ -279,6 +287,16 @@ func (s *Service) ApplyNotification(notification Notification) (*model.PaymentOr
 	if orderID == "" {
 		return nil, kernel.BadAuthRequest("支付回调缺少订单号")
 	}
+	order, err := s.loadOrder(orderID)
+	if err != nil {
+		return nil, err
+	}
+	if notification.Status == model.PaymentOrderPaid && notification.AmountFen <= 0 {
+		return nil, kernel.BadAuthRequest("支付回调缺少订单金额")
+	}
+	if notification.AmountFen > 0 && notification.AmountFen != order.AmountFen {
+		return nil, kernel.NewAppError(kernel.CodeConflict, "支付回调金额与订单金额不一致")
+	}
 
 	record := &model.PaymentNotification{
 		ID:                     uuid.NewString(),
@@ -287,6 +305,7 @@ func (s *Service) ApplyNotification(notification Notification) (*model.PaymentOr
 		ProviderTradeNo:        strings.TrimSpace(notification.ProviderTradeNo),
 		OrderID:                orderID,
 		Status:                 strings.TrimSpace(notification.Status),
+		AmountFen:              notification.AmountFen,
 		PayloadJSON:            notification.PayloadJSON,
 		CreatedAt:              s.now(),
 	}
@@ -296,11 +315,11 @@ func (s *Service) ApplyNotification(notification Notification) (*model.PaymentOr
 	}
 	if !created {
 		// 重复回调：直接返回订单，保证网关重推时不会二次入账。
-		return s.loadOrder(orderID)
+		return order, nil
 	}
 	if notification.Status != model.PaymentOrderPaid {
 		// 非成功回调（例如交易关闭）只留痕，不入账。
-		return s.loadOrder(orderID)
+		return order, nil
 	}
 	order, settleErr := s.MarkPaidBySystem(orderID, notification.ProviderTradeNo)
 	record.Processed = settleErr == nil

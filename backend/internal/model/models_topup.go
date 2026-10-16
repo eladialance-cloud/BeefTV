@@ -40,6 +40,7 @@ type PaymentOrder struct {
 	ProductID         string     `json:"productId" gorm:"size:36;index"`
 	ProductName       string     `json:"productName" gorm:"size:128"`
 	Provider          string     `json:"provider" gorm:"size:32;index"`
+	ProviderConfigID  string     `json:"providerConfigId" gorm:"size:36;index"`
 	AmountFen         int64      `json:"amountFen"`
 	Credits           int64      `json:"credits"`
 	Status            string     `json:"status" gorm:"size:24;index"`
@@ -65,6 +66,7 @@ type PaymentNotification struct {
 	ProviderTradeNo        string    `json:"providerTradeNo" gorm:"size:128"`
 	OrderID                string    `json:"orderId" gorm:"size:36;index"`
 	Status                 string    `json:"status" gorm:"size:24"`
+	AmountFen              int64     `json:"amountFen"`
 	PayloadJSON            string    `json:"payloadJson" gorm:"type:text"`
 	Processed              bool      `json:"processed"`
 	Error                  string    `json:"error" gorm:"type:text"`

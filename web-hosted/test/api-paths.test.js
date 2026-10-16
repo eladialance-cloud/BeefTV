@@ -47,6 +47,10 @@ describe("托管工作台的接口契约", () => {
         expect(source).toContain("buildAdjustIdempotencyKey");
     });
 
+    test("充值下单后继续拉起支付", () => {
+        expect(source).toContain("/topup/orders/${encodeURIComponent(orderId)}/pay");
+    });
+
     test("纯函数收敛在 format.js，不在 app.js 里复制一份", () => {
         expect(source).not.toMatch(/^function escapeHtml/mu);
         expect(source).not.toMatch(/^function formatPoints/mu);

@@ -16,11 +16,20 @@ type topupRepo struct {
 	orders        []model.PaymentOrder
 	notifications []model.PaymentNotification
 	audits        []model.AdminAuditEvent
+	configs       []model.PaymentProviderConfig
 }
 
-func (f *topupRepo) PaymentProviderConfigs() ([]model.PaymentProviderConfig, error) { return nil, nil }
+func (f *topupRepo) PaymentProviderConfigs() ([]model.PaymentProviderConfig, error) {
+	return append([]model.PaymentProviderConfig(nil), f.configs...), nil
+}
 
 func (f *topupRepo) PaymentProviderConfig(id string) (*model.PaymentProviderConfig, error) {
+	for index := range f.configs {
+		if f.configs[index].ID == id {
+			item := f.configs[index]
+			return &item, nil
+		}
+	}
 	return nil, gorm.ErrRecordNotFound
 }
 
@@ -322,6 +331,7 @@ func TestApplyNotificationCreditsOnce(t *testing.T) {
 		ProviderTradeNo:        "trade-1",
 		OrderID:                order.ID,
 		Status:                 model.PaymentOrderPaid,
+		AmountFen:              990,
 		PayloadJSON:            `{"trade_status":"TRADE_SUCCESS"}`,
 	}
 	settled, err := service.ApplyNotification(notification)

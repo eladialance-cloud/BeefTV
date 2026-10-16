@@ -171,6 +171,10 @@ async function createTopupOrder(productId, provider) {
     return api("/topup/orders", { method: "POST", body: { productId, provider } });
 }
 
+async function beginPayment(orderId) {
+    return api(`/topup/orders/${encodeURIComponent(orderId)}/pay`, { method: "POST" });
+}
+
 async function loadAdminProducts() {
     const data = await api("/admin/topup-products");
     state.adminProducts = data.items || [];
@@ -565,9 +569,20 @@ document.addEventListener("click", (event) => {
         fillPaymentForm(null);
     } else if (action === "buy-topup") {
         withBusy(async () => {
-            await createTopupOrder(target.dataset.id, target.dataset.provider);
+            const created = await createTopupOrder(target.dataset.id, target.dataset.provider);
+            const started = await beginPayment(created.item.id);
             await loadTopup();
-            state.notice = "订单已创建，请完成支付；暂未接入网关时由管理员确认入账";
+            const gateway = started.payment;
+            if (gateway?.mode === "redirect" && gateway.url) {
+                window.location.assign(gateway.url);
+                return;
+            }
+            if (gateway?.mode === "qr" && gateway.qrCode) {
+                state.notice = "微信支付链接已生成，请复制后用微信打开。";
+                window.prompt("复制微信支付链接", gateway.qrCode);
+                return;
+            }
+            state.notice = "订单已创建，请完成支付";
         });
     } else if (action === "edit-topup") {
         const item = state.adminProducts.find((entry) => entry.id === target.dataset.id);
@@ -654,6 +669,7 @@ document.addEventListener("submit", (event) => {
                 apiKey: form.apiKey.value,
                 privateKey: form.privateKey.value,
                 platformPublicKey: form.platformPublicKey.value,
+                mchSerialNo: form.mchSerialNo.value.trim(),
                 enabled: form.enabled.checked,
             });
             await loadPayments();
@@ -696,13 +712,12 @@ async function reloadCurrent() {
     return loadWallet();
 }
 
-function renderAdminPayment(view) {
 function renderTopup(view) {
     view.innerHTML = `
         <div class="page-head">
             <div>
                 <h1 class="page-title">充值</h1>
-                <p class="page-sub">选择充值套餐下单，支付完成后积分自动到账。当前尚未接入网关，订单需管理员确认。</p>
+                <p class="page-sub">选择充值套餐下单，支付完成后积分自动到账。</p>
             </div>
             <button class="btn btn-sm" data-action="refresh">刷新</button>
         </div>
@@ -897,6 +912,7 @@ function renderAdminOrdersTable() {
         </div>`;
 }
 
+function renderAdminPayment(view) {
     view.innerHTML = `
         <div class="page-head">
             <div>
@@ -920,7 +936,8 @@ function renderAdminOrdersTable() {
                     </label>
                     <label class="field"><span class="field-label">AppID</span><input class="input" name="appId" /></label>
                     <label class="field"><span class="field-label">商户号 MchID</span><input class="input" name="mchId" /></label>
-                    <label class="field"><span class="field-label">回调地址 NotifyURL</span><input class="input" name="notifyUrl" placeholder="https://你的域名/api/payments/notify" /></label>
+                    <label class="field"><span class="field-label">商户证书序列号（微信）</span><input class="input" name="mchSerialNo" /></label>
+                    <label class="field"><span class="field-label">回调地址 NotifyURL</span><input class="input" name="notifyUrl" placeholder="https://你的域名/api/payments/alipay/notify" /></label>
                     <label class="field"><span class="field-label">API Key / APIv3 Key</span><input class="input" name="apiKey" type="password" autocomplete="new-password" placeholder="留空表示不修改" /></label>
                     <label class="field"><span class="field-label">应用私钥（支付宝）</span><textarea class="textarea" name="privateKey" rows="3" placeholder="留空表示不修改"></textarea></label>
                     <label class="field"><span class="field-label">平台公钥</span><textarea class="textarea" name="platformPublicKey" rows="3" placeholder="留空表示不修改"></textarea></label>
@@ -976,6 +993,7 @@ function fillPaymentForm(item) {
     form.provider.value = item ? item.provider : "alipay";
     form.appId.value = item ? item.appId || "" : "";
     form.mchId.value = item ? item.mchId || "" : "";
+    form.mchSerialNo.value = item ? item.mchSerialNo || "" : "";
     form.notifyUrl.value = item ? item.notifyUrl || "" : "";
     form.apiKey.value = "";
     form.privateKey.value = "";

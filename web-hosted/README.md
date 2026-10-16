@@ -77,6 +77,8 @@ python -m http.server 4173
 | 充值套餐（用户） | GET | `/api/topup/products` |
 | 我的充值订单 | GET | `/api/topup/orders` |
 | 创建充值订单 | POST | `/api/topup/orders` |
+| 拉起支付 | POST | `/api/topup/orders/:id/pay` |
+| 支付回调 | POST | `/api/payments/:provider/notify` |
 | 充值商品（管理员） | GET/POST | `/api/admin/topup-products` |
 | 修改/删除商品（管理员） | PUT/DELETE | `/api/admin/topup-products/:id` |
 | 支付订单（管理员） | GET | `/api/admin/payment-orders` |
@@ -85,5 +87,7 @@ python -m http.server 4173
 
 ## 还没做
 
-- 真实网关对接：充值商品、订单、管理员确认入账已能跑，但还没接支付宝/微信的「拉起支付」与「回调验签」。
+- 真实网关联调：支付宝电脑网站支付与微信 Native 已接入签名、验签和金额校验，但还需要拿商户真实密钥联调。
+- 微信二维码目前先把 `code_url` 交给用户复制，后续可接二维码组件直接显示。
+- 订单超时自动关闭、退款与对账。
 - 模型价格规则：等 Task 5b 的价格表落地。
