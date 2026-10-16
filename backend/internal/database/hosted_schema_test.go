@@ -70,3 +70,22 @@ func TestMigrateHostedSchemaCreatesStorageLocations(t *testing.T) {
 		}
 	}
 }
+
+// 账号与会话表同样只能由托管迁移建立，且不得进入本地模型清单。
+func TestMigrateHostedSchemaCreatesAccountTables(t *testing.T) {
+	db := openHostedTestDB(t, "accounts.db")
+	if err := MigrateHostedSchema(db); err != nil {
+		t.Fatalf("托管迁移失败: %v", err)
+	}
+	for _, table := range []string{"users", "user_identities", "auth_sessions"} {
+		if !db.Migrator().HasTable(table) {
+			t.Fatalf("托管迁移必须建出 %s", table)
+		}
+	}
+	for _, item := range LocalModels() {
+		switch item.(type) {
+		case *model.User, *model.UserIdentity, *model.AuthSession:
+			t.Fatalf("账号与会话表属于托管表，不得进入 LocalModels: %T", item)
+		}
+	}
+}

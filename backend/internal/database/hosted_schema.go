@@ -21,7 +21,12 @@ func MigrateHostedSchema(db *gorm.DB) error {
 // 托管表绝不能进入 LocalModels，否则 desktop 迁移会先建后删。
 func HostedModels() []any {
 	models := LocalModels()
-	return append(models, &model.StorageLocation{})
+	return append(models,
+		// 账号与会话（托管专属，桌面形态不建也不碰）。
+		&model.User{}, &model.UserIdentity{}, &model.AuthSession{},
+		// 平台级对象存储配置。
+		&model.StorageLocation{},
+	)
 }
 
 // RequireHostedSchema 在关闭自动迁移时做最小可用性校验：核心表必须存在。
