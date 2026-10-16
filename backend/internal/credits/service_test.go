@@ -39,6 +39,19 @@ func (r *memoryRepository) Wallet(userID string) (*model.CreditAccount, bool, er
 	return &copyAccount, true, nil
 }
 
+func (r *memoryRepository) CreditAccounts(limit int) ([]model.CreditAccount, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	items := make([]model.CreditAccount, 0, len(r.accounts))
+	for _, account := range r.accounts {
+		items = append(items, *account)
+	}
+	if limit > 0 && len(items) > limit {
+		items = items[:limit]
+	}
+	return items, nil
+}
+
 func (r *memoryRepository) CreditEntries(userID string, limit int) ([]model.CreditLedgerEntry, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

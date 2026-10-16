@@ -229,6 +229,20 @@ func (s *Service) Account(userID string) (*model.CreditAccount, error) {
 }
 
 // Ledger returns the user's most recent movements, newest first.
+// Accounts lists wallets for the admin console, newest activity first.
+func (s *Service) Accounts(limit int) ([]model.CreditAccount, error) {
+	if s == nil || s.repo == nil {
+		return nil, kernel.NewAppError(kernel.CodeUnavailable, "积分服务尚未初始化")
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	return s.repo.CreditAccounts(limit)
+}
+
 func (s *Service) Ledger(userID string, limit int) ([]model.CreditLedgerEntry, error) {
 	if s == nil || s.repo == nil {
 		return nil, kernel.NewAppError(kernel.CodeUnavailable, "积分服务尚未初始化")

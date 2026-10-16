@@ -49,4 +49,5 @@ type Repository interface {
 	Wallet(userID string) (*model.CreditAccount, bool, error)
 	ApplyEntry(entry *model.CreditLedgerEntry, mutate func(*model.CreditAccount) error) (stored *model.CreditLedgerEntry, account *model.CreditAccount, applied bool, err error)
 	CreditEntries(userID string, limit int) ([]model.CreditLedgerEntry, error)
+	CreditAccounts(limit int) ([]model.CreditAccount, error)
 }

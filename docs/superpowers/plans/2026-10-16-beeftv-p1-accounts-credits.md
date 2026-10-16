@@ -112,26 +112,43 @@
 - [x] **Step 4: 运行**：`go test ./internal/credits/`、`go test -run 'TestApplyEntry|TestCreditEntries|TestWalletMissing' ./internal/repository/`、`go test -run 'TestMigrateHostedSchema|TestRequireHostedSchema' ./internal/database/` 全通过；`TestDesktopDependencyBoundary` 通过（`internal/credits` 已加入桌面禁用依赖清单）。
 - [x] **Step 5: 提交**：`feat(backend): 积分账本 - 新增账户冻结结算与不可变流水`。
 
-## Task 5: 价格规则、钱包查询与管理员发积分
+## Task 5a: 钱包查询与管理员发积分（用户端 + 管理端 HTTP）
 
 **Files:**
-- Create: `backend/internal/credits/pricing.go`
 - Create: `backend/internal/hostedapi/credits.go`
 - Test: `backend/internal/hostedapi/credits_test.go`
+- Modify: `backend/internal/credits/{ports,service}.go`、`backend/internal/repository/credits.go`（新增 `CreditAccounts` / `Accounts` 管理端列表）
+- Modify: `backend/cmd/server/main.go`（只在 server profile 装配）
+
+**行为**
+
+- 用户端：`GET /api/credits/wallet`（余额 / 冻结 / 可用 / 版本）、`GET /api/credits/ledger?limit=`（只看自己，倒序）。
+- 管理端：`GET /api/admin/credits/accounts`（钱包列表 + 用户目录拼接）、`POST /api/admin/credits/adjust`（人工加减积分，必填原因，写不可变流水，可选幂等键）。
+- 方法名避开守卫清单（用 `Account` / `Accounts` / `Adjust`，不用 `Wallet` / `AdminAdjustCredits`）。
+- 价格规则表（`model_pricings` 等）拆到 Task 5b，等 P3 技能计费真正需要时再做，避免先建表无消费方。
+
+- [x] **Step 1: 写测试**：未登录读钱包 401；钱包返回余额/冻结/可用；用户只看自己的流水；非法 limit 400；非管理员调整 403；管理员调整后余额与流水一致且带操作人与原因；重复幂等键不二次入账；账户列表拼上用户名；非管理员查列表 403。
+- [x] **Step 2: 实现路由与服务方法**。
+- [x] **Step 3: 运行**：`go test -run TestCredit ./internal/hostedapi/`、`go test ./internal/credits/`、`go vet ./internal/hostedapi/ ./internal/credits/ ./internal/repository/ ./cmd/server/` 全通过。
+- [x] **Step 4: 提交**：`feat(backend): 积分 - 新增钱包查询与管理员发积分`。
+
+## Task 5b: 价格规则表（待做，跟 P3 技能计费一起）
+
+**Files:**
+- Create: `backend/internal/model/models_pricing.go`、`backend/internal/credits/pricing.go`、`backend/internal/hostedapi/pricing.go`
 - Modify: `backend/internal/database/hosted_schema.go`
 
 **行为**
 
-- `model_pricings` / `channel_model_price_tiers` / `logical_model_price_skus` 落库，管理员可改，无需发版。
-- 用户端：`GET /api/credits/wallet`、`GET /api/credits/ledger`。
-- 管理端：`GET /api/admin/credits/accounts`、`POST /api/admin/credits/adjust`（人工加减积分，必填原因，写审计流水）。
-- 方法名避开守卫清单（不用 `Wallet` / `AdminAdjustCredits` 等）。
+- `model_pricings` / `channel_model_price_tiers` / `logical_model_price_skus` 落库，带生效区间，管理员可在后台改价，无需发版。
+- 定价维度：渠道 / 模型、能力（文本 / 图片 / 视频 / 音频）、分辨率与时长档、单价、生效区间。
+- 与 Task 4 的三段式合同衔接：任务提交时按生效价规则算预冻结，结算时按实际用量算实扣。
 
-- [ ] **Step 1: 写失败测试**：非管理员调整返回 403；管理员调整后余额与流水一致；用户只能看自己的流水。
+- [ ] **Step 1: 写失败测试**：改价后新任务按新档计费、老任务按旧档；同一逻辑模型可选多个 SKU。
 - [ ] **Step 2: 运行确认失败**。
 - [ ] **Step 3: 实现**。
 - [ ] **Step 4: 运行相关包测试通过**。
-- [ ] **Step 5: 提交**：`feat(backend): 积分 - 新增价格规则、钱包查询与管理员发积分`。
+- [ ] **Step 5: 提交**：`feat(backend): 积分 - 新增价格规则与后台改价`。
 
 ## Task 6: 前端登录、钱包与后台积分页面
 

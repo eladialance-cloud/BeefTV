@@ -26,6 +26,19 @@ func (r *Repository) Wallet(userID string) (*model.CreditAccount, bool, error) {
 }
 
 // CreditEntries returns a user's ledger, newest first.
+// CreditAccounts lists wallets for the admin console, richest balance first.
+func (r *Repository) CreditAccounts(limit int) ([]model.CreditAccount, error) {
+	var items []model.CreditAccount
+	err := r.db.
+		Order("updated_at DESC, id DESC").
+		Limit(limit).
+		Find(&items).Error
+	if err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 func (r *Repository) CreditEntries(userID string, limit int) ([]model.CreditLedgerEntry, error) {
 	var items []model.CreditLedgerEntry
 	err := r.db.

@@ -17,6 +17,7 @@ import (
 	"infinite-canvas/backend/internal/asset"
 	"infinite-canvas/backend/internal/auth"
 	"infinite-canvas/backend/internal/bootstrap"
+	"infinite-canvas/backend/internal/credits"
 	_ "infinite-canvas/backend/internal/database/postgresdriver"
 	"infinite-canvas/backend/internal/hostedapi"
 	"infinite-canvas/backend/internal/repository"
@@ -41,6 +42,13 @@ func registerHostedRoutes(hosted bootstrap.HostedContext) error {
 	hostedapi.RegisterAuthRoutes(hosted.API, authService, hostedapi.AuthOptions{
 		BootstrapAdminUsername: os.Getenv("CANVAS_BOOTSTRAP_ADMIN_USERNAME"),
 	})
+
+	// 积分：用户看钱包与流水，管理员人工加减积分，全部写不可变流水。
+	creditService := credits.New(hosted.Repository, credits.Config{})
+	creditActor := hostedapi.SessionUserResolver(authService)
+	hostedapi.RegisterCreditRoutes(hosted.API, creditService, creditActor)
+	hostedapi.RegisterCreditAdminRoutes(hosted.API, creditService, hosted.Repository,
+		creditActor, hosted.Service.RequireAdmin)
 
 	storageConfig := storageconfig.New(hosted.Repository, hosted.DataDir, storageconfig.NewS3Prober())
 	hostedapi.RegisterStorageAdminRoutes(hosted.API, storageConfig,
