@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="robots" content="noindex" />
+        <title>BeefTV 工作台</title>
+        <link rel="stylesheet" href="./styles.css" />
+    </head>
+    <body>
+        <div id="app" class="app-shell"></div>
+        <script>
+            // 部署时可用一段内联脚本覆写成同源以外的后端地址，例如
+            // window.__BEEFTV_API_BASE__ = "https://api.example.com/api";
+            window.__BEEFTV_API_BASE__ = window.__BEEFTV_API_BASE__ || "";
+        </script>
+        <script type="module" src="./app.js"></script>
+    </body>
+</html>

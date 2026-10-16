@@ -150,23 +150,31 @@
 - [ ] **Step 4: 运行相关包测试通过**。
 - [ ] **Step 5: 提交**：`feat(backend): 积分 - 新增价格规则与后台改价`。
 
-## Task 6: 前端登录、钱包与后台积分页面
+## Task 6: 托管工作台前端（登录、钱包、后台）
+
+**关键修正：托管界面不能放进 `web/src`。** `web/test/local-only-source-boundary.test.ts` 硬性禁止
+`src/pages/auth/login.tsx`、`src/services/api/wallet.ts`、`src/pages/admin/index.tsx` 等托管入口存在，
+目的是让桌面安装包不携带 SaaS 控制面。因此托管前端独立成 `web-hosted/`，与 `web/` 共用同一后端 API。
 
 **Files:**
-- Modify: `web/src/router.tsx`
-- Create: `web/src/pages/LoginPage.tsx`、`web/src/pages/WalletPage.tsx`、`web/src/pages/AdminCreditsPage.tsx`
+- Create: `web-hosted/index.html`、`web-hosted/styles.css`、`web-hosted/app.js`、`web-hosted/format.js`
+- Create: `web-hosted/package.json`、`web-hosted/README.md`
+- Test: `web-hosted/test/format.test.js`、`web-hosted/test/api-paths.test.js`
 
 **行为**
 
-- 未登录访问创作台重定向到登录页；登录后回到原页面。
-- 钱包页展示余额、冻结额与流水分页。
-- 后台积分页支持查询账户、调整积分、填写原因。
+- 未登录只有登录/注册卡；登录后按角色显示侧栏（普通用户看不到后台）。
+- 钱包页：余额 / 冻结 / 可用三个指标 + 最近 50 条流水，类型与阶段翻译成中文。
+- 后台积分页：账户列表（拼用户名）+ 调整表单（必填原因、每次带唯一幂等键）。
+- 后台对象存储页：列表 + 新增 + 连通性测试 + 设默认 + 删除，密钥只回显掩码。
+- 零依赖：无构建步骤、无 npm 依赖，任意静态服务器可托管。
 
-- [ ] **Step 1: 写失败测试**（登录守卫与钱包渲染）。
-- [ ] **Step 2: 运行确认失败**。
-- [ ] **Step 3: 实现**。
-- [ ] **Step 4: 运行前端测试与构建通过**。
-- [ ] **Step 5: 提交**：`feat(web): 多用户 - 新增登录、钱包与后台积分页面`。
+- [x] **Step 1: 写测试**：纯函数（转义/时间/金额/枚举映射/API 基地址/幂等键）；接口契约（只调用已注册路径、每次都带 cookie、人工调整带幂等键）。
+- [x] **Step 2: 实现**。
+- [x] **Step 3: 运行**：`node --check app.js format.js`、`node --test --test-isolation=none test/format.test.js test/api-paths.test.js` 全通过（16 项）。
+- [x] **Step 4: 提交**：`feat(web-hosted): 多用户 - 新增登录、钱包与后台工作台`。
+
+**未做（依赖 P2）**：充值页与支付渠道页。后端 `internal/payment` 未落地前不放空壳表单。
 
 ## 自检结论
 

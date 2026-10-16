@@ -82,6 +82,15 @@
 
 角色沿用 `model.UserRoleAdmin`，默认注册用户为普通用户。管理后台不单独建用户体系，权限由 `RequireAdmin` 统一校验，且必须在服务层校验，不依赖前端隐藏入口。
 
+### 3.1 前端形态：本地工作台与托管工作台分开
+
+仓库里 `web/` 是本地桌面版前端，且有一条硬边界：`web/test/local-only-source-boundary.test.ts` 要求
+`src/pages/auth/login.tsx`、`src/services/api/wallet.ts`、`src/pages/admin/index.tsx`、`src/styles/admin-ui.css`
+等托管入口**物理不存在**，这样桌面安装包不会携带 SaaS 控制面。
+
+因此托管前台不放 `web/src`，而是独立成 `web-hosted/`（零依赖静态站点，与 `web/` 共用同一后端 JSON API）。
+两个前端各自部署、各自发布，边界不会随着功能增加而变浑。
+
 ## 4. 用户端积分体系
 
 ### 4.1 计价原则
