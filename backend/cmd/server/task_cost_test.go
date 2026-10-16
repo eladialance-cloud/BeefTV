@@ -1,11 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"infinite-canvas/backend/internal/credits"
+	"infinite-canvas/backend/internal/kernel"
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/repository"
 	localtask "infinite-canvas/backend/internal/task"
@@ -29,7 +31,7 @@ func newTaskCostEnv(t *testing.T) (*taskCostAdapter, *repository.Repository, *cr
 	if err := db.AutoMigrate(
 		&model.CreditAccount{}, &model.CreditLedgerEntry{},
 		&model.ModelPricing{}, &model.ChannelModelPriceTier{}, &model.LogicalModelPriceSKU{},
-		&model.TaskCostCharge{},
+		&model.TaskCostCharge{}, &model.ApiCallLog{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -76,6 +78,133 @@ func imageCostRequest(userID, taskID string) localtask.CostReserveRequest {
 		LogicalModelID: "lm-1",
 		ChannelModelID: "cm-1",
 		InputJSON:      `{"prompt":"hello"}`,
+	}
+}
+
+func seedTokenPriceRule(t *testing.T, repo *repository.Repository, ruleID string, unitPriceMicrocredits int64) {
+	t.Helper()
+	rule := &model.PricingRule{
+		ID:                    ruleID,
+		Kind:                  model.PricingKindModel,
+		Name:                  "文本按量价",
+		LogicalModelID:        "lm-1",
+		Capability:            "text",
+		BillingMode:           "per_1k_tokens",
+		UnitPriceMicrocredits: unitPriceMicrocredits,
+		Enabled:               true,
+		EffectiveFrom:         taskCostTestTime.Add(-time.Hour),
+		CreatedAt:             taskCostTestTime,
+		UpdatedAt:             taskCostTestTime,
+	}
+	if err := repo.CreatePricingRule(model.PricingKindModel, rule); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func textCostRequest(userID, taskID string, maxTokens int) localtask.CostReserveRequest {
+	return localtask.CostReserveRequest{
+		UserID:         userID,
+		TaskID:         taskID,
+		TaskType:       "canvas_text",
+		LogicalModelID: "lm-1",
+		ChannelModelID: "cm-1",
+		InputJSON:      fmt.Sprintf(`{"maxTokens":%d}`, maxTokens),
+	}
+}
+
+func seedTaskUsageReceipt(t *testing.T, repo *repository.Repository, taskID string, inputTokens, outputTokens int64) {
+	t.Helper()
+	log := model.ApiCallLog{
+		ID: kernel.NewID(), TaskID: taskID, Capability: "text", RequestKind: "create",
+		Status: model.ApiCallStatusSucceeded, UsageAvailable: true,
+		InputTokens: inputTokens, OutputTokens: outputTokens,
+		CreatedAt: taskCostTestTime,
+	}
+	if err := repo.DB().Create(&log).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTaskCostSettlesByProviderTokens(t *testing.T) {
+	adapter, repo, wallet := newTaskCostEnv(t)
+	fundTestWallet(t, wallet, "u1", 100)
+	seedTokenPriceRule(t, repo, "rule-text", 1_000_000)
+
+	// 提交时按 maxTokens=2000 预估 2 积分。
+	reservation, err := adapter.ReserveTaskCost(textCostRequest("u1", "task-token", 2000))
+	if err != nil {
+		t.Fatalf("冻结失败: %v", err)
+	}
+	if reservation.EstimatedCredits != 2 {
+		t.Fatalf("预估应为 2，得到 %d", reservation.EstimatedCredits)
+	}
+
+	// 上游实际只用了 900 token，结算应按真实用量扣 1 积分。
+	seedTaskUsageReceipt(t, repo, "task-token", 400, 500)
+	if err := adapter.SettleTaskCost(localtask.CostSettleRequest{UserID: "u1", TaskID: "task-token", Reason: "完成"}); err != nil {
+		t.Fatalf("结算失败: %v", err)
+	}
+	account, _ := wallet.Account("u1")
+	if account.Balance != 99 || account.Frozen != 0 {
+		t.Fatalf("按真实 token 结算后应为 99/0，得到 %d/%d", account.Balance, account.Frozen)
+	}
+	var stored model.TaskCostCharge
+	if err := repo.DB().First(&stored, "task_id = ? AND attempt = ?", "task-token", 1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.ActualCredits != 1 || stored.SettlementSource != "provider_usage" || stored.ActualQuantity != 1 {
+		t.Fatalf("结算审计不符: %#v", stored)
+	}
+}
+
+func TestTaskCostCapsRealUsageAtFrozenEstimate(t *testing.T) {
+	adapter, repo, wallet := newTaskCostEnv(t)
+	fundTestWallet(t, wallet, "u1", 100)
+	seedTokenPriceRule(t, repo, "rule-text", 1_000_000)
+
+	if _, err := adapter.ReserveTaskCost(textCostRequest("u1", "task-cap", 1000)); err != nil {
+		t.Fatalf("冻结失败: %v", err)
+	}
+	// 上游报了 5000 token（5 积分），但冻结只有 1，必须按冻结封顶。
+	seedTaskUsageReceipt(t, repo, "task-cap", 2000, 3000)
+	if err := adapter.SettleTaskCost(localtask.CostSettleRequest{UserID: "u1", TaskID: "task-cap"}); err != nil {
+		t.Fatalf("结算失败: %v", err)
+	}
+	account, _ := wallet.Account("u1")
+	if account.Balance != 99 || account.Frozen != 0 {
+		t.Fatalf("超预估必须封顶在 1 积分，得到 %d/%d", account.Balance, account.Frozen)
+	}
+	var stored model.TaskCostCharge
+	if err := repo.DB().First(&stored, "task_id = ? AND attempt = ?", "task-cap", 1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !stored.CappedAtEstimate || stored.ActualQuantity != 5 {
+		t.Fatalf("应记录封顶与真实用量: %#v", stored)
+	}
+}
+
+func TestTaskCostFallsBackToEstimateWithoutUsage(t *testing.T) {
+	adapter, repo, wallet := newTaskCostEnv(t)
+	fundTestWallet(t, wallet, "u1", 100)
+	seedTokenPriceRule(t, repo, "rule-text", 1_000_000)
+
+	if _, err := adapter.ReserveTaskCost(textCostRequest("u1", "task-nousage", 2000)); err != nil {
+		t.Fatalf("冻结失败: %v", err)
+	}
+	// 没有任何上游用量回执：保持冻结预估，不猜数。
+	if err := adapter.SettleTaskCost(localtask.CostSettleRequest{UserID: "u1", TaskID: "task-nousage"}); err != nil {
+		t.Fatalf("结算失败: %v", err)
+	}
+	account, _ := wallet.Account("u1")
+	if account.Balance != 98 || account.Frozen != 0 {
+		t.Fatalf("无用量回执应按预估 2 结算，得到 %d/%d", account.Balance, account.Frozen)
+	}
+	var stored model.TaskCostCharge
+	if err := repo.DB().First(&stored, "task_id = ? AND attempt = ?", "task-nousage", 1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.SettlementSource != "estimate" || stored.CappedAtEstimate {
+		t.Fatalf("应按预估结算: %#v", stored)
 	}
 }
 
@@ -278,11 +407,11 @@ func TestTaskCostLeavesLocalExecutorsAndUnboundTasksFree(t *testing.T) {
 
 func TestTaskCostCapabilityMapping(t *testing.T) {
 	cases := map[string]string{
-		"canvas_image":             "image",
-		"canvas_video":             "video",
-		"video_generation":         "video",
-		"canvas_text":              "text",
-		"canvas_audio":             "audio",
+		"canvas_image":               "image",
+		"canvas_video":               "video",
+		"video_generation":           "video",
+		"canvas_text":                "text",
+		"canvas_audio":               "audio",
 		model.TaskTypeTimelineRender: "local",
 		model.TaskTypeDepthCapture:   "local",
 	}

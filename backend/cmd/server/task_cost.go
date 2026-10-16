@@ -136,17 +136,87 @@ func (a *taskCostAdapter) SettleTaskCost(request localtask.CostSettleRequest) er
 	if err != nil || !ok {
 		return err
 	}
-	actual := request.ActualCredits
-	if actual <= 0 {
-		actual = charge.EstimatedCredits
-	}
-	if _, err := a.credits.SettleAttempt(charge.UserID, charge.TaskID, charge.Attempt, charge.EstimatedCredits, actual); err != nil {
+	settlement := a.settlement(charge, request.ActualCredits)
+	if _, err := a.credits.SettleAttempt(charge.UserID, charge.TaskID, charge.Attempt, charge.EstimatedCredits, settlement.ActualCredits); err != nil {
 		return err
 	}
-	if _, err := a.repo.SettleTaskCostCharge(charge.TaskID, charge.Attempt, actual, a.now()); err != nil {
+	settlement.At = a.now()
+	if _, err := a.repo.SettleTaskCostCharge(charge.TaskID, charge.Attempt, settlement); err != nil {
 		return err
 	}
 	return nil
+}
+
+// settlement decides what a succeeded task actually costs. A caller-supplied
+// override wins; otherwise the provider's own usage receipts are re-priced
+// against the frozen snapshot. Anything unmeasurable falls back to the frozen
+// estimate, and real usage above the freeze is capped at the freeze so a user
+// is never charged more than the amount authorized at submit time.
+func (a *taskCostAdapter) settlement(charge *model.TaskCostCharge, override int64) repository.TaskCostSettlement {
+	estimate := repository.TaskCostSettlement{
+		ActualCredits:  charge.EstimatedCredits,
+		ActualQuantity: charge.Quantity,
+		Source:         "estimate",
+	}
+	if override > 0 {
+		return repository.TaskCostSettlement{
+			ActualCredits:  override,
+			ActualQuantity: charge.Quantity,
+			Source:         "caller",
+			Capped:         override > charge.EstimatedCredits,
+		}
+	}
+	usage, err := a.repo.TaskUsageSummary(charge.TaskID)
+	if err != nil {
+		return estimate
+	}
+	quantity, ok := taskUsageQuantity(charge.BillingMode, usage)
+	if !ok {
+		return estimate
+	}
+	computed, err := credits.CalculateCredits(charge.UnitPriceMicrocredits, quantity, charge.MinimumChargeCredits)
+	if err != nil || computed <= 0 {
+		return estimate
+	}
+	if computed > charge.EstimatedCredits {
+		return repository.TaskCostSettlement{
+			ActualCredits:  charge.EstimatedCredits,
+			ActualQuantity: quantity,
+			Source:         "provider_usage",
+			Capped:         true,
+		}
+	}
+	return repository.TaskCostSettlement{
+		ActualCredits:  computed,
+		ActualQuantity: quantity,
+		Source:         "provider_usage",
+	}
+}
+
+// taskUsageQuantity maps a billing mode onto the real quantity behind it. A
+// mode with no measurable provider signal reports ok=false so settlement keeps
+// the frozen estimate instead of guessing.
+func taskUsageQuantity(mode string, usage repository.TaskUsageSummary) (int64, bool) {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "per_1k_tokens":
+		total := usage.InputTokens + usage.OutputTokens
+		if !usage.UsageAvailable || total <= 0 {
+			return 0, false
+		}
+		return int64(math.Ceil(float64(total) / 1000.0)), true
+	case "per_second":
+		if usage.VideoSeconds <= 0 {
+			return 0, false
+		}
+		return int64(usage.VideoSeconds), true
+	case "per_image":
+		if usage.MediaCount <= 0 {
+			return 0, false
+		}
+		return int64(usage.MediaCount), true
+	default:
+		return 0, false
+	}
 }
 
 // ReleaseTaskCost returns the outstanding freeze for a failed or cancelled task.

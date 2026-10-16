@@ -497,6 +497,13 @@ func calculateCredits(unitPriceMicrocredits int64, quantity int64, minimum int64
 	return credits, nil
 }
 
+// CalculateCredits exposes the quote math to settlement. A frozen pricing
+// snapshot can therefore re-price real usage without reloading the rule, so
+// an operator editing prices later never rewrites an in-flight task's bill.
+func CalculateCredits(unitPriceMicrocredits, quantity, minimum int64) (int64, error) {
+	return calculateCredits(unitPriceMicrocredits, quantity, minimum)
+}
+
 func normalizePricingKind(raw string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case model.PricingKindModel:

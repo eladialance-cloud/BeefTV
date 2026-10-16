@@ -20,24 +20,30 @@ type TaskCostCharge struct {
 	TaskID string `json:"taskId" gorm:"size:64;index;uniqueIndex:idx_task_cost_attempt,priority:1"`
 	UserID string `json:"userId" gorm:"size:36;index"`
 	// Attempt is 1 for the initial submission and increments per user retry.
-	Attempt               int        `json:"attempt" gorm:"uniqueIndex:idx_task_cost_attempt,priority:2"`
-	TaskType              string     `json:"taskType" gorm:"size:64"`
-	Capability            string     `json:"capability" gorm:"size:32"`
-	BillingMode           string     `json:"billingMode" gorm:"size:32"`
-	RuleID                string     `json:"ruleId" gorm:"size:36;index"`
-	RuleKind              string     `json:"ruleKind" gorm:"size:32"`
-	RuleName              string     `json:"ruleName" gorm:"size:120"`
-	SelectorKey           string     `json:"-" gorm:"size:500"`
-	Quantity              int64      `json:"quantity"`
-	UnitPriceMicrocredits int64      `json:"unitPriceMicrocredits"`
-	MinimumChargeCredits  int64      `json:"minimumChargeCredits"`
-	EstimatedCredits      int64      `json:"estimatedCredits"`
-	ActualCredits         int64      `json:"actualCredits"`
-	Status                string     `json:"status" gorm:"size:24;index"`
-	ReleaseReason         string     `json:"releaseReason,omitempty" gorm:"type:text"`
-	CreatedAt             time.Time  `json:"createdAt" gorm:"index"`
-	SettledAt             *time.Time `json:"settledAt,omitempty"`
-	ReleasedAt            *time.Time `json:"releasedAt,omitempty"`
+	Attempt               int    `json:"attempt" gorm:"uniqueIndex:idx_task_cost_attempt,priority:2"`
+	TaskType              string `json:"taskType" gorm:"size:64"`
+	Capability            string `json:"capability" gorm:"size:32"`
+	BillingMode           string `json:"billingMode" gorm:"size:32"`
+	RuleID                string `json:"ruleId" gorm:"size:36;index"`
+	RuleKind              string `json:"ruleKind" gorm:"size:32"`
+	RuleName              string `json:"ruleName" gorm:"size:120"`
+	SelectorKey           string `json:"-" gorm:"size:500"`
+	Quantity              int64  `json:"quantity"`
+	UnitPriceMicrocredits int64  `json:"unitPriceMicrocredits"`
+	MinimumChargeCredits  int64  `json:"minimumChargeCredits"`
+	EstimatedCredits      int64  `json:"estimatedCredits"`
+	ActualCredits         int64  `json:"actualCredits"`
+	// Settlement audit for usage-based rules: the real quantity read from the
+	// provider's usage receipts, which source produced it, and whether the
+	// frozen estimate had to cap it.
+	ActualQuantity   int64      `json:"actualQuantity"`
+	SettlementSource string     `json:"settlementSource,omitempty" gorm:"size:32"`
+	CappedAtEstimate bool       `json:"cappedAtEstimate"`
+	Status           string     `json:"status" gorm:"size:24;index"`
+	ReleaseReason    string     `json:"releaseReason,omitempty" gorm:"type:text"`
+	CreatedAt        time.Time  `json:"createdAt" gorm:"index"`
+	SettledAt        *time.Time `json:"settledAt,omitempty"`
+	ReleasedAt       *time.Time `json:"releasedAt,omitempty"`
 }
 
 func (TaskCostCharge) TableName() string { return "task_cost_charges" }
