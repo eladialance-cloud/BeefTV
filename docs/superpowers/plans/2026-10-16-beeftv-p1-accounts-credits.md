@@ -200,6 +200,32 @@
 
 **未做（P2）**：充值商品、支付订单、回调验签与幂等、对账、退款；支付宝电脑网站支付与微信 Native 的实际适配器。
 
+## Task 7: 充值商品与支付订单（本次完成）
+
+**目标**：把「选套餐 → 生成订单 → 入账」的主链跑通，并预留网关回调接口。
+
+**Files:**
+- Create: `backend/internal/model/models_topup.go`、`backend/internal/payment/topup.go`、`backend/internal/payment/topup_test.go`
+- Create: `backend/internal/hostedapi/topup.go`、`backend/internal/hostedapi/topup_test.go`
+- Modify: `backend/internal/repository/payment.go`、`backend/internal/database/hosted_schema.go`、`backend/cmd/server/main.go`
+- Modify: `web-hosted/app.js`、`web-hosted/format.js`、测试与 README
+
+**行为**
+
+- `topup_products`：套餐名、价格（分）、基础积分、赠送积分、默认渠道、上架、排序。
+- `payment_orders`：下单时快照套餐名、金额、总积分，写死入账幂等键 `topup:<orderId>:recharge`。
+- 用户：看上架套餐、下单、看自己的订单；未登录返回 401。
+- 管理员：增删改查套餐、看全部订单、确认线下收款（入账）、关闭未支付订单；非管理员 403。
+- `payment_notifications`：回调按 `(provider, providerNotificationId)` 去重，重复回调不重复入账；入账失败保留未处理痕迹。
+- 入账复用 `credits.Service.Recharge`，同一订单幂等键只产生一条不可变流水。
+
+- [x] **Step 1: 写失败测试**：套餐隐藏下架、下单快照价格、停用商品拒单、确认入账只一次、重复确认幂等、普通用户被拒、关闭幂等、回调去重、未知订单 404、入账失败不改状态。
+- [x] **Step 2: 实现模型、仓储、服务、路由与前端三页（充值 / 充值商品 / 支付订单）。**
+- [x] **Step 3: 运行**：`go vet ./internal/payment/ ./internal/hostedapi/ ./internal/repository/ ./internal/database/ ./cmd/server/`；`go test ./internal/payment/ ./internal/hostedapi/`；`node --test test/format.test.js test/api-paths.test.js`。
+- [x] **Step 4: 提交**：`feat(backend): 充值 - 新增商品订单与确认入账`。
+
+**未做（P2 下半段）**：支付宝电脑网站支付 / 微信 Native 的拉起支付参数生成、回调验签与解密、订单超时自动关闭、退款与对账。
+
 ## 自检结论
 
 - **Spec 覆盖**：覆盖设计文档第 3 节（角色与分层）、第 4 节（积分体系）、第 7 节第 2/3 类（积分与用户后台）、第 8 节第 1/2 条（认证与租户隔离）。

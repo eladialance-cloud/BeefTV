@@ -57,7 +57,9 @@ func registerHostedRoutes(hosted bootstrap.HostedContext) error {
 		hosted.Service.RequireAdmin)
 
 	// 支付：渠道密钥加密落库，后台只增删改查，不下发明文。
-	paymentConfig := payment.New(hosted.Repository, hosted.DataDir)
+	paymentConfig := payment.New(hosted.Repository, creditRecharger{service: creditService}, hosted.DataDir)
+	hostedapi.RegisterTopupRoutes(hosted.API, paymentConfig, creditActor)
+	hostedapi.RegisterTopupAdminRoutes(hosted.API, paymentConfig, creditActor, hosted.Service.RequireAdmin)
 	hostedapi.RegisterPaymentAdminRoutes(hosted.API, paymentConfig,
 		hostedapi.SessionUserResolver(authService),
 		hosted.Service.RequireAdmin)
@@ -65,6 +67,15 @@ func registerHostedRoutes(hosted bootstrap.HostedContext) error {
 }
 
 // openHostedAuthMiddleware 是服务端专属装配点：它在业务路由注册前把会话认证
+// creditRecharger 把积分服务的充值方法适配成支付包所需的窄接口：订单入账只关心
+// 幂等结果是否成功，不需要把账本明细带回业务层。
+type creditRecharger struct{ service *credits.Service }
+
+func (a creditRecharger) Recharge(userID string, amount int64, operatorID string, reason string, idempotencyKey string) error {
+	_, err := a.service.Recharge(userID, amount, operatorID, reason, idempotencyKey)
+	return err
+}
+
 // 中间件挂到整个 router 上，使托管形态的每个请求都标记为「需登录」，而桌面
 // 入口不引用这里，依赖图与行为保持原样。
 func openHostedAuthMiddleware(repo *repository.Repository, _ string) ([]gin.HandlerFunc, error) {

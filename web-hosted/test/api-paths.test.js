@@ -30,6 +30,10 @@ describe("托管工作台的接口契约", () => {
             "/admin/credits/adjust",
             "/admin/storage-locations",
             "/admin/payment-providers",
+            "/topup/products",
+            "/topup/orders",
+            "/admin/topup-products",
+            "/admin/payment-orders",
         ]) {
             expect(source).toContain(`"${path}`);
         }

@@ -61,6 +61,31 @@ func (f *fakeRepo) AppendAdminAudit(event *model.AdminAuditEvent) error {
 	return nil
 }
 
+// 支付配置用例不涉及充值订单，下面几个方法只用于满足 Repository 接口。
+func (f *fakeRepo) TopupProducts() ([]model.TopupProduct, error) { return nil, nil }
+func (f *fakeRepo) TopupProduct(id string) (*model.TopupProduct, error) {
+	return nil, gorm.ErrRecordNotFound
+}
+func (f *fakeRepo) CreateTopupProduct(item *model.TopupProduct) error     { return nil }
+func (f *fakeRepo) UpdateTopupProduct(item *model.TopupProduct) error     { return gorm.ErrRecordNotFound }
+func (f *fakeRepo) DeleteTopupProduct(id string) error                    { return gorm.ErrRecordNotFound }
+func (f *fakeRepo) PaymentOrders(limit int) ([]model.PaymentOrder, error) { return nil, nil }
+func (f *fakeRepo) PaymentOrdersByUser(userID string, limit int) ([]model.PaymentOrder, error) {
+	return nil, nil
+}
+func (f *fakeRepo) PaymentOrder(id string) (*model.PaymentOrder, error) {
+	return nil, gorm.ErrRecordNotFound
+}
+func (f *fakeRepo) CreatePaymentOrder(item *model.PaymentOrder) error { return nil }
+func (f *fakeRepo) UpdatePaymentOrder(item *model.PaymentOrder) error {
+	return gorm.ErrRecordNotFound
+}
+func (f *fakeRepo) CreatePaymentNotification(item *model.PaymentNotification) (bool, error) {
+	return true, nil
+}
+
+func (f *fakeRepo) UpdatePaymentNotification(item *model.PaymentNotification) error { return nil }
+
 func adminActor() *model.User {
 	return &model.User{ID: "admin-1", Role: model.UserRoleAdmin}
 }
@@ -68,7 +93,7 @@ func adminActor() *model.User {
 func newServiceForTest(t *testing.T) (*Service, *fakeRepo) {
 	t.Helper()
 	repo := &fakeRepo{}
-	return New(repo, t.TempDir()), repo
+	return New(repo, nil, t.TempDir()), repo
 }
 
 func validInput() Input {

@@ -14,7 +14,7 @@ function expect(actual) {
     };
 }
 
-import { buildAdjustIdempotencyKey, escapeHtml, formatPoints, formatTime, kindLabel, resolveApiBase, stageLabel } from "../format.js";
+import { buildAdjustIdempotencyKey, escapeHtml, formatFenToYuan, formatPoints, formatTime, kindLabel, resolveApiBase, stageLabel } from "../format.js";
 
 describe("escapeHtml", () => {
     test("渲染用户数据前转义 HTML 元字符", () => {
@@ -82,6 +82,17 @@ describe("resolveApiBase", () => {
 });
 
 describe("buildAdjustIdempotencyKey", () => {
+describe("formatFenToYuan", () => {
+    test("分金额渲染成两位小数的元", () => {
+        expect(formatFenToYuan(990)).toBe("9.90");
+        expect(formatFenToYuan(1)).toBe("0.01");
+    });
+
+    test("空值渲染成 0.00", () => {
+        expect(formatFenToYuan(undefined)).toBe("0.00");
+    });
+});
+
     test("同一用户同一时间戳加随机数仍是不同键", () => {
         const first = buildAdjustIdempotencyKey("u1", 1000, "aaa");
         const second = buildAdjustIdempotencyKey("u1", 1000, "bbb");

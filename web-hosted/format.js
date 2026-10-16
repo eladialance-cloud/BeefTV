@@ -24,6 +24,13 @@ export function kindLabel(kind) {
     return KIND_LABELS[kind] || kind || "-";
 }
 
+export function formatFenToYuan(fen) {
+    const value = Number(fen);
+    if (!Number.isFinite(value)) return "0.00";
+    return (value / 100).toFixed(2);
+}
+
+
 export function stageLabel(stage) {
     return STAGE_LABELS[stage] || stage || "-";
 }

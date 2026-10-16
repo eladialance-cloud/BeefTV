@@ -118,9 +118,18 @@ func TestMigrateHostedSchemaCreatesPaymentProviderTables(t *testing.T) {
 	if !db.Migrator().HasTable("payment_provider_configs") {
 		t.Fatal("托管迁移必须建出 payment_provider_configs")
 	}
+	for _, table := range []string{"topup_products", "payment_orders", "payment_notifications"} {
+		if !db.Migrator().HasTable(table) {
+			t.Fatalf("托管迁移必须建出 %s", table)
+		}
+	}
 	for _, item := range LocalModels() {
 		if _, ok := item.(*model.PaymentProviderConfig); ok {
 			t.Fatal("payment_provider_configs 属于托管表，不得进入 LocalModels")
+		}
+		switch item.(type) {
+		case *model.TopupProduct, *model.PaymentOrder, *model.PaymentNotification:
+			t.Fatalf("充值订单表属于托管表，不得进入 LocalModels: %T", item)
 		}
 	}
 }

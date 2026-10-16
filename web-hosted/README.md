@@ -74,8 +74,16 @@ python -m http.server 4173
 | 新增支付渠道（管理员） | POST | `/api/admin/payment-providers` |
 | 修改支付渠道（管理员） | PUT | `/api/admin/payment-providers/:id` |
 | 删除支付渠道（管理员） | DELETE | `/api/admin/payment-providers/:id` |
+| 充值套餐（用户） | GET | `/api/topup/products` |
+| 我的充值订单 | GET | `/api/topup/orders` |
+| 创建充值订单 | POST | `/api/topup/orders` |
+| 充值商品（管理员） | GET/POST | `/api/admin/topup-products` |
+| 修改/删除商品（管理员） | PUT/DELETE | `/api/admin/topup-products/:id` |
+| 支付订单（管理员） | GET | `/api/admin/payment-orders` |
+| 确认支付（管理员） | POST | `/api/admin/payment-orders/:id/mark-paid` |
+| 关闭订单（管理员） | POST | `/api/admin/payment-orders/:id/close` |
 
 ## 还没做
 
-- 充值下单与支付回调：支付渠道配置已能管理，但还没接支付宝/微信的下单与回调接口。
+- 真实网关对接：充值商品、订单、管理员确认入账已能跑，但还没接支付宝/微信的「拉起支付」与「回调验签」。
 - 模型价格规则：等 Task 5b 的价格表落地。

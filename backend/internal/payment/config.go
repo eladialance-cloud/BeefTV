@@ -23,18 +23,41 @@ type Repository interface {
 	CreatePaymentProviderConfig(*model.PaymentProviderConfig) error
 	UpdatePaymentProviderConfig(*model.PaymentProviderConfig) error
 	DeletePaymentProviderConfig(id string) error
+	TopupProducts() ([]model.TopupProduct, error)
+	TopupProduct(id string) (*model.TopupProduct, error)
+	CreateTopupProduct(*model.TopupProduct) error
+	UpdateTopupProduct(*model.TopupProduct) error
+	DeleteTopupProduct(id string) error
+	PaymentOrders(limit int) ([]model.PaymentOrder, error)
+	PaymentOrdersByUser(userID string, limit int) ([]model.PaymentOrder, error)
+	PaymentOrder(id string) (*model.PaymentOrder, error)
+	CreatePaymentOrder(*model.PaymentOrder) error
+	UpdatePaymentOrder(*model.PaymentOrder) error
+	CreatePaymentNotification(*model.PaymentNotification) (bool, error)
+	UpdatePaymentNotification(*model.PaymentNotification) error
 	AppendAdminAudit(*model.AdminAuditEvent) error
 }
 
 // Service is the admin-facing owner of payment-channel configuration.
 type Service struct {
 	repo    Repository
+	credits CreditRecharger
 	dataDir string
 	now     func() time.Time
 }
 
-func New(repo Repository, dataDir string) *Service {
-	return &Service{repo: repo, dataDir: dataDir, now: time.Now}
+// CreditRecharger is the slice of the credit service the payment flow needs:
+// an idempotent top-up. Keeping it narrow lets tests use a stub while
+// production injects the real credits.Service.
+type CreditRecharger interface {
+	Recharge(userID string, amount int64, operatorID string, reason string, idempotencyKey string) error
+}
+
+// New wires payment configuration and the recharge flow. credits may be nil
+// when only provider configuration is used; marking an order paid then fails
+// closed instead of silently dropping the points.
+func New(repo Repository, credits CreditRecharger, dataDir string) *Service {
+	return &Service{repo: repo, credits: credits, dataDir: dataDir, now: func() time.Time { return time.Now().UTC() }}
 }
 
 // Input is the admin write payload. Secrets are write-only: leaving them empty
