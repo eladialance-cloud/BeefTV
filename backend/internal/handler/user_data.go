@@ -211,8 +211,13 @@ func registerUserDataRoutes(r *gin.RouterGroup, svc *app.Service) {
 			return
 		}
 		if delivery.RedirectURL != "" {
-			// CDN 或对象存储直连地址允许安全短期缓存
-			c.Header("Cache-Control", "private, max-age=86400, stale-while-revalidate=3600")
+			// CDN 地址稳定，可以缓存这次跳转；短时签名直连地址一旦被缓存，浏览器
+			// 会继续复用已过期的地址，必须 no-store。
+			if delivery.RedirectStable {
+				c.Header("Cache-Control", "private, max-age=86400, stale-while-revalidate=3600")
+			} else {
+				c.Header("Cache-Control", "no-store")
+			}
 			c.Header("Referrer-Policy", "no-referrer")
 			c.Header("X-Content-Type-Options", "nosniff")
 			c.Redirect(http.StatusTemporaryRedirect, delivery.RedirectURL)

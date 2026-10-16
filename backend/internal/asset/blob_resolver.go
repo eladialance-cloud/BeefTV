@@ -3,6 +3,7 @@ package asset
 import (
 	"errors"
 	"strings"
+	"time"
 
 	"infinite-canvas/backend/internal/model"
 )
@@ -11,6 +12,20 @@ import (
 // its process-wide write-lock identity.
 type namedBlobStore interface {
 	WriteSpace() string
+}
+
+// directDeliveryTTL bounds how long a browser may use a direct download
+// address. It only has to outlive the redirect that hands it out.
+const directDeliveryTTL = 15 * time.Minute
+
+// directURLResolver reports the optional direct-download capability of the
+// installed resolver. A local workspace has none, so it keeps proxying.
+func (s *Service) directURLResolver() (DirectURLResolver, bool) {
+	if s == nil || s.resolver == nil {
+		return nil, false
+	}
+	signer, ok := s.resolver.(DirectURLResolver)
+	return signer, ok
 }
 
 // singleLocationResolver is the local-workspace resolver: every resource lives

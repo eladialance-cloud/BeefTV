@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // stubS3 是最小的进程内 S3 兼容端点：只实现 Put/Get/Head/Delete，
@@ -143,5 +144,58 @@ func TestNewS3BlobStoreRejectsIncompleteTarget(t *testing.T) {
 	}
 	if _, err := NewS3BlobStore(Target{Bucket: "beeftv"}, t.TempDir()); err == nil {
 		t.Fatal("缺少接入点与 Region 必须报错")
+	}
+}
+
+func TestS3BlobStoreDirectURLPrefersStableCDN(t *testing.T) {
+	server, _ := newStubS3(t)
+	store, err := NewS3BlobStore(Target{
+		Provider: "s3", Endpoint: server.URL, Region: "us-east-1", Bucket: "beeftv",
+		AccessKeyID: "ak", SecretAccessKey: "sk", Prefix: "uploads", PathStyle: true,
+		CDNBaseURL: "https://cdn.example.com/",
+	}, t.TempDir())
+	if err != nil {
+		t.Fatalf("构造读写后端失败: %v", err)
+	}
+
+	url, stable, err := store.DirectURL("a/b c.txt", time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("DirectURL 失败: %v", err)
+	}
+	if !stable {
+		t.Fatal("CDN 地址应当标记为稳定地址")
+	}
+	if url != "https://cdn.example.com/uploads/a/b%20c.txt" {
+		t.Fatalf("CDN 地址不符，得到 %q", url)
+	}
+	if strings.Contains(url, "X-Amz-Signature") {
+		t.Fatal("CDN 地址不应包含签名参数")
+	}
+}
+
+func TestS3BlobStoreDirectURLSignsShortLivedAddress(t *testing.T) {
+	server, _ := newStubS3(t)
+	store, err := NewS3BlobStore(Target{
+		Provider: "s3", Endpoint: server.URL, Region: "us-east-1", Bucket: "beeftv",
+		AccessKeyID: "ak", SecretAccessKey: "sk", Prefix: "uploads", PathStyle: true,
+	}, t.TempDir())
+	if err != nil {
+		t.Fatalf("构造读写后端失败: %v", err)
+	}
+
+	url, stable, err := store.DirectURL("a/b.txt", time.Now().Add(15*time.Minute))
+	if err != nil {
+		t.Fatalf("DirectURL 失败: %v", err)
+	}
+	if stable {
+		t.Fatal("签名地址不是稳定地址，跳转响应不得缓存")
+	}
+	for _, want := range []string{"uploads/a/b.txt", "X-Amz-Signature=", "X-Amz-Expires="} {
+		if !strings.Contains(url, want) {
+			t.Fatalf("签名地址缺少 %q: %s", want, url)
+		}
+	}
+	if _, _, err := store.DirectURL("a/b.txt", time.Now().Add(-time.Minute)); err == nil {
+		t.Fatal("非正有效期必须报错")
 	}
 }

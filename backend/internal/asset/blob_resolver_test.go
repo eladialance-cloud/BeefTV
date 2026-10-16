@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/repository"
@@ -85,6 +86,8 @@ type routedResolver struct {
 	local  BlobStore
 	remote BlobStore
 	target BlobTarget
+	direct string
+	stable bool
 }
 
 func (r *routedResolver) DefaultTarget() (BlobTarget, error) { return r.target, nil }
@@ -100,6 +103,10 @@ func (r *routedResolver) Resolve(target BlobTarget) (BlobStore, error) {
 
 func (r *routedResolver) LocalOnly() bool    { return false }
 func (r *routedResolver) WriteSpace() string { return "routed-test" }
+
+func (r *routedResolver) DirectURL(BlobTarget, string, time.Time) (string, bool, error) {
+	return r.direct, r.stable, nil
+}
 
 func newRoutedDomain(t *testing.T, resolver BlobResolver) (*Service, *repository.Repository, string) {
 	t.Helper()
@@ -242,5 +249,65 @@ func TestRoutedDomainAllowsCloudRows(t *testing.T) {
 	}
 	if !strings.Contains(resolver.WriteSpace(), "routed") {
 		t.Fatalf("resolver write space = %q", resolver.WriteSpace())
+	}
+}
+
+func cloudResource() *model.Resource {
+	return &model.Resource{
+		ID: "resource-cloud", UserID: "user-1", Kind: "image", Status: model.ResourceStatusReady,
+		Provider: "s3", StorageSettingID: "storage-1",
+		ObjectKey: "users/user-1/image/cloud.png",
+	}
+}
+
+func TestPrepareDeliveryPrefersDirectURLWhenAvailable(t *testing.T) {
+	resolver := &routedResolver{
+		local: NewFileStore(t.TempDir()), remote: newMemoryBlobStore(),
+		direct: "https://cdn.example.com/users/user-1/image/cloud.png", stable: true,
+	}
+	svc, _, _ := newRoutedDomain(t, resolver)
+
+	delivery, err := svc.PrepareOwnedDelivery("user-1", cloudResource(), ResourceDeliveryOptions{})
+	if err != nil {
+		t.Fatalf("PrepareOwnedDelivery error = %v", err)
+	}
+	if delivery.RedirectURL != resolver.direct || !delivery.RedirectStable {
+		t.Fatalf("delivery = %#v, want the stable direct URL", delivery)
+	}
+	if delivery.Stream != nil {
+		t.Fatal("直接跳转时不得同时打开代理流")
+	}
+}
+
+func TestPrepareDeliveryForceProxySkipsDirectURL(t *testing.T) {
+	resolver := &routedResolver{
+		local: NewFileStore(t.TempDir()), remote: newMemoryBlobStore(),
+		direct: "https://cdn.example.com/x.png", stable: true,
+	}
+	svc, _, _ := newRoutedDomain(t, resolver)
+
+	delivery, err := svc.PrepareOwnedDelivery("user-1", cloudResource(), ResourceDeliveryOptions{ForceProxy: true})
+	if err != nil {
+		t.Fatalf("PrepareOwnedDelivery error = %v", err)
+	}
+	if delivery.RedirectURL != "" || delivery.Stream != nil {
+		t.Fatalf("force proxy must stay on this server: %#v", delivery)
+	}
+}
+
+func TestPrepareDeliveryWithoutDirectCapabilityProxies(t *testing.T) {
+	store := newMemoryBlobStore()
+	svc := NewService(Dependencies{Blobs: store})
+	resource := &model.Resource{
+		ID: "resource-local", UserID: "user-1", Kind: "image", Status: model.ResourceStatusReady,
+		ObjectKey: "users/user-1/image/local.png",
+	}
+
+	delivery, err := svc.PrepareOwnedDelivery("user-1", resource, ResourceDeliveryOptions{})
+	if err != nil {
+		t.Fatalf("PrepareOwnedDelivery error = %v", err)
+	}
+	if delivery.RedirectURL != "" || delivery.Stream != nil {
+		t.Fatalf("本地存储没有直连能力，应当回落同源代理: %#v", delivery)
 	}
 }

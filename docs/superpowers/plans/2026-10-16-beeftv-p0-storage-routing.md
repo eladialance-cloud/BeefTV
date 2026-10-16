@@ -168,9 +168,23 @@ type BlobResolver interface {
 
 **测试**：`internal/asset/blob_resolver_test.go`（单位置语义 / 写锁身份 / 路由写读删 + Range）、`internal/storageconfig/router_test.go`（回落、默认目标、不可用默认、缓存与失效、未知/停用拒绝）、`internal/app/resource_storage_route_test.go`（注入后字节真进外部存储、桌面仍拒绝云端行）。
 
+
+## 浏览器直连出口（2026-10-16 补交付）
+
+在上面读写路由落地后，继续把「浏览器不再经本机中转」这一条补上。改动仍是外科小手术：
+
+- `asset.DirectURLResolver`（可选端口）：`DirectURL(target, objectKey, expires) (url, stable, err)`。单位置本地解析器不实现它，所以桌面行为零变化。
+- `storageconfig.Router` 实现该端口：CDN 已配置时返回稳定公开地址（`stable=true`），否则用 `s3.PresignClient` 出短时签名地址（`stable=false`）；本地行答空串，继续走代理。
+- `S3BlobStore` 新增 `DirectURL`：CDN 优先，对象 key 按路径转义拼接；无 CDN 时签名 GET，`expires` 非正时报错。
+- `ResourceDelivery` 新增 `RedirectStable`；`handler/user_data.go` 的 `/resources/:id/file` 据此选择 `Cache-Control`：稳定地址可缓存一天，短时签名地址 `no-store`，避免浏览器复用过期地址。
+- `PrepareOwnedDelivery` 默认先尝试直连，拿到地址就 307 跳转；`ForceProxy` 是逃生口，强制同源代理（浏览器需要 Blob URL 或统一鉴权头时用）。
+
+**测试**：`internal/storageconfig/s3blobstore_test.go`（CDN 优先且不带签名参数、签名地址带 `X-Amz-Signature/X-Amz-Expires`、非正有效期报错）、`internal/asset/blob_resolver_test.go`（直连优先返回稳定地址、`ForceProxy` 不跳转、无直连能力时回落代理）。
+
+**验证**：`go build ./...` 通过；新增用例全绿；`TestDesktopDependencyBoundary` 与 `TestLocalSourceExcludesHostedContentVerticals` 通过。
+
 ## 本计划仍未覆盖（下一步）
 
-1. **浏览器出口的 CDN 直连**：现在托管资源仍经本机 `/resources/:id/file` 代理（S3 后端会先落到临时文件）。`PrepareOwnedDelivery` 还没有返回签名直连 `RedirectURL`，大文件带宽成本高。
-2. **`BlobStore.Open` 的端口形状**：仍是 `*os.File`，所以 S3 读取必经「下载到临时文件」。真正流式 Range 需把端口改宽为 `io.ReadSeekCloser` + `Stat`。
-3. **跨进程写锁**：`WriteSpace()` 只是进程内锁表身份。托管多副本部署下同一 uploadKey 的并发写需要分布式锁或数据库唯一约束兜底。
-4. **历史资源跨存储迁移**：老对象留在原存储，按记录读取；批量搬迁尚未立项。
+1. **`BlobStore.Open` 的端口形状**：仍是 `*os.File`，所以 S3 读取必经「下载到临时文件」（直连出口只解决了浏览器侧，服务端仍需读字节时仍走临时文件）。真正流式 Range 需把端口改宽为 `io.ReadSeekCloser` + `Stat`。
+2. **跨进程写锁**：`WriteSpace()` 只是进程内锁表身份。托管多副本部署下同一 uploadKey 的并发写需要分布式锁或数据库唯一约束兜底。
+3. **历史资源跨存储迁移**：老对象留在原存储，按记录读取；批量搬迁尚未立项。

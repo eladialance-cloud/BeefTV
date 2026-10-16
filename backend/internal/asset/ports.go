@@ -50,6 +50,17 @@ type BlobResolver interface {
 	WriteSpace() string
 }
 
+// DirectURLResolver is the optional capability a BlobResolver implements when
+// its stores can hand browsers a direct download address, so large files do
+// not have to be proxied through this server.
+type DirectURLResolver interface {
+	// DirectURL returns a browser-usable URL for objectKey, or "" when this
+	// location cannot serve one directly. stable reports whether the URL is a
+	// long-lived public address (a CDN) rather than a short-lived signed one,
+	// which decides whether the redirect may be cached.
+	DirectURL(target BlobTarget, objectKey string, expires time.Time) (url string, stable bool, err error)
+}
+
 // Repository is the durable metadata port for resource rows, deletion outbox,
 // and live-reference snapshots. Adapters wrap repository.Repository.
 type Repository interface {

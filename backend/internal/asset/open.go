@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"infinite-canvas/backend/internal/kernel"
 	"infinite-canvas/backend/internal/model"
@@ -136,6 +137,18 @@ func (s *Service) PrepareOwnedDelivery(userID string, resource *model.Resource, 
 		return nil, ResourceNotLocal()
 	}
 	_ = userID
-	_ = options
+	// forceProxy 是调用方明确要求同源读取（浏览器需要 Blob URL，或需要统一
+	// 鉴权头）时的逃生口：此时绝不跳转到外部地址。
+	if !options.ForceProxy {
+		if signer, ok := s.directURLResolver(); ok {
+			url, stable, err := signer.DirectURL(blobTargetFor(resource), resource.ObjectKey, time.Now().Add(directDeliveryTTL))
+			if err != nil {
+				return nil, err
+			}
+			if url != "" {
+				return &ResourceDelivery{Resource: resource, RedirectURL: url, RedirectStable: stable}, nil
+			}
+		}
+	}
 	return &ResourceDelivery{Resource: resource}, nil
 }

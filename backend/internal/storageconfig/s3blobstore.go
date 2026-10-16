@@ -2,9 +2,11 @@ package storageconfig
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,10 +43,37 @@ func newS3Client(target Target, timeout time.Duration) *s3.Client {
 // Open 需要返回可 Seek 且可 Stat 的 *os.File，因此把对象取回本地临时文件后再交给
 // 调用方。这是当前的既定契约，换成流式 Range 读取需要先改宽端口。
 type S3BlobStore struct {
-	client  *s3.Client
-	bucket  string
-	prefix  string
-	tempDir string
+	client *s3.Client
+	bucket string
+	prefix string
+	// cdnBaseURL 非空时浏览器直连 CDN，不再签发临时地址。
+	cdnBaseURL string
+	tempDir    string
+}
+
+// DirectURL 返回浏览器可用的下载地址。配置了 CDN 时优先用它：该地址稳定，
+// 跳转响应可以缓存；否则签发短时 S3 GET 地址，跳转响应绝不能缓存。
+func (s *S3BlobStore) DirectURL(objectKey string, expires time.Time) (string, bool, error) {
+	if s == nil {
+		return "", false, errors.New("对象存储未初始化")
+	}
+	if base := strings.TrimSpace(s.cdnBaseURL); base != "" {
+		escaped := (&url.URL{Path: s.key(objectKey)}).EscapedPath()
+		return strings.TrimRight(base, "/") + "/" + strings.TrimLeft(escaped, "/"), true, nil
+	}
+	ttl := time.Until(expires)
+	if ttl <= 0 {
+		return "", false, errors.New("直连地址有效期必须为正")
+	}
+	request, err := s3.NewPresignClient(s.client).PresignGetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket), Key: aws.String(s.key(objectKey)),
+	}, func(options *s3.PresignOptions) {
+		options.Expires = ttl
+	})
+	if err != nil {
+		return "", false, fmt.Errorf("签发对象存储直连地址失败: %w", err)
+	}
+	return request.URL, false, nil
 }
 
 // NewS3BlobStore 用一条存储配置构造读写后端。tempDir 用于 Open 的暂存文件，
@@ -66,6 +95,7 @@ func NewS3BlobStore(target Target, tempDir string) (*S3BlobStore, error) {
 	return &S3BlobStore{
 		client: newS3Client(target, 0), bucket: strings.TrimSpace(target.Bucket),
 		prefix: strings.Trim(strings.TrimSpace(target.Prefix), "/"), tempDir: tempDir,
+		cdnBaseURL: strings.TrimSpace(target.CDNBaseURL),
 	}, nil
 }
 

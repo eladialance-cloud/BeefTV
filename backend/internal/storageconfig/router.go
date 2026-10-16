@@ -106,6 +106,26 @@ func (r *Router) Resolve(target localasset.BlobTarget) (localasset.BlobStore, er
 // LocalOnly is false: object storage is exactly what this router exists for.
 func (r *Router) LocalOnly() bool { return false }
 
+// blobSigner is the optional capability an object-storage backend offers when
+// it can hand out a browser-usable direct download address.
+type blobSigner interface {
+	DirectURL(objectKey string, expires time.Time) (string, bool, error)
+}
+
+// DirectURL asks the resource's own storage location for a browser-usable
+// address. Local rows answer "" so they keep flowing through this server.
+func (r *Router) DirectURL(target localasset.BlobTarget, objectKey string, expires time.Time) (string, bool, error) {
+	store, err := r.Resolve(target)
+	if err != nil {
+		return "", false, err
+	}
+	signer, ok := store.(blobSigner)
+	if !ok {
+		return "", false, nil
+	}
+	return signer.DirectURL(objectKey, expires)
+}
+
 // WriteSpace is the process-wide write-lock identity. Every Service sharing
 // this router serializes on the same workspace identity, which is what the
 // in-process lock table guaranteed for a shared FileStore root.
@@ -130,6 +150,7 @@ func (r *Router) storeFor(item *model.StorageLocation) (localasset.BlobStore, er
 	}
 	store, err := NewS3BlobStore(Target{
 		Provider: item.Provider, Endpoint: item.Endpoint, Region: item.Region, Bucket: item.Bucket,
+		CDNBaseURL:  item.CDNBaseURL,
 		AccessKeyID: item.AccessKeyID, SecretAccessKey: secret, Prefix: item.Prefix, PathStyle: item.PathStyle,
 	}, filepath.Join(r.dataDir, "storage-temp"))
 	if err != nil {
@@ -161,3 +182,6 @@ func normalizedProvider(provider string) string {
 
 // 编译期断言：Router 与资源域的存储解析端口一致。端口漂移会在这里失败。
 var _ localasset.BlobResolver = (*Router)(nil)
+
+// 编译期断言：Router 同时提供浏览器直连地址能力。
+var _ localasset.DirectURLResolver = (*Router)(nil)

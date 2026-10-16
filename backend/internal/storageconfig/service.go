@@ -232,6 +232,7 @@ func (s *Service) TestConnection(ctx context.Context, actor *model.User, id stri
 	if s.prober != nil {
 		probeErr = s.prober.Probe(ctx, Target{
 			Provider: item.Provider, Endpoint: item.Endpoint, Region: item.Region, Bucket: item.Bucket,
+			CDNBaseURL:  item.CDNBaseURL,
 			AccessKeyID: item.AccessKeyID, SecretAccessKey: secret, Prefix: item.Prefix, PathStyle: item.PathStyle,
 		})
 	}

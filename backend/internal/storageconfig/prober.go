@@ -11,6 +11,7 @@ type Target struct {
 	Endpoint        string
 	Region          string
 	Bucket          string
+	CDNBaseURL      string
 	AccessKeyID     string
 	SecretAccessKey string
 	Prefix          string
