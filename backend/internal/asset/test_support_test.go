@@ -100,3 +100,17 @@ func newTestDomain(t *testing.T) (*Service, *repository.Repository, string) {
 		DataDir:    dataDir,
 	}), repo, dataDir
 }
+
+// blobStoreOf exposes the exact byte store a single-location Service uses, so a
+// test can share it with a second Service or wrap it to inject write failures.
+func blobStoreOf(t *testing.T, svc *Service) BlobStore {
+	t.Helper()
+	if svc == nil || svc.resolver == nil {
+		t.Fatal("service has no blob resolver")
+	}
+	single, ok := svc.resolver.(*singleLocationResolver)
+	if !ok {
+		t.Fatal("service is not configured with a single-location blob store")
+	}
+	return single.store
+}

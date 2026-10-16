@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"infinite-canvas/backend/internal/app"
+	"infinite-canvas/backend/internal/asset"
 	"infinite-canvas/backend/internal/repository"
 
 	"github.com/gin-gonic/gin"
@@ -29,6 +30,10 @@ type Config struct {
 	// HostedRoutes 由服务端入口注入，用于挂载只在 hosted profile 存在的后台路由。
 	// bootstrap 不直接 import 托管包，桌面二进制的依赖图才能保持干净。
 	HostedRoutes func(HostedContext) error
+	// HostedBlobResolver 由服务端入口注入对象存储路由。桌面形态为 nil，资源
+	// 字节只落本机 FileStore；服务端形态在构造 app.Service 时注入，因为资源域
+	// 一旦交给调用方就不能再换后端。
+	HostedBlobResolver func(repo *repository.Repository, dataDir string) (asset.BlobResolver, error)
 }
 
 // HostedContext 是托管路由扩展能拿到的共享运行时对象。

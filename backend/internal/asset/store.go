@@ -131,18 +131,21 @@ func (s *Service) WriteObject(resource *model.Resource, fileName string, body io
 	if resource == nil {
 		return "", errors.New("资源不存在")
 	}
-	if s == nil || s.blobs == nil {
-		return "", errors.New("local resource store is not initialized")
+	target, store, err := s.defaultStore()
+	if err != nil {
+		return "", err
 	}
-	resource.Provider = "local"
-	resource.Endpoint = ""
-	resource.Bucket = ""
-	resource.StorageSettingID = ""
+	// The row records the location that actually holds the bytes: reads,
+	// retries and deletes resolve it later instead of assuming the default.
+	resource.Provider = normalizedProvider(target.Provider)
+	resource.Endpoint = strings.TrimSpace(target.Endpoint)
+	resource.Bucket = strings.TrimSpace(target.Bucket)
+	resource.StorageSettingID = strings.TrimSpace(target.SettingID)
 	resource.ETag = ""
 	if strings.TrimSpace(resource.ObjectKey) == "" {
 		resource.ObjectKey = ObjectKey(resource.UserID, resource.Kind, fileName, resource.MimeType, time.Now())
 	}
-	return "", s.blobs.Write(resource.ObjectKey, body)
+	return "", store.Write(resource.ObjectKey, body)
 }
 
 // Retry completes a FAILED or leftover PENDING upload under the same identity.
@@ -207,6 +210,8 @@ func (s *Service) RetryOwned(userID string, resourceID string, kind string, mime
 		return nil, UploadInProgress()
 	}
 	kind = NormalizeKind(kind, mimeType)
+	// 遗留行记录的是别的存储位置（数据库跨部署搬运，或默认存储换过）：重试不
+	// 复用旧 key，因为本次写入会落到当前默认存储上，复用会覆写不属于它的对象。
 	if resource.Provider != "local" {
 		resource.Provider = "local"
 		resource.Endpoint = ""

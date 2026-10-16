@@ -20,7 +20,8 @@ func NewFileStore(dataDir string) *FileStore {
 	return &FileStore{root: canonicalPath(filepath.Join(strings.TrimSpace(dataDir), "resources"))}
 }
 
-func (s *FileStore) writeSpace() string {
+// WriteSpace is the process-wide write-lock identity for this store root.
+func (s *FileStore) WriteSpace() string {
 	if s == nil {
 		return ""
 	}

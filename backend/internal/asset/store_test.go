@@ -174,7 +174,7 @@ func TestReadySaveFailureLeavesRecoverableFailedState(t *testing.T) {
 	failing := &readySaveFailRepo{Repository: base.repo, remaining: 1}
 	svc := NewService(Dependencies{
 		Repository: failing,
-		Blobs:      base.blobs,
+		Blobs:      blobStoreOf(t, base),
 		Quota:      nopQuota{},
 		Lifecycle:  nopLifecycle{},
 	})
@@ -258,7 +258,7 @@ func TestRetryReleasesQuotaAfterFailure(t *testing.T) {
 	base, repo, _ := newTestDomain(t)
 	svc := NewService(Dependencies{
 		Repository: base.repo,
-		Blobs:      base.blobs,
+		Blobs:      blobStoreOf(t, base),
 		Quota:      quota,
 		Lifecycle:  nopLifecycle{},
 	})
@@ -286,7 +286,7 @@ func TestUploadReadySaveFailureKeepsOwnPendingAndDaily(t *testing.T) {
 	failing := &readySaveFailRepo{Repository: base.repo, remaining: 1}
 	svc := NewService(Dependencies{
 		Repository: failing,
-		Blobs:      base.blobs,
+		Blobs:      blobStoreOf(t, base),
 		Quota:      quota,
 		Lifecycle:  nopLifecycle{},
 		DataDir:    dataDir,
@@ -348,7 +348,7 @@ func TestStoreGeneratedUsesIndependentIdentities(t *testing.T) {
 	failing := &readySaveFailRepo{Repository: base.repo, remaining: 1}
 	svc := NewService(Dependencies{
 		Repository: failing,
-		Blobs:      base.blobs,
+		Blobs:      blobStoreOf(t, base),
 		Quota:      quota,
 		Lifecycle:  nopLifecycle{},
 		DataDir:    dataDir,
@@ -372,7 +372,7 @@ func TestRetryOwnedFailedReadySaveKeepsDailyUntilPromote(t *testing.T) {
 	failing := &readySaveFailRepo{Repository: base.repo, remaining: 1}
 	svc := NewService(Dependencies{
 		Repository: failing,
-		Blobs:      base.blobs,
+		Blobs:      blobStoreOf(t, base),
 		Quota:      quota,
 		Lifecycle:  nopLifecycle{},
 	})
@@ -440,7 +440,7 @@ func TestRetryMismatchLeavesFailedUnchanged(t *testing.T) {
 	base, repo, _ := newTestDomain(t)
 	svc := NewService(Dependencies{
 		Repository: base.repo,
-		Blobs:      base.blobs,
+		Blobs:      blobStoreOf(t, base),
 		Quota:      quota,
 		Lifecycle:  nopLifecycle{},
 	})

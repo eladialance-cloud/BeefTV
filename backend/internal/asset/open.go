@@ -52,7 +52,7 @@ func (s *Service) OpenPublicRange(id string, rangeHeader string) (*ResourceStrea
 	if err != nil {
 		return nil, kernel.Forbidden("匿名下载链接无效")
 	}
-	if resource.Provider != "local" {
+	if s.LocalOnly() && normalizedProvider(resource.Provider) != "local" {
 		return nil, kernel.Forbidden("匿名下载链接无效")
 	}
 	return s.OpenOwnedRange(resource.UserID, resource, rangeHeader)
@@ -65,13 +65,11 @@ func (s *Service) OpenOwnedRange(userID string, resource *model.Resource, rangeH
 	if resource.Status != model.ResourceStatusReady {
 		return nil, ResourceNotReady()
 	}
-	if resource.Provider != "local" {
-		return nil, ResourceNotLocal()
+	store, err := s.storeFor(resource)
+	if err != nil {
+		return nil, err
 	}
-	if s == nil || s.blobs == nil {
-		return nil, errors.New("local resource store is not initialized")
-	}
-	body, err := s.blobs.Open(resource.ObjectKey)
+	body, err := store.Open(resource.ObjectKey)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +132,7 @@ func (s *Service) PrepareOwnedDelivery(userID string, resource *model.Resource, 
 	if resource.Status != model.ResourceStatusReady {
 		return nil, ResourceNotReady()
 	}
-	if resource.Provider != "local" {
+	if s.LocalOnly() && normalizedProvider(resource.Provider) != "local" {
 		return nil, ResourceNotLocal()
 	}
 	_ = userID

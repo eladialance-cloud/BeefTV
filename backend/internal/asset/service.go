@@ -84,7 +84,7 @@ type ResourceDelivery = assets.ResourceDelivery
 // Service owns durable local resource rules.
 type Service struct {
 	repo         Repository
-	blobs        BlobStore
+	resolver     BlobResolver
 	quota        Quota
 	lifecycle    Lifecycle
 	localStorage bool
@@ -96,12 +96,17 @@ type Service struct {
 func NewService(deps Dependencies) *Service {
 	svc := &Service{
 		repo:         deps.Repository,
-		blobs:        deps.Blobs,
+		resolver:     deps.Resolver,
 		quota:        deps.Quota,
 		lifecycle:    deps.Lifecycle,
 		localStorage: deps.LocalStorage,
 		dataDir:      strings.TrimSpace(deps.DataDir),
 		sessions:     map[string]*chunkedUploadSession{},
+	}
+	// A caller that only supplies one store keeps the desktop shape: the
+	// single-location resolver refuses cloud rows instead of guessing.
+	if svc.resolver == nil && deps.Blobs != nil {
+		svc.resolver = SingleLocation(deps.Blobs)
 	}
 	if svc.dataDir != "" {
 		svc.abandonStaleSessions()
@@ -110,11 +115,9 @@ func NewService(deps Dependencies) *Service {
 }
 
 func (s *Service) writeSpace() string {
-	if s != nil {
-		if store, ok := s.blobs.(*FileStore); ok && store != nil {
-			if root := strings.TrimSpace(store.writeSpace()); root != "" {
-				return root
-			}
+	if s != nil && s.resolver != nil {
+		if space := strings.TrimSpace(s.resolver.WriteSpace()); space != "" {
+			return space
 		}
 	}
 	return fmt.Sprintf("service:%p", s)
@@ -184,10 +187,11 @@ func (s *Service) validateListedResource(resource *model.Resource) error {
 	if resource.Status != model.ResourceStatusReady {
 		return nil
 	}
-	if s.blobs == nil {
+	store, err := s.storeFor(resource)
+	if err != nil {
 		return fmt.Errorf("资源 %s 的本地文件缺失", resource.ID)
 	}
-	if err := s.blobs.Exists(resource.ObjectKey); err != nil {
+	if err := store.Exists(resource.ObjectKey); err != nil {
 		return fmt.Errorf("资源 %s 的本地文件缺失", resource.ID)
 	}
 	return nil

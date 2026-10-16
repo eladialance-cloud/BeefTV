@@ -261,10 +261,14 @@ func applyRecoveredMetadata(resource *model.Resource, artifact RecoveredArtifact
 }
 
 func (s *Service) objectPresent(resource *model.Resource) bool {
-	if s == nil || s.blobs == nil || resource == nil || strings.TrimSpace(resource.ObjectKey) == "" {
+	if s == nil || resource == nil || strings.TrimSpace(resource.ObjectKey) == "" {
 		return false
 	}
-	return s.blobs.Exists(resource.ObjectKey) == nil
+	store, err := s.storeFor(resource)
+	if err != nil {
+		return false
+	}
+	return store.Exists(resource.ObjectKey) == nil
 }
 
 func invokeArtifactRestore(restore ArtifactRestore) (RecoveredArtifact, error) {

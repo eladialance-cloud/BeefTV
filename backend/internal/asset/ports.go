@@ -10,12 +10,44 @@ import (
 )
 
 // BlobStore is the crash-safe byte owner for local resources. FileStore is the
-// canonical implementation; callers must not write resource files beside it.
+// canonical local implementation; a hosted deployment adds an
+// object-storage implementation. Callers must not write resource files beside
+// it.
 type BlobStore interface {
 	Write(objectKey string, body io.Reader) error
 	Open(objectKey string) (*os.File, error)
 	Delete(objectKey string) error
 	Exists(objectKey string) error
+}
+
+// BlobTarget is the durable identity of the storage location that owns a
+// resource's bytes. It is persisted on the resource row so reads, retries and
+// deletions keep resolving the same backend after the default location is
+// switched. An empty Provider means a legacy local row.
+type BlobTarget struct {
+	SettingID string
+	Provider  string
+	Endpoint  string
+	Bucket    string
+}
+
+// BlobResolver maps a storage location to its byte store. A local workspace
+// installs a single-location resolver over its FileStore; a hosted deployment
+// installs one backed by the platform object-storage configuration.
+// Implementations must be safe for concurrent use.
+type BlobResolver interface {
+	// DefaultTarget is the location new writes must use.
+	DefaultTarget() (BlobTarget, error)
+	// Resolve returns the byte store for a recorded target. It must report an
+	// error instead of silently falling back when the location is unknown.
+	Resolve(target BlobTarget) (BlobStore, error)
+	// LocalOnly reports whether this resolver serves bytes on this machine
+	// exclusively. A local workspace is local-only; a hosted deployment with
+	// object storage is not, and cloud rows are legitimate there.
+	LocalOnly() bool
+	// WriteSpace is the process-wide write-lock identity shared by every
+	// Service using this resolver. Empty falls back to a per-Service identity.
+	WriteSpace() string
 }
 
 // Repository is the durable metadata port for resource rows, deletion outbox,
@@ -83,8 +115,11 @@ type Lifecycle interface {
 
 // Dependencies constructs the durable resource domain.
 type Dependencies struct {
-	Repository   Repository
-	Blobs        BlobStore
+	Repository Repository
+	Blobs      BlobStore
+	// Resolver takes precedence over Blobs when set: it routes bytes across
+	// storage locations instead of pinning every resource to one store.
+	Resolver     BlobResolver
 	Quota        Quota
 	Lifecycle    Lifecycle
 	LocalStorage bool

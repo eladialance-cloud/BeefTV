@@ -77,7 +77,7 @@ func TestRecoverOwnedFailedReadySaveThenPromoteWithoutRestore(t *testing.T) {
 	failing := &readySaveFailRepo{Repository: base.repo, remaining: 1}
 	svc := NewService(Dependencies{
 		Repository: failing,
-		Blobs:      base.blobs,
+		Blobs:      blobStoreOf(t, base),
 		Quota:      nopQuota{},
 		Lifecycle:  nopLifecycle{},
 	})
@@ -226,7 +226,7 @@ func TestRecoverOwnedCreateReservesQuotaReplayDoesNot(t *testing.T) {
 	quota := &recordingQuota{}
 	svc := NewService(Dependencies{
 		Repository: base.repo,
-		Blobs:      base.blobs,
+		Blobs:      blobStoreOf(t, base),
 		Quota:      quota,
 		Lifecycle:  nopLifecycle{},
 	})
@@ -386,7 +386,7 @@ func TestRecoverOwnedUsesGeneratedQuotaNotUploadLimit(t *testing.T) {
 	quota := &limitQuota{uploadExclusive: 8, generatedExclusive: 33}
 	svc := NewService(Dependencies{
 		Repository: base.repo,
-		Blobs:      base.blobs,
+		Blobs:      blobStoreOf(t, base),
 		Quota:      quota,
 		Lifecycle:  nopLifecycle{},
 	})
@@ -418,7 +418,7 @@ func TestRecoverOwnedFailedReadySaveKeepsQuotaUntilPromote(t *testing.T) {
 	failing := &readySaveFailRepo{Repository: base.repo, remaining: 1}
 	svc := NewService(Dependencies{
 		Repository: failing,
-		Blobs:      base.blobs,
+		Blobs:      blobStoreOf(t, base),
 		Quota:      quota,
 		Lifecycle:  nopLifecycle{},
 	})
@@ -521,7 +521,7 @@ func TestRecoverOwnedReadyMissingDoesNotReserveQuota(t *testing.T) {
 	quota := &recordingQuota{}
 	svc := NewService(Dependencies{
 		Repository: base.repo,
-		Blobs:      base.blobs,
+		Blobs:      blobStoreOf(t, base),
 		Quota:      quota,
 		Lifecycle:  nopLifecycle{},
 	})

@@ -70,7 +70,8 @@ type Service struct {
 	canvas                   *canvas.Service
 	assistantTurns           *assistantturns.Service
 	assets                   *localasset.Service
-	assetsOnce               sync.Once
+	assetsMu                 sync.Mutex
+	resourceResolver         localasset.BlobResolver
 	appearance               *appearance.Service
 	appearanceOnce           sync.Once
 	diagnostics              *diagnostics.Service
@@ -125,6 +126,14 @@ func NewLocal(repo *repository.Repository, dataDir string) *Service {
 	return newService(repo, dataDir, serviceOptions{mode: serviceModeLocal})
 }
 
+// NewLocalWithBlobResolver keeps the local kernel and protocol surface but
+// routes resource bytes through a byte-store router. The hosted server uses it:
+// it runs the same kernel as the desktop app over a shared database and adds
+// the platform object-storage backend on top.
+func NewLocalWithBlobResolver(repo *repository.Repository, dataDir string, resolver localasset.BlobResolver) *Service {
+	return newService(repo, dataDir, serviceOptions{mode: serviceModeLocal, blobResolver: resolver})
+}
+
 // IsLocalMode is the canonical runtime-profile check for service-layer code.
 // Storage behavior is derived from the profile, but callers should use this
 // method instead of inferring the runtime mode from a storage detail.
@@ -144,6 +153,9 @@ const (
 
 type serviceOptions struct {
 	mode serviceMode
+	// blobResolver routes resource bytes across storage locations. Nil keeps
+	// the single local FileStore shape.
+	blobResolver localasset.BlobResolver
 }
 
 func newService(repo *repository.Repository, dataDir string, options serviceOptions) *Service {
@@ -157,6 +169,7 @@ func newService(repo *repository.Repository, dataDir string, options serviceOpti
 		pluginRuntime, pluginRuntimeErr = newPluginRuntimeWithStore(dataDir, plugins.NewRepositoryStore(repo))
 	}
 	service := &Service{repo: repo, dataDir: dataDir, mode: options.mode, activeCancels: make(map[string]context.CancelFunc), coordinator: coordinator, localResourceStorage: localResourceStorage, pluginRuntime: pluginRuntime, pluginRuntimeErr: pluginRuntimeErr, workerID: newID(), routeCatalogTTL: 30 * time.Second, routeCatalogMaxStale: 5 * time.Minute}
+	service.resourceResolver = options.blobResolver
 	service.taskTerminalCoordinator = newTaskTerminalCoordinator(service)
 	service.taskRouteExecutor = newTaskRouteExecutor(service)
 	service.taskWorkerCoordinator = newTaskWorkerCoordinator(service)
@@ -166,14 +179,7 @@ func newService(repo *repository.Repository, dataDir string, options serviceOpti
 	service.projects = localproject.New(repo, localproject.Dependencies{})
 	service.canvas = canvas.New(service.repo, newCanvasHost(service))
 	service.assistantTurns = assistantturns.New(assistantturns.NewStore(service.repo), assistantCanvasFactory{service}, filepath.Join(dataDir, "assistant-turns"))
-	service.assets = localasset.NewService(localasset.Dependencies{
-		DataDir:      dataDir,
-		Repository:   localasset.NewRepository(repo),
-		Blobs:        localasset.NewFileStore(dataDir),
-		Quota:        resourceQuota{svc: service},
-		Lifecycle:    resourceLifecycle{svc: service},
-		LocalStorage: localResourceStorage,
-	})
+	service.assets = localasset.NewService(service.resourceDependencies())
 	service.tasks = localtask.NewService(localtask.NewStore(service.repo), service.taskDependencies())
 	if service.IsLocalMode() {
 		service.platform = platform.NewLocal(service.repo, coordinator, newPlatformHost(service))

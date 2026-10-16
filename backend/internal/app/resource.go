@@ -40,27 +40,37 @@ func (s *Service) resourceDomain() *localasset.Service {
 	if s == nil {
 		return localasset.NewService(localasset.Dependencies{})
 	}
-	s.assetsOnce.Do(func() {
-		if s.assets != nil {
-			return
-		}
-		s.assets = localasset.NewService(localasset.Dependencies{
-			Repository:   localasset.NewRepository(s.repo),
-			Blobs:        localasset.NewFileStore(s.dataDir),
-			Quota:        resourceQuota{svc: s},
-			Lifecycle:    resourceLifecycle{svc: s},
-			LocalStorage: s.localResourceStorage || s.IsLocalMode(),
-			DataDir:      s.dataDir,
-		})
-	})
+	s.assetsMu.Lock()
+	defer s.assetsMu.Unlock()
+	if s.assets == nil {
+		s.assets = localasset.NewService(s.resourceDependencies())
+	}
 	return s.assets
+}
+
+// resourceDependencies is the single construction recipe for the resource
+// domain. The constructor and the hosted resolver injection share it so the
+// two cannot drift apart.
+func (s *Service) resourceDependencies() localasset.Dependencies {
+	return localasset.Dependencies{
+		Repository:   localasset.NewRepository(s.repo),
+		Blobs:        localasset.NewFileStore(s.dataDir),
+		Resolver:     s.resourceResolver,
+		Quota:        resourceQuota{svc: s},
+		Lifecycle:    resourceLifecycle{svc: s},
+		LocalStorage: s.localResourceStorage || s.IsLocalMode(),
+		DataDir:      s.dataDir,
+	}
 }
 
 // localResourceUnavailable is the single storage-boundary check used by all
 // read and delivery paths. A local workspace must never fall through to a
 // historical OSS provider, even if an old database row still contains one.
 func (s *Service) localResourceUnavailable(resource *model.Resource) bool {
-	return s.localResourceStorage && (resource == nil || resource.Provider != "local")
+	if resource == nil {
+		return s.resourceDomain().LocalOnly()
+	}
+	return s.resourceDomain().LocalOnly() && resource.Provider != "" && resource.Provider != "local"
 }
 
 func (s *Service) Resources(userID string, limit int) ([]model.Resource, error) {
@@ -87,7 +97,7 @@ func (s *Service) directResourceURL(resource *model.Resource, expiresAt time.Tim
 	if resource.Status != model.ResourceStatusReady {
 		return "", BadAuthRequest("资源尚未上传完成")
 	}
-	if resource.Provider != "local" {
+	if s.resourceDomain().LocalOnly() && resource.Provider != "" && resource.Provider != "local" {
 		return "", BadAuthRequest("资源不在本地存储中")
 	}
 	return s.signedPublicResourceURL(resource, expiresAt)
@@ -285,7 +295,7 @@ func (s *Service) OpenPublicResourceRange(id string, expires string, signature s
 	if err != nil {
 		return nil, Forbidden("匿名下载链接无效")
 	}
-	if resource.Provider != "local" {
+	if s.resourceDomain().LocalOnly() && resource.Provider != "" && resource.Provider != "local" {
 		return nil, Forbidden("匿名下载链接无效")
 	}
 	if err := s.verifyPublicResourceSignature(resource.ID, expires, signature); err != nil {

@@ -278,23 +278,25 @@ func (s *Service) deleteTrustedObject(userID string, resource *model.Resource) e
 	if protected {
 		return errors.New("资源仍被画布历史版本引用")
 	}
-	provider := strings.ToLower(strings.TrimSpace(resource.Provider))
-	if s.localStorage && provider != "" && provider != "local" {
+	if s.LocalOnly() && normalizedProvider(resource.Provider) != "local" {
 		return nil
 	}
-	switch provider {
-	case "", "local":
-		return s.DeleteLocalObject(resource.ObjectKey)
-	default:
-		return nil
+	store, err := s.storeFor(resource)
+	if err != nil {
+		return err
 	}
+	if err := store.Delete(resource.ObjectKey); err != nil {
+		return fmt.Errorf("删除本地资源文件失败：%w", err)
+	}
+	return nil
 }
 
 func (s *Service) DeleteLocalObject(objectKey string) error {
-	if s == nil || s.blobs == nil {
-		return errors.New("local resource store is not initialized")
+	_, store, err := s.defaultStore()
+	if err != nil {
+		return err
 	}
-	if err := s.blobs.Delete(objectKey); err != nil {
+	if err := store.Delete(objectKey); err != nil {
 		return fmt.Errorf("删除本地资源文件失败：%w", err)
 	}
 	return nil

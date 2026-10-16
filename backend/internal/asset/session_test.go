@@ -104,7 +104,7 @@ func TestChunkedUploadReadySaveFailureDoesNotReturnReadyOrRefund(t *testing.T) {
 	failing := &readySaveFailRepo{Repository: base.repo, remaining: 1}
 	svc := NewService(Dependencies{
 		Repository: failing,
-		Blobs:      base.blobs,
+		Blobs:      blobStoreOf(t, base),
 		Quota:      quota,
 		Lifecycle:  nopLifecycle{},
 		DataDir:    dataDir,
@@ -180,7 +180,7 @@ func TestChunkedUploadStartReservesAgainstGeneratedPending(t *testing.T) {
 	quota := &ledgerQuota{}
 	svc := NewService(Dependencies{
 		Repository: base.repo,
-		Blobs:      base.blobs,
+		Blobs:      blobStoreOf(t, base),
 		Quota:      quota,
 		Lifecycle:  nopLifecycle{},
 		DataDir:    dataDir,
@@ -328,7 +328,7 @@ func TestChunkedUploadPutRejectedWhileCompleting(t *testing.T) {
 	base, _, dataDir := newTestDomain(t)
 	announced := make(chan struct{})
 	hold := make(chan struct{})
-	blobs := &blockingBlob{BlobStore: base.blobs, announced: announced, hold: hold}
+	blobs := &blockingBlob{BlobStore: blobStoreOf(t, base), announced: announced, hold: hold}
 	svc := NewService(Dependencies{
 		Repository: base.repo,
 		Blobs:      blobs,
@@ -516,7 +516,7 @@ func TestChunkedUploadRetryAfterDroppedSessionFilesCommits(t *testing.T) {
 	failing := &readySaveFailRepo{Repository: base.repo, remaining: 1}
 	svc := NewService(Dependencies{
 		Repository: failing,
-		Blobs:      base.blobs,
+		Blobs:      blobStoreOf(t, base),
 		Quota:      quota,
 		Lifecycle:  nopLifecycle{},
 		DataDir:    dataDir,

@@ -168,7 +168,7 @@ func (s *S3BlobStore) PruneTempFiles(olderThan time.Duration) {
 }
 
 // 编译期断言：S3BlobStore 与 asset.BlobStore 的端口形状一致。
-// 这里不 import asset，以免托管包进入桌面依赖图；若签名漂移，接入处会编译失败。
+// 这里写成匿名接口，让本文件不依赖资源域；接入处（router.go）另有真实断言。
 var _ interface {
 	Write(string, io.Reader) error
 	Open(string) (*os.File, error)

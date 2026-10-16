@@ -14,10 +14,12 @@ import (
 	"syscall"
 	"time"
 
+	"infinite-canvas/backend/internal/asset"
 	"infinite-canvas/backend/internal/bootstrap"
 	_ "infinite-canvas/backend/internal/database/postgresdriver"
 	"infinite-canvas/backend/internal/hostedapi"
 	"infinite-canvas/backend/internal/model"
+	"infinite-canvas/backend/internal/repository"
 	"infinite-canvas/backend/internal/storageconfig"
 
 	"github.com/gin-gonic/gin"
@@ -41,6 +43,13 @@ func registerHostedRoutes(hosted bootstrap.HostedContext) error {
 	return nil
 }
 
+// openHostedBlobResolver 是服务端专属装配点：资源字节按管理后台配置的对象存储
+// 路由，未配置默认存储时回落本机 FileStore。桌面入口不引用这里，因此桌面二进制
+// 的依赖图仍然不含对象存储 SDK。
+func openHostedBlobResolver(repo *repository.Repository, dataDir string) (asset.BlobResolver, error) {
+	return storageconfig.NewRouter(repo, dataDir, asset.NewFileStore(dataDir)), nil
+}
+
 func run(ctx context.Context) error {
 	dataDir := env("CANVAS_BACKEND_DATA_DIR", "data")
 	autoMigrate, err := envBool("CANVAS_AUTO_MIGRATE", true)
@@ -56,15 +65,16 @@ func run(ctx context.Context) error {
 		return err
 	}
 	runtime, err := bootstrap.Open(ctx, bootstrap.Config{
-		Profile:          bootstrap.ProfileServer,
-		DataDir:          dataDir,
-		DatabaseDriver:   env("CANVAS_DATABASE_DRIVER", "sqlite"),
-		DatabaseURL:      os.Getenv("DATABASE_URL"),
-		ListenAddr:       env("CANVAS_BACKEND_ADDR", ":8080"),
-		AutoMigrate:      autoMigrate,
-		HostedRoutes:     registerHostedRoutes,
-		ShutdownTimeout:  workerTimeout,
-		RouterMiddleware: []gin.HandlerFunc{corsMiddleware},
+		Profile:            bootstrap.ProfileServer,
+		DataDir:            dataDir,
+		DatabaseDriver:     env("CANVAS_DATABASE_DRIVER", "sqlite"),
+		DatabaseURL:        os.Getenv("DATABASE_URL"),
+		ListenAddr:         env("CANVAS_BACKEND_ADDR", ":8080"),
+		AutoMigrate:        autoMigrate,
+		HostedRoutes:       registerHostedRoutes,
+		HostedBlobResolver: openHostedBlobResolver,
+		ShutdownTimeout:    workerTimeout,
+		RouterMiddleware:   []gin.HandlerFunc{corsMiddleware},
 	})
 	if err != nil {
 		return err

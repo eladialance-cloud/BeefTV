@@ -94,11 +94,11 @@ func TestFileStoreAliasesShareWriteSpace(t *testing.T) {
 	first := NewFileStore(dataDir)
 	second := NewFileStore(trailing)
 	third := NewFileStore(alias)
-	if first.writeSpace() == "" {
+	if first.WriteSpace() == "" {
 		t.Fatal("canonical write space is empty")
 	}
-	if first.writeSpace() != second.writeSpace() || first.writeSpace() != third.writeSpace() {
-		t.Fatalf("writeSpace dataDir=%q trailing=%q alias=%q", first.writeSpace(), second.writeSpace(), third.writeSpace())
+	if first.WriteSpace() != second.WriteSpace() || first.WriteSpace() != third.WriteSpace() {
+		t.Fatalf("writeSpace dataDir=%q trailing=%q alias=%q", first.WriteSpace(), second.WriteSpace(), third.WriteSpace())
 	}
 }
 

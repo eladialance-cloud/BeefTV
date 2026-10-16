@@ -114,7 +114,19 @@ func Open(_ context.Context, raw Config) (result *Runtime, openErr error) {
 	}
 
 	repo := repository.New(db)
-	svc := app.NewLocal(repo, cfg.DataDir)
+	// 服务端形态在构造资源域之前注入对象存储路由：资源域一旦交给调用方，
+	// 就不能再换字节后端。桌面形态不注入，只落本机 FileStore。
+	var svc *app.Service
+	if cfg.Profile == ProfileServer && cfg.HostedBlobResolver != nil {
+		resolver, resolverErr := cfg.HostedBlobResolver(repo, cfg.DataDir)
+		if resolverErr != nil {
+			cleanupDB()
+			return nil, resolverErr
+		}
+		svc = app.NewLocalWithBlobResolver(repo, cfg.DataDir, resolver)
+	} else {
+		svc = app.NewLocal(repo, cfg.DataDir)
+	}
 	cleanupService := func() {
 		_ = svc.Close()
 		cleanupDB()
