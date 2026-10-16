@@ -85,7 +85,7 @@
 
 - [x] 画布隔离（`internal/handler/hosted_isolation_test.go`）：在真实路由 + 托管 schema 下建两个用户，验证无会话 401、Bob 读 Alice 画布返回 404 且响应不含其内容、列表不泄露、同 ID 覆盖写被拒且原内容不变。
 - [ ] 把同样的隔离用例扩到素材、任务、项目维度的其他资源类型。
-- [ ] 补上管理员账号的回归：`CANVAS_BOOTSTRAP_ADMIN_USERNAME` 注册后能进后台，普通用户被 403。
+- [x] 管理员账号回归（`internal/hostedapi/admin_bootstrap_test.go`）：走完整链路——注册拿会话 cookie → 后续请求解析会话 → 后台路由按角色拦截。引导账号能进后台；普通注册用户 403；无会话 401；普通用户仍可读自己的钱包。
 
 ## Task 4: 积分账本与三段式扣费
 
