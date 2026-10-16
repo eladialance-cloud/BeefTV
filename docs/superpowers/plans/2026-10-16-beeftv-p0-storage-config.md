@@ -257,3 +257,5 @@ git commit -m "feat(backend): 对象存储 - 新增托管存储配置模型与�
 3. **写锁身份 `writeSpace()`**：`internal/asset/service.go` 通过类型断言 `*FileStore` 取串行化锁的标识；换成路由型 BlobStore 后这个标识会退化成 `service:%p`，失去跨 Service 实例的串行化保证，必须重新设计锁身份。
 
 另需：`model.Resource.StorageSettingID` 已存在且带索引，但 `WriteObject` 目前把它固定写成空串，切换时要按默认存储回填；历史资源继续按记录的位置读取，跨存储迁移另行立项。
+
+**已完成**：这三条已由 `2026-10-16-beeftv-p0-storage-routing.md`（Plan 3）落地——新增 `asset.BlobResolver` 端口，本地与托管分别由 `SingleLocation` 与 `storageconfig.Router` 实现，读写删全部改走解析器，`WriteObject` 按解析结果回填落库地点。
