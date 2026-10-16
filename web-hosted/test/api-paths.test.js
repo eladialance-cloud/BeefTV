@@ -30,6 +30,7 @@ describe("托管工作台的接口契约", () => {
             "/admin/credits/adjust",
             "/admin/storage-locations",
             "/admin/payment-providers",
+            "/admin/pricing",
             "/topup/products",
             "/topup/orders",
             "/admin/topup-products",
@@ -37,6 +38,11 @@ describe("托管工作台的接口契约", () => {
         ]) {
             expect(source).toContain(`"${path}`);
         }
+    });
+
+    test("价格规则后台使用统一 CRUD 路径", () => {
+        expect(source).toContain("/admin/pricing/${encodeURIComponent(kind)}");
+        expect(source).toContain("/admin/pricing/${encodeURIComponent(kind)}/${encodeURIComponent(id)}");
     });
 
     test("每次请求都带登录 cookie", () => {

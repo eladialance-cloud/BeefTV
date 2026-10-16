@@ -60,6 +60,8 @@ func HostedModels() []any {
 		&model.StorageLocation{},
 		// 积分账户与不可变流水（托管专属）。
 		&model.CreditAccount{}, &model.CreditLedgerEntry{},
+		// 模型价格规则（托管专属，运行时按生效区间解析）。
+		&model.ModelPricing{}, &model.ChannelModelPriceTier{}, &model.LogicalModelPriceSKU{},
 		// 支付渠道配置（托管专属，密钥加密存储）。
 		&model.PaymentProviderConfig{},
 		// 充值商品、支付订单与回调记录（托管专属）。

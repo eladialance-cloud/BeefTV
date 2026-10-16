@@ -4,7 +4,7 @@
 // web/src 的本地桌面边界测试明确禁止托管 UI 入口出现在桌面产物里。
 // 本文件零依赖，直接以静态站点方式部署即可（见 README.md）。
 
-import { buildAdjustIdempotencyKey, escapeHtml, formatFenToYuan, formatPoints, formatTime, kindLabel, resolveApiBase, stageLabel } from "./format.js";
+import { buildAdjustIdempotencyKey, escapeHtml, formatFenToYuan, formatMicrocredits, formatPoints, formatTime, kindLabel, resolveApiBase, stageLabel } from "./format.js";
 
 const API_BASE = (() => {
     const injected = typeof window !== "undefined" && typeof window.__BEEFTV_API_BASE__ === "string" ? window.__BEEFTV_API_BASE__ : "";
@@ -19,6 +19,7 @@ const ROUTES = [
     { path: "/admin/orders", label: "支付订单", section: "管理后台", icon: "list", admin: true },
     { path: "/admin/storage", label: "对象存储", section: "管理后台", icon: "database", admin: true },
     { path: "/admin/payment", label: "支付渠道", section: "管理后台", icon: "card", admin: true },
+    { path: "/admin/pricing", label: "模型价格", section: "管理后台", icon: "tag", admin: true },
 ];
 
 const state = {
@@ -28,6 +29,8 @@ const state = {
     accounts: [],
     storage: [],
     payments: [],
+    pricingKind: "logical_sku",
+    pricingRules: [],
     topupProducts: [],
     topupOrders: [],
     adminProducts: [],
@@ -99,6 +102,7 @@ async function logout() {
         state.accounts = [];
         state.storage = [];
         state.payments = [];
+        state.pricingRules = [];
         state.topupProducts = [];
         state.topupOrders = [];
         state.adminProducts = [];
@@ -161,6 +165,21 @@ async function deletePayment(id) {
     return api(`/admin/payment-providers/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
+async function loadPricing(kind) {
+    const data = await api(`/admin/pricing/${encodeURIComponent(kind)}`);
+    state.pricingKind = kind;
+    state.pricingRules = data.items || [];
+}
+
+async function savePricing(kind, id, input) {
+    if (id) return api(`/admin/pricing/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`, { method: "PUT", body: input });
+    return api(`/admin/pricing/${encodeURIComponent(kind)}`, { method: "POST", body: input });
+}
+
+async function deletePricing(kind, id) {
+    return api(`/admin/pricing/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
 async function loadTopup() {
     const [products, orders] = await Promise.all([api("/topup/products"), api("/topup/orders?limit=50")]);
     state.topupProducts = products.items || [];
@@ -211,6 +230,7 @@ const ICONS = {
     logout: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 12H3.5"/><path d="m7 8-4 4 4 4"/><path d="M11 4h6a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/></svg>',
     card: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M2.5 9.5h19"/><path d="M6.5 14.5h3"/></svg>',
     list: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>',
+    tag: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13 13 20 4 11V4h7l9 9Z"/><circle cx="8.5" cy="8.5" r="1"/></svg>',
 };
 
 function icon(name) {
@@ -275,6 +295,7 @@ function render() {
     else if (route.path === "/admin/orders") renderAdminOrders(view);
     else if (route.path === "/admin/storage") renderAdminStorage(view);
     else if (route.path === "/admin/payment") renderAdminPayment(view);
+    else if (route.path === "/admin/pricing") renderAdminPricing(view);
     else renderWallet(view);
 }
 
@@ -619,7 +640,29 @@ document.addEventListener("click", (event) => {
             fillPaymentForm(null);
             state.notice = "支付渠道已删除";
         });
+    } else if (action === "pricing-kind") {
+        withBusy(async () => {
+            await loadPricing(target.dataset.kind);
+            fillPricingForm(null);
+        });
+    } else if (action === "edit-pricing") {
+        const item = state.pricingRules.find((entry) => entry.id === target.dataset.id);
+        if (item) fillPricingForm(item);
+    } else if (action === "reset-pricing") {
+        fillPricingForm(null);
+    } else if (action === "delete-pricing") {
+        if (!window.confirm("删除这条价格规则？历史任务已生成的报价不受影响。")) return;
+        withBusy(async () => {
+            await deletePricing(state.pricingKind, target.dataset.id);
+            await loadPricing(state.pricingKind);
+            fillPricingForm(null);
+            state.notice = "价格规则已删除";
+        });
     }
+});
+
+document.addEventListener("input", (event) => {
+    if (event.target && event.target.name === "unitPriceMicrocredits") updatePricingUnitPreview();
 });
 
 document.addEventListener("submit", (event) => {
@@ -676,6 +719,32 @@ document.addEventListener("submit", (event) => {
             fillPaymentForm(null);
             state.notice = paymentId ? "支付渠道已更新" : "支付渠道已保存";
         });
+    } else if (form.id === "pricing-form") {
+        withBusy(async () => {
+            const kind = state.pricingKind;
+            const pricingID = form.id.value.trim();
+            const input = {
+                name: form.name.value.trim(),
+                logicalModelId: form.logicalModelId.value.trim(),
+                channelId: form.channelId.value.trim(),
+                channelModelId: form.channelModelId.value.trim(),
+                channelModelPriceTierId: form.channelModelPriceTierId.value.trim(),
+                capability: form.capability.value,
+                billingMode: form.billingMode.value,
+                selector: form.selector.value.trim() ? JSON.parse(form.selector.value) : {},
+                unitPriceMicrocredits: Math.round(Number(form.unitPriceMicrocredits.value)),
+                minimumChargeCredits: Math.round(Number(form.minimumChargeCredits.value || 0)),
+                enabled: form.enabled.checked,
+                sortOrder: Math.round(Number(form.sortOrder.value || 0)),
+                note: form.note.value.trim(),
+            };
+            if (form.effectiveFrom.value) input.effectiveFrom = new Date(form.effectiveFrom.value).toISOString();
+            input.effectiveTo = form.effectiveTo.value ? new Date(form.effectiveTo.value).toISOString() : null;
+            await savePricing(kind, pricingID, input);
+            await loadPricing(kind);
+            fillPricingForm(null);
+            state.notice = pricingID ? "价格规则已更新" : "价格规则已保存";
+        });
     } else if (form.id === "topup-form") {
         withBusy(async () => {
             const productId = form.id.value.trim();
@@ -709,6 +778,7 @@ async function reloadCurrent() {
     if (path === "/admin/orders") return loadAdminOrders();
     if (path === "/admin/storage") return loadStorage();
     if (path === "/admin/payment") return loadPayments();
+    if (path === "/admin/pricing") return loadPricing(state.pricingKind);
     return loadWallet();
 }
 
@@ -1001,6 +1071,166 @@ function fillPaymentForm(item) {
     form.enabled.checked = item ? item.enabled !== false : true;
     const title = document.getElementById("payment-form-title");
     if (title) title.textContent = item ? `编辑渠道：${item.name}` : "添加支付渠道";
+}
+
+function pricingKindLabel(kind) {
+    if (kind === "logical_sku") return "逻辑模型 SKU";
+    if (kind === "channel_tier") return "渠道模型价格档";
+    return "模型默认价";
+}
+
+function billingModeLabel(mode) {
+    const labels = {
+        fixed_request: "每次",
+        per_second: "每秒",
+        per_image: "每张图",
+        per_1k_tokens: "每千 token",
+        per_megabyte: "每 MB",
+    };
+    return labels[mode] || mode || "-";
+}
+
+function pricingSelectorText(selector) {
+    const entries = Object.entries(selector || {});
+    return entries.length ? entries.map(([key, value]) => `${key}=${value}`).join(", ") : "默认";
+}
+
+function pricingRuleScope(rule) {
+    if (rule.kind === "logical_sku") return `逻辑模型 ${rule.logicalModelId || "-"}${rule.channelModelPriceTierId ? ` / 渠道档 ${rule.channelModelPriceTierId}` : ""}`;
+    if (rule.kind === "channel_tier") return `渠道 ${rule.channelId || "-"} / 模型 ${rule.channelModelId || "-"}`;
+    return `逻辑模型 ${rule.logicalModelId || "-"}`;
+}
+
+function renderAdminPricing(view) {
+    const kind = state.pricingKind;
+    view.innerHTML = `
+        <div class="page-head">
+            <div>
+                <h1 class="page-title">模型价格</h1>
+                <p class="page-sub">价格落库后不需要发版。新任务按生效区间取新价，历史任务应保存自己的报价快照。</p>
+            </div>
+            <button class="btn btn-sm" data-action="refresh">刷新</button>
+        </div>
+        <div id="flash">${renderFlash()}</div>
+        <div class="panel">
+            <div class="btn-row" style="margin-bottom:14px">
+                ${["logical_sku", "channel_tier", "model"].map((item) => `<button class="btn btn-sm ${item === kind ? "btn-primary" : ""}" data-action="pricing-kind" data-kind="${item}">${pricingKindLabel(item)}</button>`).join("")}
+            </div>
+            <h2 class="panel-title" id="pricing-form-title">${pricingKindLabel(kind)}</h2>
+            <form id="pricing-form">
+                <input type="hidden" name="id" />
+                <div class="form-grid">
+                    <label class="field"><span class="field-label">名称（可选）</span><input class="input" name="name" /></label>
+                    <label class="field"><span class="field-label">能力</span>
+                        <select class="select" name="capability">
+                            <option value="text">文本</option>
+                            <option value="image">图片</option>
+                            <option value="video">视频</option>
+                            <option value="audio">音频</option>
+                        </select>
+                    </label>
+                    <label class="field"><span class="field-label">计费方式</span>
+                        <select class="select" name="billingMode">
+                            <option value="per_second">每秒</option>
+                            <option value="fixed_request">每次请求</option>
+                            <option value="per_image">每张图</option>
+                            <option value="per_1k_tokens">每千 token</option>
+                            <option value="per_megabyte">每 MB</option>
+                        </select>
+                    </label>
+                    <label class="field"><span class="field-label">单价（微积分，1 积分 = 1,000,000）</span><input class="input" name="unitPriceMicrocredits" type="number" min="1" step="1" required /></label>
+                    <div class="muted" id="pricing-unit-preview" style="align-self:end;padding-bottom:10px">折合 0 积分</div>
+                    <label class="field"><span class="field-label">最低扣费（积分）</span><input class="input" name="minimumChargeCredits" type="number" min="0" step="1" value="0" /></label>
+                    <label class="field" data-kind-field="model logical_sku"><span class="field-label">逻辑模型 ID</span><input class="input" name="logicalModelId" /></label>
+                    <label class="field" data-kind-field="channel_tier"><span class="field-label">渠道 ID</span><input class="input" name="channelId" /></label>
+                    <label class="field" data-kind-field="channel_tier"><span class="field-label">渠道模型 ID</span><input class="input" name="channelModelId" /></label>
+                    <label class="field" data-kind-field="logical_sku"><span class="field-label">关联渠道价格档 ID（可选）</span><input class="input" name="channelModelPriceTierId" /></label>
+                    <label class="field"><span class="field-label">选择器 JSON（如 {"quality":"720p"}）</span><textarea class="textarea" name="selector" rows="2" placeholder="{}"></textarea></label>
+                    <label class="field"><span class="field-label">生效时间（留空立即生效）</span><input class="input" name="effectiveFrom" type="datetime-local" /></label>
+                    <label class="field"><span class="field-label">失效时间（留空长期有效）</span><input class="input" name="effectiveTo" type="datetime-local" /></label>
+                    <label class="field"><span class="field-label">排序（小的在前）</span><input class="input" name="sortOrder" type="number" step="1" value="0" /></label>
+                    <label class="field"><span class="field-label">备注</span><input class="input" name="note" /></label>
+                </div>
+                <div class="btn-row">
+                    <label class="muted"><input type="checkbox" name="enabled" checked /> 启用</label>
+                    <button class="btn btn-sm" type="button" data-action="reset-pricing">清空表单</button>
+                    <button class="btn btn-primary" type="submit" ${state.busy ? "disabled" : ""}>保存价格规则</button>
+                </div>
+            </form>
+        </div>
+        <div class="panel">
+            <h2 class="panel-title">${pricingKindLabel(kind)}（${state.pricingRules.length} 条）</h2>
+            ${renderPricingRules()}
+        </div>`;
+    applyPricingKindFields();
+}
+
+function applyPricingKindFields() {
+    const kind = state.pricingKind;
+    document.querySelectorAll("[data-kind-field]").forEach((field) => {
+        const kinds = (field.dataset.kindField || "").split(/\s+/u);
+        field.hidden = !kinds.includes(kind);
+    });
+}
+
+function renderPricingRules() {
+    if (!state.pricingRules.length) return `<div class="empty">当前分类还没有价格规则</div>`;
+    return `
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>名称</th><th>适用范围</th><th>选择器</th><th>计费</th><th class="num">单价（积分）</th><th class="num">最低扣费</th><th>生效区间</th><th>状态</th><th></th></tr></thead>
+                <tbody>
+                    ${state.pricingRules.map((rule) => `<tr>
+                        <td>${escapeHtml(rule.name || pricingKindLabel(rule.kind))}</td>
+                        <td class="muted">${escapeHtml(pricingRuleScope(rule))}</td>
+                        <td class="muted">${escapeHtml(pricingSelectorText(rule.selector))}</td>
+                        <td>${escapeHtml(billingModeLabel(rule.billingMode))}</td>
+                        <td class="num">${escapeHtml(formatMicrocredits(rule.unitPriceMicrocredits))}</td>
+                        <td class="num">${escapeHtml(formatPoints(rule.minimumChargeCredits))}</td>
+                        <td class="muted">${escapeHtml(formatTime(rule.effectiveFrom))}${rule.effectiveTo ? ` 至 ${escapeHtml(formatTime(rule.effectiveTo))}` : " 起长期"}</td>
+                        <td>${rule.enabled ? '<span class="tag tag-ok">启用</span>' : '<span class="tag tag-muted">停用</span>'}</td>
+                        <td><div class="btn-row"><button class="btn btn-sm" data-action="edit-pricing" data-id="${escapeHtml(rule.id)}">编辑</button><button class="btn btn-sm btn-danger" data-action="delete-pricing" data-id="${escapeHtml(rule.id)}">删除</button></div></td>
+                    </tr>`).join("")}
+                </tbody>
+            </table>
+        </div>`;
+}
+
+function fillPricingForm(item) {
+    const form = document.getElementById("pricing-form");
+    if (!form) return;
+    form.id.value = item ? item.id : "";
+    form.name.value = item ? item.name || "" : "";
+    form.capability.value = item ? item.capability || "video" : "video";
+    form.billingMode.value = item ? item.billingMode || "per_second" : "per_second";
+    form.unitPriceMicrocredits.value = item ? item.unitPriceMicrocredits : "";
+    form.minimumChargeCredits.value = item ? item.minimumChargeCredits || 0 : 0;
+    form.logicalModelId.value = item ? item.logicalModelId || "" : "";
+    form.channelId.value = item ? item.channelId || "" : "";
+    form.channelModelId.value = item ? item.channelModelId || "" : "";
+    form.channelModelPriceTierId.value = item ? item.channelModelPriceTierId || "" : "";
+    form.selector.value = item && item.selector ? JSON.stringify(item.selector) : "";
+    form.effectiveFrom.value = item && item.effectiveFrom ? toDateTimeLocal(item.effectiveFrom) : "";
+    form.effectiveTo.value = item && item.effectiveTo ? toDateTimeLocal(item.effectiveTo) : "";
+    form.sortOrder.value = item ? item.sortOrder || 0 : 0;
+    form.note.value = item ? item.note || "" : "";
+    form.enabled.checked = item ? item.enabled !== false : true;
+    updatePricingUnitPreview();
+    const title = document.getElementById("pricing-form-title");
+    if (title) title.textContent = item ? `编辑${pricingKindLabel(state.pricingKind)}：${item.name || item.id}` : `新增${pricingKindLabel(state.pricingKind)}`;
+}
+
+function updatePricingUnitPreview() {
+    const preview = document.getElementById("pricing-unit-preview");
+    const input = document.querySelector('#pricing-form [name="unitPriceMicrocredits"]');
+    if (preview && input) preview.textContent = `折合 ${formatMicrocredits(input.value)} 积分`;
+}
+
+function toDateTimeLocal(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const pad = (number) => String(number).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 async function boot() {

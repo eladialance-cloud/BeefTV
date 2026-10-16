@@ -125,30 +125,37 @@
 - 用户端：`GET /api/credits/wallet`（余额 / 冻结 / 可用 / 版本）、`GET /api/credits/ledger?limit=`（只看自己，倒序）。
 - 管理端：`GET /api/admin/credits/accounts`（钱包列表 + 用户目录拼接）、`POST /api/admin/credits/adjust`（人工加减积分，必填原因，写不可变流水，可选幂等键）。
 - 方法名避开守卫清单（用 `Account` / `Accounts` / `Adjust`，不用 `Wallet` / `AdminAdjustCredits`）。
-- 价格规则表（`model_pricings` 等）拆到 Task 5b，等 P3 技能计费真正需要时再做，避免先建表无消费方。
+- 价格规则表（`model_pricings` 等）已由 Task 5b 落地；这里只保留钱包与人工发积分。
 
 - [x] **Step 1: 写测试**：未登录读钱包 401；钱包返回余额/冻结/可用；用户只看自己的流水；非法 limit 400；非管理员调整 403；管理员调整后余额与流水一致且带操作人与原因；重复幂等键不二次入账；账户列表拼上用户名；非管理员查列表 403。
 - [x] **Step 2: 实现路由与服务方法**。
 - [x] **Step 3: 运行**：`go test -run TestCredit ./internal/hostedapi/`、`go test ./internal/credits/`、`go vet ./internal/hostedapi/ ./internal/credits/ ./internal/repository/ ./cmd/server/` 全通过。
 - [x] **Step 4: 提交**：`feat(backend): 积分 - 新增钱包查询与管理员发积分`。
 
-## Task 5b: 价格规则表（待做，跟 P3 技能计费一起）
+## Task 5b: 价格规则表（本次完成）
 
 **Files:**
 - Create: `backend/internal/model/models_pricing.go`、`backend/internal/credits/pricing.go`、`backend/internal/hostedapi/pricing.go`
 - Modify: `backend/internal/database/hosted_schema.go`
+- Create: `backend/internal/repository/pricing.go`
+- Test: `backend/internal/credits/pricing_test.go`、`backend/internal/repository/pricing_test.go`、`backend/internal/hostedapi/pricing_test.go`
+- Modify: `backend/cmd/server/main.go`、`web-hosted/app.js`、`web-hosted/format.js`
 
 **行为**
 
 - `model_pricings` / `channel_model_price_tiers` / `logical_model_price_skus` 落库，带生效区间，管理员可在后台改价，无需发版。
 - 定价维度：渠道 / 模型、能力（文本 / 图片 / 视频 / 音频）、分辨率与时长档、单价、生效区间。
+- 报价优先级：逻辑模型 SKU → 渠道模型价格档 → 模型默认价；同一生效时间按排序号升序决胜。
+- 单价以微积分存储（`1 积分 = 1,000,000 微积分`），支持每次请求、每秒、每张图、每千 token、每 MB 五种计费方式。
 - 与 Task 4 的三段式合同衔接：任务提交时按生效价规则算预冻结，结算时按实际用量算实扣。
 
-- [ ] **Step 1: 写失败测试**：改价后新任务按新档计费、老任务按旧档；同一逻辑模型可选多个 SKU。
-- [ ] **Step 2: 运行确认失败**。
-- [ ] **Step 3: 实现**。
-- [ ] **Step 4: 运行相关包测试通过**。
-- [ ] **Step 5: 提交**：`feat(backend): 积分 - 新增价格规则与后台改价`。
+- [x] **Step 1: 写失败测试**：报价按生效区间取新价/旧价；同一逻辑模型可选多个 SKU；同刻按排序号决胜；最低扣费可改回 0；管理员校验。
+- [x] **Step 2: 运行确认失败**。
+- [x] **Step 3: 实现模型、仓储、报价服务、后台 CRUD 路由与前端价格页**。
+- [x] **Step 4: 运行相关包测试通过**。
+- [x] **Step 5: 提交**：`feat(backend): 积分 - 新增价格规则与后台改价`。
+
+**仍未做**：任务提交时保存报价快照，并接入 `credits.Reserve/Settle/Release`，这是价格规则真正驱动扣费的下一步。
 
 ## Task 6: 托管工作台前端（登录、钱包、后台）
 

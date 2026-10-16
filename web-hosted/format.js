@@ -30,6 +30,18 @@ export function formatFenToYuan(fen) {
     return (value / 100).toFixed(2);
 }
 
+// 价格规则内部按微积分存储，界面统一换算成积分显示。
+export function formatMicrocredits(value) {
+    const microcredits = Number(value);
+    if (!Number.isFinite(microcredits) || microcredits === 0) return "0";
+    const sign = microcredits < 0 ? "-" : "";
+    const digits = Math.abs(microcredits).toFixed(0);
+    const padded = digits.padStart(7, "0");
+    const whole = padded.slice(0, -6);
+    const fraction = padded.slice(-6).replace(/0+$/u, "");
+    return `${sign}${Number(whole).toLocaleString("zh-CN")}${fraction ? `.${fraction}` : ""}`;
+}
+
 
 export function stageLabel(stage) {
     return STAGE_LABELS[stage] || stage || "-";

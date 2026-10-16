@@ -172,3 +172,22 @@ func TestMigrateHostedSchemaCreatesPaymentProviderTables(t *testing.T) {
 		}
 	}
 }
+
+// 价格规则表同样只能由托管迁移建立，且不得进入本地模型清单。
+func TestMigrateHostedSchemaCreatesPricingTables(t *testing.T) {
+	db := openHostedTestDB(t, "pricing.db")
+	if err := MigrateHostedSchema(db); err != nil {
+		t.Fatalf("托管迁移失败: %v", err)
+	}
+	for _, table := range []string{"model_pricings", "channel_model_price_tiers", "logical_model_price_skus"} {
+		if !db.Migrator().HasTable(table) {
+			t.Fatalf("托管迁移必须建出 %s", table)
+		}
+	}
+	for _, item := range LocalModels() {
+		switch item.(type) {
+		case *model.ModelPricing, *model.ChannelModelPriceTier, *model.LogicalModelPriceSKU:
+			t.Fatalf("价格规则表属于托管表，不得进入 LocalModels: %T", item)
+		}
+	}
+}

@@ -14,7 +14,7 @@ function expect(actual) {
     };
 }
 
-import { buildAdjustIdempotencyKey, escapeHtml, formatFenToYuan, formatPoints, formatTime, kindLabel, resolveApiBase, stageLabel } from "../format.js";
+import { buildAdjustIdempotencyKey, escapeHtml, formatFenToYuan, formatMicrocredits, formatPoints, formatTime, kindLabel, resolveApiBase, stageLabel } from "../format.js";
 
 describe("escapeHtml", () => {
     test("渲染用户数据前转义 HTML 元字符", () => {
@@ -49,6 +49,19 @@ describe("formatPoints", () => {
     test("空值按 0 处理", () => {
         expect(formatPoints(null)).toBe("0");
         expect(formatPoints(undefined)).toBe("0");
+    });
+});
+
+describe("formatMicrocredits", () => {
+    test("微积分换算成积分，保留有效小数", () => {
+        expect(formatMicrocredits(1000000)).toBe("1");
+        expect(formatMicrocredits(1234567)).toBe("1.234567");
+        expect(formatMicrocredits(1)).toBe("0.000001");
+    });
+
+    test("空值和零都显示为 0", () => {
+        expect(formatMicrocredits(0)).toBe("0");
+        expect(formatMicrocredits(undefined)).toBe("0");
     });
 });
 

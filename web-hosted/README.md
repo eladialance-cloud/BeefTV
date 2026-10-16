@@ -74,6 +74,10 @@ python -m http.server 4173
 | 新增支付渠道（管理员） | POST | `/api/admin/payment-providers` |
 | 修改支付渠道（管理员） | PUT | `/api/admin/payment-providers/:id` |
 | 删除支付渠道（管理员） | DELETE | `/api/admin/payment-providers/:id` |
+| 价格规则列表（管理员） | GET | `/api/admin/pricing/:kind` |
+| 新增价格规则（管理员） | POST | `/api/admin/pricing/:kind` |
+| 修改价格规则（管理员） | PUT | `/api/admin/pricing/:kind/:id` |
+| 删除价格规则（管理员） | DELETE | `/api/admin/pricing/:kind/:id` |
 | 充值套餐（用户） | GET | `/api/topup/products` |
 | 我的充值订单 | GET | `/api/topup/orders` |
 | 创建充值订单 | POST | `/api/topup/orders` |
@@ -85,9 +89,11 @@ python -m http.server 4173
 | 确认支付（管理员） | POST | `/api/admin/payment-orders/:id/mark-paid` |
 | 关闭订单（管理员） | POST | `/api/admin/payment-orders/:id/close` |
 
+价格规则的 `:kind` 取 `model`（模型默认价）、`channel_tier`（渠道模型价格档）或 `logical_sku`（逻辑模型 SKU）。运行时报价优先级为：逻辑模型 SKU → 渠道模型价格档 → 模型默认价。单价以微积分存储，`1 积分 = 1,000,000 微积分`；计费方式支持每次请求、每秒、每张图、每千 token、每 MB。
+
 ## 还没做
 
 - 真实网关联调：支付宝电脑网站支付与微信 Native 已接入签名、验签和金额校验，但还需要拿商户真实密钥联调。
 - 微信二维码目前先把 `code_url` 交给用户复制，后续可接二维码组件直接显示。
 - 订单超时自动关闭、退款与对账。
-- 模型价格规则：等 Task 5b 的价格表落地。
+- 价格规则已落库并在后台可改，但任务提交还没保存报价快照、也没接三段式冻结/结算。

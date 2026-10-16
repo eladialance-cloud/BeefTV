@@ -51,6 +51,10 @@ func registerHostedRoutes(hosted bootstrap.HostedContext) error {
 	hostedapi.RegisterCreditAdminRoutes(hosted.API, creditService, hosted.Repository,
 		creditActor, hosted.Service.RequireAdmin)
 
+	// 价格：三张价格规则表统一走后台 CRUD，运行时按生效区间报价。
+	pricingService := credits.NewPricing(hosted.Repository, credits.Config{})
+	hostedapi.RegisterPricingAdminRoutes(hosted.API, pricingService, creditActor, hosted.Service.RequireAdmin)
+
 	storageConfig := storageconfig.New(hosted.Repository, hosted.DataDir, storageconfig.NewS3Prober())
 	hostedapi.RegisterStorageAdminRoutes(hosted.API, storageConfig,
 		hostedapi.SessionUserResolver(authService),
