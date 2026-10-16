@@ -19,7 +19,6 @@ import (
 	"infinite-canvas/backend/internal/bootstrap"
 	_ "infinite-canvas/backend/internal/database/postgresdriver"
 	"infinite-canvas/backend/internal/hostedapi"
-	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/repository"
 	"infinite-canvas/backend/internal/storageconfig"
 
@@ -39,13 +38,23 @@ func main() {
 func registerHostedRoutes(hosted bootstrap.HostedContext) error {
 	// 账号与会话：托管形态的唯一登录入口，桌面入口不引用这里。
 	authService := auth.New(hosted.Repository, auth.Config{})
-	hostedapi.RegisterAuthRoutes(hosted.API, authService)
+	hostedapi.RegisterAuthRoutes(hosted.API, authService, hostedapi.AuthOptions{
+		BootstrapAdminUsername: os.Getenv("CANVAS_BOOTSTRAP_ADMIN_USERNAME"),
+	})
 
 	storageConfig := storageconfig.New(hosted.Repository, hosted.DataDir, storageconfig.NewS3Prober())
 	hostedapi.RegisterStorageAdminRoutes(hosted.API, storageConfig,
-		func(*gin.Context) (*model.User, error) { return hosted.Service.WorkspaceOwner(hosted.WorkspaceID) },
+		hostedapi.SessionUserResolver(authService),
 		hosted.Service.RequireAdmin)
 	return nil
+}
+
+// openHostedAuthMiddleware 是服务端专属装配点：它在业务路由注册前把会话认证
+// 中间件挂到整个 router 上，使托管形态的每个请求都标记为「需登录」，而桌面
+// 入口不引用这里，依赖图与行为保持原样。
+func openHostedAuthMiddleware(repo *repository.Repository, _ string) ([]gin.HandlerFunc, error) {
+	authService := auth.New(repo, auth.Config{})
+	return []gin.HandlerFunc{hostedapi.SessionMiddleware(authService)}, nil
 }
 
 // openHostedBlobResolver 是服务端专属装配点：资源字节按管理后台配置的对象存储
@@ -70,16 +79,17 @@ func run(ctx context.Context) error {
 		return err
 	}
 	runtime, err := bootstrap.Open(ctx, bootstrap.Config{
-		Profile:            bootstrap.ProfileServer,
-		DataDir:            dataDir,
-		DatabaseDriver:     env("CANVAS_DATABASE_DRIVER", "sqlite"),
-		DatabaseURL:        os.Getenv("DATABASE_URL"),
-		ListenAddr:         env("CANVAS_BACKEND_ADDR", ":8080"),
-		AutoMigrate:        autoMigrate,
-		HostedRoutes:       registerHostedRoutes,
-		HostedBlobResolver: openHostedBlobResolver,
-		ShutdownTimeout:    workerTimeout,
-		RouterMiddleware:   []gin.HandlerFunc{corsMiddleware},
+		Profile:                bootstrap.ProfileServer,
+		DataDir:                dataDir,
+		DatabaseDriver:         env("CANVAS_DATABASE_DRIVER", "sqlite"),
+		DatabaseURL:            os.Getenv("DATABASE_URL"),
+		ListenAddr:             env("CANVAS_BACKEND_ADDR", ":8080"),
+		AutoMigrate:            autoMigrate,
+		HostedRoutes:           registerHostedRoutes,
+		HostedRouterMiddleware: openHostedAuthMiddleware,
+		HostedBlobResolver:     openHostedBlobResolver,
+		ShutdownTimeout:        workerTimeout,
+		RouterMiddleware:       []gin.HandlerFunc{corsMiddleware},
 	})
 	if err != nil {
 		return err

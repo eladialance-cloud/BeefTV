@@ -20,7 +20,7 @@ import (
 // newAuthTestAPI wires the real auth service over a throwaway SQLite database.
 // It exercises the GORM adapter as well as the HTTP surface; the connection is
 // closed in cleanup so Windows temp-dir removal does not trip on open handles.
-func newAuthTestAPI(t *testing.T) *gin.Engine {
+func newAuthTestEnv(t *testing.T) (*gin.Engine, *auth.Service) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "auth.db")), &gorm.Config{})
@@ -33,8 +33,16 @@ func newAuthTestAPI(t *testing.T) *gin.Engine {
 	if err := db.AutoMigrate(&model.User{}, &model.UserIdentity{}, &model.AuthSession{}); err != nil {
 		t.Fatal(err)
 	}
+	service := auth.New(repository.New(db), auth.Config{})
 	engine := gin.New()
-	RegisterAuthRoutes(engine.Group("/api"), auth.New(repository.New(db), auth.Config{}))
+	RegisterAuthRoutes(engine.Group("/api"), service, AuthOptions{})
+	return engine, service
+}
+
+// newAuthTestAPI is the convenience wrapper for tests that only need the routes.
+func newAuthTestAPI(t *testing.T) *gin.Engine {
+	t.Helper()
+	engine, _ := newAuthTestEnv(t)
 	return engine
 }
 

@@ -221,6 +221,18 @@ func Open(_ context.Context, raw Config) (result *Runtime, openErr error) {
 	for _, middleware := range cfg.RouterMiddleware {
 		router.Use(middleware)
 	}
+	// 托管形态的会话中间件由服务端入口提供。它必须在 /api Group 创建之前挂上：
+	// gin 的 RouterGroup.Use 不会回溯已经注册的路由。
+	if cfg.Profile == ProfileServer && cfg.HostedRouterMiddleware != nil {
+		hostedMiddleware, hookErr := cfg.HostedRouterMiddleware(repo, cfg.DataDir)
+		if hookErr != nil {
+			cleanupService()
+			return nil, hookErr
+		}
+		for _, middleware := range hostedMiddleware {
+			router.Use(middleware)
+		}
+	}
 	if cfg.Profile == ProfileDesktop {
 		router.Use(desktopCORSMiddleware())
 	}

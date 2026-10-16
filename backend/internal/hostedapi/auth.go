@@ -32,7 +32,16 @@ type AuthService interface {
 // RegisterAuthRoutes mounts the hosted-only account surface: /register, /login,
 // /logout and /auth/me. Callers must register this only in the server profile;
 // the desktop API test asserts these paths never appear on cmd/desktop.
-func RegisterAuthRoutes(r *gin.RouterGroup, svc AuthService) {
+// AuthOptions carries composition-root policy, never request data.
+type AuthOptions struct {
+	// BootstrapAdminUsername promotes the account registering under this exact
+	// username to admin. Empty disables the bootstrap path. Operators should set
+	// a non-guessable name and register it immediately, because the first
+	// successful registration claims the name.
+	BootstrapAdminUsername string
+}
+
+func RegisterAuthRoutes(r *gin.RouterGroup, svc AuthService, options AuthOptions) {
 	r.POST("/register", func(c *gin.Context) {
 		var body struct {
 			Username    string `json:"username"`
@@ -43,8 +52,12 @@ func RegisterAuthRoutes(r *gin.RouterGroup, svc AuthService) {
 			writeError(c, kernel.BadAuthRequest("注册参数格式错误"))
 			return
 		}
+		role := model.UserRoleUser
+		if bootstrap := strings.TrimSpace(options.BootstrapAdminUsername); bootstrap != "" && strings.EqualFold(bootstrap, strings.TrimSpace(body.Username)) {
+			role = model.UserRoleAdmin
+		}
 		user, err := svc.Register(auth.RegisterInput{
-			Username: body.Username, DisplayName: body.DisplayName, Password: body.Password,
+			Username: body.Username, DisplayName: body.DisplayName, Password: body.Password, Role: role,
 		})
 		if err != nil {
 			writeError(c, err)

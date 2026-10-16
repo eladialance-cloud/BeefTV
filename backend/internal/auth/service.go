@@ -53,6 +53,8 @@ type RegisterInput struct {
 	Username    string
 	DisplayName string
 	Password    string
+	// Role 仅供组合根赋予引导管理员；请求体永远不设置它。空值等于普通用户。
+	Role model.UserRole
 }
 
 // SessionMeta records request context on the session row for later revocation.
@@ -83,12 +85,16 @@ func (s *Service) Register(input RegisterInput) (*model.User, error) {
 	if display == "" {
 		display = username
 	}
+	role := input.Role
+	if role == "" {
+		role = model.UserRoleUser
+	}
 	now := s.now()
 	user := &model.User{
 		ID:          kernel.NewID(),
 		Username:    username,
 		DisplayName: display,
-		Role:        model.UserRoleUser,
+		Role:        role,
 		Status:      model.UserStatusActive,
 		CreatedAt:   now,
 		UpdatedAt:   now,

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"infinite-canvas/backend/internal/app"
+	"infinite-canvas/backend/internal/kernel"
 	"infinite-canvas/backend/internal/model"
 
 	"github.com/gin-gonic/gin"
@@ -10,6 +11,13 @@ import (
 // currentUser resolves the stable workspace owner. Local routes never inspect
 // cookies and never create a session record.
 func currentUser(c *gin.Context, svc *app.Service) (*model.User, error) {
+	// 托管形态：会话中间件会把登录用户放进上下文；没有登录就是未授权，绝不回退到共享工作区 owner。
+	if IsHostedRequest(c) {
+		if user, ok := SessionUser(c); ok {
+			return user, nil
+		}
+		return nil, kernel.Unauthorized("请先登录")
+	}
 	if _, exists := c.Get(workspaceContextKey); exists {
 		scope, err := CurrentWorkspace(c)
 		if err != nil {

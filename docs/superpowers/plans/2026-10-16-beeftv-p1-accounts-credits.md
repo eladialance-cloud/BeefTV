@@ -61,22 +61,30 @@
 ## Task 3: `currentUser` 接入会话并做租户隔离
 
 **Files:**
-- Modify: `backend/internal/handler/local_identity.go`（或新增 hosted 解析器注入点）
-- Modify: `backend/internal/app/local_identity.go`
-- Modify: `backend/internal/workspace/service.go`
-- Test: `backend/internal/handler/*_test.go`
+- Create: `backend/internal/handler/session_identity.go`
+- Modify: `backend/internal/handler/local_identity.go`
+- Create: `backend/internal/hostedapi/session.go`
+- Modify: `backend/internal/bootstrap/config.go`、`backend/internal/bootstrap/runtime.go`
+- Modify: `backend/cmd/server/main.go`
+- Test: `backend/internal/handler/session_identity_test.go`、`backend/internal/hostedapi/session_test.go`
 
 **行为**
 
-- 托管形态下 `currentUser` 先取会话用户；本地形态继续返回工作区 owner，行为与文案不变。
-- 每个用户的画布、项目、素材、任务按 `UserID` 隔离；越权访问返回 404/403 而不是泄露存在性。
-- 用「两个用户互不可见」的端到端用例守住不变量。
+- 托管形态下 `currentUser` 先取会话用户；没有会话就是 401，绝不回退到共享工作区 owner。本地形态行为与文案不变。
+- 会话中间件只由 `cmd/server` 注入（`HostedRouterMiddleware` 钩子），且必须在 `/api` Group 创建前挂上：gin 的 `RouterGroup.Use` 不回溯已注册路由。
+- 后台存储路由的操作人从「工作区 owner」改成会话用户，堵住「未登录就是管理员」的洞；`CANVAS_BOOTSTRAP_ADMIN_USERNAME` 指定注册即管理员的引导账号。
+- 路由已普遍按 `user.ID` 取数据，因此换成真用户后自然分租；但「两用户互不可见」的端到端逐资源验证仍未交付，单列 Task 3b。
 
-- [ ] **Step 1: 写失败测试**：用户 A 看不到用户 B 的画布/项目/素材/任务。
-- [ ] **Step 2: 运行确认失败**。
-- [ ] **Step 3: 实现**。
-- [ ] **Step 4: 运行相关包测试通过**。
-- [ ] **Step 5: 提交**：`feat(backend): 多用户 - 会话用户接管工作区身份与数据隔离`。
+- [x] **Step 1: 身份接缝测试**：托管请求优先取会话用户；缺会话返回 401；无 hosted 标记时桌面路径不采纳会话用户。
+- [x] **Step 2: 中间件测试**：每个请求都被标记为托管；有效 cookie 发布用户；伪造 cookie 不发布；两名用户解析成不同身份。
+- [x] **Step 3: 实现**。
+- [x] **Step 4: 运行 `go test ./internal/handler/ ./internal/hostedapi/ ./internal/bootstrap/ ./cmd/server/` 通过，边界守卫全绿**。
+- [x] **Step 5: 提交**：`feat(backend): 多用户 - 会话用户接管工作区身份`。
+
+## Task 3b: 两用户互不可见的端到端验证（未交付）
+
+- [ ] 在 server profile 下起真运行时，注册 A/B 两号，验证 A 读不到 B 的画布、项目、素材、任务，越权返回 404/403 而非泄露存在性。
+- [ ] 补上管理员账号的回归：`CANVAS_BOOTSTRAP_ADMIN_USERNAME` 注册后能进后台，普通用户被 403。
 
 ## Task 4: 积分账本与三段式扣费
 

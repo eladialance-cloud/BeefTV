@@ -34,6 +34,11 @@ type Config struct {
 	// 字节只落本机 FileStore；服务端形态在构造 app.Service 时注入，因为资源域
 	// 一旦交给调用方就不能再换后端。
 	HostedBlobResolver func(repo *repository.Repository, dataDir string) (asset.BlobResolver, error)
+	// HostedRouterMiddleware 由服务端入口注入：在业务路由注册前拿到仓储与数据
+	// 目录，返回只在 hosted profile 生效的全局中间件（如会话认证）。放在这里
+	// 是因为 gin 的 RouterGroup.Use 不会回溯已注册的路由，中间件必须在 Group
+	// 创建之前装上。
+	HostedRouterMiddleware func(repo *repository.Repository, dataDir string) ([]gin.HandlerFunc, error)
 }
 
 // HostedContext 是托管路由扩展能拿到的共享运行时对象。
