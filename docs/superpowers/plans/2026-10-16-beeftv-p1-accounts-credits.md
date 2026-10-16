@@ -91,10 +91,13 @@
 
 **Files:**
 - Create: `backend/internal/model/models_credits.go`
-- Create: `backend/internal/credits/ports.go`
-- Create: `backend/internal/credits/ledger.go`
-- Test: `backend/internal/credits/ledger_test.go`
-- Modify: `backend/internal/database/hosted_schema.go`
+- Create: `backend/internal/credits/ports.go`（仓储端口契约）
+- Create: `backend/internal/credits/service.go`（三段式扣费服务）
+- Test: `backend/internal/credits/service_test.go`（内存假仓储）
+- Create: `backend/internal/repository/credits.go`（GORM 适配器，单事务 + 幂等）
+- Test: `backend/internal/repository/credits_test.go`（真 SQLite 事务/回滚/重放）
+- Modify: `backend/internal/database/hosted_schema.go`、`backend/internal/database/hosted_schema_test.go`
+- Modify: `backend/internal/bootstrap/desktop_dependencies_test.go`（把 `internal/credits` 加进桌面禁用依赖清单）
 
 **行为**
 
@@ -103,11 +106,11 @@
 - 三段式：提交冻结 → 执行不改余额 → 成功按实际用量结算释放多余冻结，失败/取消全额释放。重复提交、重试、回调收敛到同一笔账。
 - 不变量测试：`balance + frozen` 等于流水累计；并发提交不超扣；重复结算不双扣。
 
-- [ ] **Step 1: 写失败测试**（上列不变量）。
-- [ ] **Step 2: 运行确认失败**。
-- [ ] **Step 3: 实现**。
-- [ ] **Step 4: 运行 `go test ./internal/credits/` 通过**。
-- [ ] **Step 5: 提交**：`feat(backend): 积分账本 - 新增账户冻结结算与不可变流水`。
+- [x] **Step 1: 服务层测试**（`internal/credits/service_test.go`，内存假仓储）：冻结不动余额、可用额不足拒绝且不落流水、同一任务重复冻结幂等、结算释放冻结并按实际扣款、重复结算不双扣、超估在余额内可结算、余额不足超估拒绝并整体回滚、无冻结结算报 409、释放不动余额、无冻结释放拒绝、超扣调整拒绝、充值按订单号幂等、流水可重算账户。
+- [x] **Step 2: 适配器测试**（`internal/repository/credits_test.go`，真 SQLite）：首次移动自动建钱包、适配器回填前后值、重放收敛到既有流水且不重复冻结、mutate 报错整事务回滚、负余额不变量被拒、流水按用户隔离且时间倒序。
+- [x] **Step 3: 并发测试**：`TestConcurrentReserveNeverOversubscribes` 用 20 路并发冻结验证「余额 100、每笔 10 只成功 10 笔」。
+- [x] **Step 4: 运行**：`go test ./internal/credits/`、`go test -run 'TestApplyEntry|TestCreditEntries|TestWalletMissing' ./internal/repository/`、`go test -run 'TestMigrateHostedSchema|TestRequireHostedSchema' ./internal/database/` 全通过；`TestDesktopDependencyBoundary` 通过（`internal/credits` 已加入桌面禁用依赖清单）。
+- [x] **Step 5: 提交**：`feat(backend): 积分账本 - 新增账户冻结结算与不可变流水`。
 
 ## Task 5: 价格规则、钱包查询与管理员发积分
 

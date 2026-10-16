@@ -26,6 +26,8 @@ func HostedModels() []any {
 		&model.User{}, &model.UserIdentity{}, &model.AuthSession{},
 		// 平台级对象存储配置。
 		&model.StorageLocation{},
+		// 积分账户与不可变流水（托管专属）。
+		&model.CreditAccount{}, &model.CreditLedgerEntry{},
 	)
 }
 

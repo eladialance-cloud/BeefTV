@@ -35,6 +35,7 @@ func TestDesktopDependencyBoundary(t *testing.T) {
 		"infinite-canvas/backend/internal/payment",
 		"infinite-canvas/backend/payment-sdk",
 		"infinite-canvas/backend/internal/auth",
+		"infinite-canvas/backend/internal/credits",
 		"infinite-canvas/backend/internal/hostupdate",
 		"infinite-canvas/backend/internal/updaterclient",
 	} {
