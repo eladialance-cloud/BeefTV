@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"infinite-canvas/backend/internal/asset"
+	"infinite-canvas/backend/internal/auth"
 	"infinite-canvas/backend/internal/bootstrap"
 	_ "infinite-canvas/backend/internal/database/postgresdriver"
 	"infinite-canvas/backend/internal/hostedapi"
@@ -36,6 +37,10 @@ func main() {
 // registerHostedRoutes 是服务端专属装配点：对象存储后台入口只在这里出现，
 // 因此 cmd/desktop 的依赖图不会包含托管包。
 func registerHostedRoutes(hosted bootstrap.HostedContext) error {
+	// 账号与会话：托管形态的唯一登录入口，桌面入口不引用这里。
+	authService := auth.New(hosted.Repository, auth.Config{})
+	hostedapi.RegisterAuthRoutes(hosted.API, authService)
+
 	storageConfig := storageconfig.New(hosted.Repository, hosted.DataDir, storageconfig.NewS3Prober())
 	hostedapi.RegisterStorageAdminRoutes(hosted.API, storageConfig,
 		func(*gin.Context) (*model.User, error) { return hosted.Service.WorkspaceOwner(hosted.WorkspaceID) },

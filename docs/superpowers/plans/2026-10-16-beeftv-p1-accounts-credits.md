@@ -47,16 +47,16 @@
 
 **行为**
 
-- 路由：`POST /api/auth/register`、`POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/me`。
+- 路由（对齐上游既有命名）：`POST /api/register`、`POST /api/login`、`POST /api/logout`、`GET /api/auth/me`。
 - 登录态用 HttpOnly + SameSite=Lax 的会话 cookie 承载明文令牌；响应体不回传令牌。
-- 会话中间件解析 cookie → `ValidateSession` → 把用户写进 gin context（键名与 `handler` 包约定一致）。
+- 登录态解析收敛到 `SessionUser/SessionUserResolver`：解析 cookie → `ValidateSession` → 返回用户。它是 `/api/auth/me` 与后台路由复用同一个「谁在操作」定义的接缝。
 - 只在 `registerHostedRoutes` 装配；桌面路由图不变。
 
-- [ ] **Step 1: 写失败测试**：未登录访问 `/api/auth/me` 返回 401；登录成功后带 cookie 再访问返回同一用户；登出后 cookie 失效；错误密码不建会话。
-- [ ] **Step 2: 运行确认失败**。
-- [ ] **Step 3: 实现**。
-- [ ] **Step 4: 运行 `go test ./internal/hostedapi/ ./cmd/server/` 通过**。
-- [ ] **Step 5: 提交**：`feat(backend): 账号体系 - 新增登录注册与会话中间件`。
+- [x] **Step 1: 写失败测试**：未登录访问 `/api/auth/me` 返回 401；登录成功后带 cookie 再访问返回同一用户；登出后 cookie 失效；错误密码不建会话。
+- [x] **Step 2: 运行确认失败**。
+- [x] **Step 3: 实现**。
+- [x] **Step 4: 运行 `go test ./internal/hostedapi/ ./cmd/server/` 通过**。
+- [x] **Step 5: 提交**：`feat(backend): 账号体系 - 新增登录注册与会话中间件`。
 
 ## Task 3: `currentUser` 接入会话并做租户隔离
 
