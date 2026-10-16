@@ -1,10 +1,10 @@
 package repository
 
 import (
-	"errors"
 	"infinite-canvas/backend/internal/model"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // TopupProducts 返回全部充值商品，按管理员设置的顺序展示。
@@ -80,16 +80,11 @@ func (r *Repository) UpdatePaymentOrder(item *model.PaymentOrder) error {
 
 // CreatePaymentNotification 写入一条回调记录；已存在同一通知时返回 found=false。
 func (r *Repository) CreatePaymentNotification(item *model.PaymentNotification) (bool, error) {
-	var existing model.PaymentNotification
-	err := r.db.Where("provider = ? AND provider_notification_id = ?", item.Provider, item.ProviderNotificationID).
-		First(&existing).Error
-	if err == nil {
-		return false, nil
+	result := r.db.Clauses(clause.OnConflict{DoNothing: true}).Create(item)
+	if result.Error != nil {
+		return false, result.Error
 	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return false, err
-	}
-	return true, r.db.Create(item).Error
+	return result.RowsAffected == 1, nil
 }
 
 func (r *Repository) UpdatePaymentNotification(item *model.PaymentNotification) error {

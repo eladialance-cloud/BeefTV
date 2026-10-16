@@ -11,8 +11,40 @@ import (
 // MigrateHostedSchema 是 server/hosted 形态的结构入口。它只做 GORM AutoMigrate，
 // 不执行本地形态的 SQLite 结构修复，也绝不删除托管表。
 func MigrateHostedSchema(db *gorm.DB) error {
+	if err := normalizePaymentNotificationIndex(db); err != nil {
+		return err
+	}
 	if err := db.AutoMigrate(HostedModels()...); err != nil {
 		return fmt.Errorf("托管结构迁移失败: %w", err)
+	}
+	return nil
+}
+
+// normalizePaymentNotificationIndex upgrades the early single-column unique
+// index to the intended (provider, provider_notification_id) composite key.
+// AutoMigrate does not rewrite an existing index with the same name, so this
+// narrow preflight keeps upgraded databases aligned with fresh installs.
+func normalizePaymentNotificationIndex(db *gorm.DB) error {
+	if !db.Migrator().HasTable(&model.PaymentNotification{}) {
+		return nil
+	}
+	indexes, err := db.Migrator().GetIndexes(&model.PaymentNotification{})
+	if err != nil {
+		return fmt.Errorf("读取支付回调索引失败: %w", err)
+	}
+	for _, index := range indexes {
+		if index.Name() != "idx_payment_notification_provider_id" {
+			continue
+		}
+		columns := index.Columns()
+		if len(columns) == 2 && ((columns[0] == "provider" && columns[1] == "provider_notification_id") ||
+			(columns[0] == "provider_notification_id" && columns[1] == "provider")) {
+			return nil
+		}
+		if err := db.Migrator().DropIndex(&model.PaymentNotification{}, index.Name()); err != nil {
+			return fmt.Errorf("升级支付回调索引失败: %w", err)
+		}
+		return nil
 	}
 	return nil
 }

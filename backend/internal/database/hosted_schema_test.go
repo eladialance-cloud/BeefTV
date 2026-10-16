@@ -48,6 +48,45 @@ func TestMigrateHostedSchemaIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestMigrateHostedSchemaUpgradesPaymentNotificationIndex(t *testing.T) {
+	db := openHostedTestDB(t, "payment-notification-index.db")
+	if err := MigrateHostedSchema(db); err != nil {
+		t.Fatalf("首次迁移失败: %v", err)
+	}
+	if err := db.Migrator().DropIndex(&model.PaymentNotification{}, "idx_payment_notification_provider_id"); err != nil {
+		t.Fatalf("删除复合索引失败: %v", err)
+	}
+	if err := db.Exec("CREATE UNIQUE INDEX idx_payment_notification_provider_id ON payment_notifications(provider_notification_id)").Error; err != nil {
+		t.Fatalf("模拟旧单列索引失败: %v", err)
+	}
+
+	if err := MigrateHostedSchema(db); err != nil {
+		t.Fatalf("升级迁移失败: %v", err)
+	}
+	indexes, err := db.Migrator().GetIndexes(&model.PaymentNotification{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, index := range indexes {
+		if index.Name() != "idx_payment_notification_provider_id" {
+			continue
+		}
+		columns := index.Columns()
+		if len(columns) != 2 || ((columns[0] != "provider" || columns[1] != "provider_notification_id") &&
+			(columns[0] != "provider_notification_id" || columns[1] != "provider")) {
+			t.Fatalf("升级后必须为复合索引，得到 %v", columns)
+		}
+		if err := db.Create(&model.PaymentNotification{ID: "n-1", Provider: model.PaymentProviderAlipay, ProviderNotificationID: "notify-1"}).Error; err != nil {
+			t.Fatalf("写入支付宝通知失败: %v", err)
+		}
+		if err := db.Create(&model.PaymentNotification{ID: "n-2", Provider: model.PaymentProviderWeChat, ProviderNotificationID: "notify-1"}).Error; err != nil {
+			t.Fatalf("不同渠道使用同一通知号应被允许: %v", err)
+		}
+		return
+	}
+	t.Fatal("升级后缺少支付回调唯一索引")
+}
+
 func TestRequireHostedSchemaFailsOnEmptyDatabase(t *testing.T) {
 	db := openHostedTestDB(t, "empty.db")
 	if err := RequireHostedSchema(db); err == nil {

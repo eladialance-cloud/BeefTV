@@ -60,8 +60,8 @@ func (PaymentOrder) TableName() string { return "payment_orders" }
 // on one row and can never credit twice.
 type PaymentNotification struct {
 	ID                     string    `json:"id" gorm:"primaryKey;size:36"`
-	Provider               string    `json:"provider" gorm:"size:32;index"`
-	ProviderNotificationID string    `json:"providerNotificationId" gorm:"size:128;uniqueIndex:idx_payment_notification_provider_id"`
+	Provider               string    `json:"provider" gorm:"size:32;uniqueIndex:idx_payment_notification_provider_id,priority:1"`
+	ProviderNotificationID string    `json:"providerNotificationId" gorm:"size:128;uniqueIndex:idx_payment_notification_provider_id,priority:2"`
 	ProviderTradeNo        string    `json:"providerTradeNo" gorm:"size:128"`
 	OrderID                string    `json:"orderId" gorm:"size:36;index"`
 	Status                 string    `json:"status" gorm:"size:24"`
