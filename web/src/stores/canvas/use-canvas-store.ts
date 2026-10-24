@@ -17,6 +17,7 @@ import type { CanvasStarterMode } from "@/lib/canvas/canvas-starter";
 import type { CanvasAssistantSession, CanvasConnection, CanvasNodeData, ViewportTransform } from "@/types/canvas";
 import type { DirectorScene } from "@/types/director";
 import type { TimelineProject } from "@/types/timeline";
+import type { WeddingProductionState } from "@/lib/wedding/types";
 
 export type CanvasProject = {
     id: string;
@@ -42,6 +43,7 @@ export type CanvasProject = {
     viewport: ViewportTransform;
     directorScenes: DirectorScene[];
     timeline?: TimelineProject;
+    weddingProduction?: WeddingProductionState;
 };
 
 export type CanvasFolder = {

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { createWeddingProductionState } from "@/lib/wedding/production-state";
 
 type Stored = Map<string, string>;
 const stored: Stored = new Map();
@@ -333,6 +334,44 @@ beforeEach(() => {
 });
 
 describe("画布文档提交日记", () => {
+    test("婚礼生产状态随画布文档提交并读回", async () => {
+        const base = canvas("跨时空婚礼电影");
+        await seedConfirmed(base);
+        server.revision = 1;
+        server.document = base;
+        const production = createWeddingProductionState({
+            template: { id: "template-1", key: "cross-era-wedding-volc", version: "1.0.0" },
+            source: {
+                groomPhotoNodeId: "groom",
+                bridePhotoNodeId: "bride",
+                maleName: "林屿",
+                femaleName: "周棠",
+                story: "杭州西湖相识",
+                consentConfirmed: true,
+                ratio: "16:9",
+                resolution: "720p",
+            },
+            dynasties: [{
+                id: "tang",
+                name: "唐",
+                order: 0,
+                portraitMaleNodeId: "tang-male",
+                portraitFemaleNodeId: "tang-female",
+                sceneNodeId: "tang-scene",
+                videoNodeId: "tang-video",
+            }],
+            now: "2026-10-25T00:00:00.000Z",
+        });
+        production.dynasties[0]!.promptOverride = "edited prompt";
+
+        await persistCanvasDocument("c1", { weddingProduction: production });
+
+        expect((server.document as { weddingProduction?: { dynasties: Array<{ promptOverride?: string }> } })
+            .weddingProduction?.dynasties[0]?.promptOverride).toBe("edited prompt");
+        expect(useCanvasStore.getState().openProject("c1")?.weddingProduction?.dynasties[0]?.promptOverride)
+            .toBe("edited prompt");
+    });
+
     test("revision 76 confirmed graph survives cache projection, restart and revision 77 ordinary save", async () => {
         await useCanvasStore.persist.rehydrate();
         const nodes = Array.from({ length: 10 }, (_, index) => node(`n${index}`, `Node ${index}`));
