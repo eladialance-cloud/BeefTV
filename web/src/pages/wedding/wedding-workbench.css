@@ -1,0 +1,438 @@
+.wedding-workbench {
+    --wedding-bg: #0b0e10;
+    --wedding-panel: #14191c;
+    --wedding-panel-raised: #1a2024;
+    --wedding-line: #293136;
+    --wedding-text: #edf1f2;
+    --wedding-muted: #879299;
+    --wedding-faint: #5d686e;
+    --wedding-amber: #d8aa61;
+    --wedding-teal: #6fb9ab;
+    display: grid;
+    grid-template-columns: 236px minmax(0, 1fr);
+    min-height: 100vh;
+    background: var(--wedding-bg);
+    color: var(--wedding-text);
+}
+
+.wedding-workbench-centered {
+    display: flex;
+    min-height: 100vh;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 10px;
+    color: var(--wedding-muted);
+}
+
+.wedding-workbench-centered strong {
+    color: var(--wedding-text);
+    font-size: 18px;
+}
+
+.wedding-workbench-centered a {
+    color: var(--wedding-amber);
+}
+
+.wedding-spinner {
+    width: 22px;
+    height: 22px;
+    animation: wedding-spin .9s linear infinite;
+}
+
+@keyframes wedding-spin {
+    to { transform: rotate(360deg); }
+}
+
+.wedding-workbench-rail {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    padding: 18px 14px;
+    border-right: 1px solid var(--wedding-line);
+    background: #0d1113;
+}
+
+.wedding-workbench-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 2px 7px 18px;
+}
+
+.wedding-workbench-mark {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    place-items: center;
+    border: 1px solid #38524d;
+    border-radius: 6px;
+    color: var(--wedding-teal);
+    font-family: Georgia, serif;
+    font-size: 18px;
+}
+
+.wedding-workbench-brand strong,
+.wedding-workbench-brand small {
+    display: block;
+}
+
+.wedding-workbench-brand strong {
+    font-size: 12px;
+}
+
+.wedding-workbench-brand small {
+    margin-top: 3px;
+    color: var(--wedding-faint);
+    font-size: 9px;
+}
+
+.wedding-workbench-project {
+    margin-bottom: 17px;
+    padding: 11px;
+    border: 1px solid var(--wedding-line);
+    border-radius: 6px;
+    background: var(--wedding-panel);
+}
+
+.wedding-workbench-project small,
+.wedding-workbench-project strong,
+.wedding-workbench-project span {
+    display: block;
+}
+
+.wedding-workbench-project small {
+    color: var(--wedding-faint);
+    font-size: 8px;
+    letter-spacing: .12em;
+}
+
+.wedding-workbench-project strong {
+    margin-top: 5px;
+    overflow: hidden;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.wedding-workbench-project span {
+    margin-top: 6px;
+    color: var(--wedding-muted);
+    font-size: 9px;
+}
+
+.wedding-workbench-steps {
+    display: grid;
+    gap: 4px;
+}
+
+.wedding-workbench-step {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    min-height: 46px;
+    padding: 6px 9px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.wedding-workbench-step:hover {
+    background: rgba(255, 255, 255, .025);
+}
+
+.wedding-workbench-step.is-active {
+    border-color: rgba(216, 170, 97, .24);
+    background: rgba(216, 170, 97, .075);
+}
+
+.wedding-workbench-step > span {
+    display: grid;
+    width: 25px;
+    height: 25px;
+    place-items: center;
+    border: 1px solid var(--wedding-line);
+    border-radius: 50%;
+    color: var(--wedding-faint);
+    font-size: 8px;
+}
+
+.wedding-workbench-step.is-active > span {
+    border-color: rgba(216, 170, 97, .4);
+    color: var(--wedding-amber);
+}
+
+.wedding-workbench-step strong,
+.wedding-workbench-step small {
+    display: block;
+}
+
+.wedding-workbench-step strong {
+    color: #dce2e4;
+    font-size: 10px;
+}
+
+.wedding-workbench-step small {
+    margin-top: 3px;
+    color: var(--wedding-faint);
+    font-size: 8px;
+}
+
+.wedding-workbench-workspace {
+    min-width: 0;
+    padding: 0 22px 24px;
+}
+
+.wedding-workbench-topbar {
+    display: flex;
+    min-height: 64px;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--wedding-line);
+}
+
+.wedding-workbench-topbar span,
+.wedding-workbench-topbar strong {
+    display: block;
+}
+
+.wedding-workbench-topbar span {
+    color: var(--wedding-faint);
+    font-size: 8px;
+    letter-spacing: .12em;
+}
+
+.wedding-workbench-topbar strong {
+    margin-top: 4px;
+    font-size: 11px;
+}
+
+.wedding-workbench-topbar a {
+    padding: 7px 10px;
+    border: 1px solid var(--wedding-line);
+    border-radius: 5px;
+    color: var(--wedding-muted);
+    font-size: 9px;
+    text-decoration: none;
+}
+
+.wedding-workbench-heading {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 24px 0 18px;
+}
+
+.wedding-workbench-heading small {
+    color: var(--wedding-amber);
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 9px;
+}
+
+.wedding-workbench-heading h1 {
+    margin: 7px 0 0;
+    font-size: 22px;
+    font-weight: 630;
+}
+
+.wedding-workbench-heading p {
+    max-width: 650px;
+    margin: 7px 0 0;
+    color: var(--wedding-muted);
+    font-size: 10px;
+    line-height: 1.7;
+}
+
+.wedding-workbench-status {
+    padding: 5px 8px;
+    border: 1px solid var(--wedding-line);
+    border-radius: 99px;
+    color: var(--wedding-muted);
+    font-size: 8px;
+    white-space: nowrap;
+}
+
+.wedding-workbench-status.is-approved {
+    border-color: rgba(111, 185, 171, .3);
+    color: var(--wedding-teal);
+}
+
+.wedding-workbench-status.is-stale,
+.wedding-workbench-status.is-failed {
+    border-color: rgba(215, 119, 114, .35);
+    color: #d77772;
+}
+
+.wedding-workbench-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(320px, .6fr);
+    gap: 12px;
+}
+
+.wedding-workbench-panel {
+    border: 1px solid var(--wedding-line);
+    border-radius: 7px;
+    background: var(--wedding-panel);
+}
+
+.wedding-workbench-panel > header {
+    display: flex;
+    min-height: 46px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 13px;
+    border-bottom: 1px solid #22292e;
+}
+
+.wedding-workbench-panel > header strong {
+    font-size: 10px;
+}
+
+.wedding-workbench-panel > header span {
+    color: var(--wedding-faint);
+    font-size: 8px;
+}
+
+.wedding-workbench-facts {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    margin: 0;
+    padding: 13px;
+}
+
+.wedding-workbench-facts div {
+    padding: 9px;
+    border: 1px solid #242c31;
+    border-radius: 5px;
+    background: var(--wedding-panel-raised);
+}
+
+.wedding-workbench-facts dt {
+    color: var(--wedding-faint);
+    font-size: 8px;
+}
+
+.wedding-workbench-facts dd {
+    margin: 5px 0 0;
+    overflow: hidden;
+    color: #d5dcde;
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.wedding-workbench-dynasties {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 7px;
+    padding: 0 13px 13px;
+}
+
+.wedding-workbench-dynasties button {
+    display: flex;
+    min-height: 52px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 10px;
+    border: 1px solid #242c31;
+    border-radius: 5px;
+    background: #111619;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.wedding-workbench-dynasties button.is-active {
+    border-color: rgba(216, 170, 97, .3);
+    background: rgba(216, 170, 97, .07);
+}
+
+.wedding-workbench-dynasties strong {
+    font-size: 10px;
+}
+
+.wedding-workbench-dynasties small {
+    color: var(--wedding-faint);
+    font-size: 8px;
+}
+
+.wedding-workbench-state-list {
+    display: grid;
+    gap: 1px;
+    padding: 9px 13px 13px;
+}
+
+.wedding-workbench-state-list div {
+    display: flex;
+    min-height: 42px;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #22292e;
+}
+
+.wedding-workbench-state-list span {
+    color: var(--wedding-muted);
+    font-size: 9px;
+}
+
+.wedding-workbench-state-list strong {
+    color: #d5dcde;
+    font-size: 9px;
+    font-weight: 530;
+}
+
+.wedding-workbench-empty {
+    padding: 20px 13px;
+    color: var(--wedding-muted);
+    font-size: 10px;
+}
+
+@media (max-width: 1120px) {
+    .wedding-workbench {
+        grid-template-columns: 205px minmax(0, 1fr);
+    }
+
+    .wedding-workbench-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 760px) {
+    .wedding-workbench {
+        display: block;
+    }
+
+    .wedding-workbench-rail {
+        position: relative;
+        height: auto;
+    }
+
+    .wedding-workbench-steps {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .wedding-workbench-workspace {
+        padding: 0 14px 20px;
+    }
+
+    .wedding-workbench-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .wedding-workbench-facts {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .wedding-spinner {
+        animation: none;
+    }
+}

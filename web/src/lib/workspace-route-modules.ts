@@ -4,8 +4,10 @@ const workspaceRouteLoaders = {
     assets: () => import("@/pages/assets"),
     canvas: () => import("@/pages/canvas"),
     create: () => import("@/pages/create"),
+    manju: () => import("@/pages/manju"),
     projects: () => import("@/pages/projects"),
     projectDetail: () => import("@/pages/projects/detail"),
+    wedding: () => import("@/pages/wedding/workbench"),
 };
 
 export const loadAgentsPage = workspaceRouteLoaders.agents;
@@ -14,8 +16,10 @@ export const loadHomePage = workspaceRouteLoaders.home;
 export const loadCanvasPage = workspaceRouteLoaders.canvas;
 export const loadCanvasProjectPage = () => import("@/pages/canvas/project");
 export const loadCreatePage = workspaceRouteLoaders.create;
+export const loadManjuStudioPage = workspaceRouteLoaders.manju;
 export const loadProjectDetailPage = workspaceRouteLoaders.projectDetail;
 export const loadProjectsPage = workspaceRouteLoaders.projects;
+export const loadWeddingWorkbenchPage = workspaceRouteLoaders.wedding;
 
 export function preloadWorkspaceRoute(pathnameOrSlug: string) {
     const segments = pathnameOrSlug.replace(/^\//, "").split("/").filter(Boolean);

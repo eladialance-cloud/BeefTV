@@ -3,7 +3,7 @@ import { Navigate, Outlet, useLocation, useParams } from "react-router";
 
 import { createWorkspaceRouter } from "@/lib/app-routing";
 import { FullScreenLoader, WorkspaceRouteLoader } from "@/components/ui/aceternity/full-screen-loader";
-import { loadAgentsPage, loadAssetsPage, loadCanvasPage, loadCanvasProjectPage, loadCreatePage, loadHomePage, loadProjectDetailPage } from "@/lib/workspace-route-modules";
+import { loadAgentsPage, loadAssetsPage, loadCanvasPage, loadCanvasProjectPage, loadCreatePage, loadHomePage, loadManjuStudioPage, loadProjectDetailPage, loadProjectsPage, loadWeddingWorkbenchPage } from "@/lib/workspace-route-modules";
 import { CanvasRefreshShell } from "@/pages/canvas/canvas-refresh-shell";
 import RouteErrorPage from "@/pages/route-error";
 import { isLocalWorkspaceMode } from "@/services/workspace-mode";
@@ -14,11 +14,15 @@ const HomePage = lazy(loadHomePage);
 const CanvasPage = lazy(loadCanvasPage);
 const CanvasProjectPage = lazy(loadCanvasProjectPage);
 const CreatePage = lazy(loadCreatePage);
+const ManjuStudioPage = lazy(loadManjuStudioPage);
+const ProjectsPage = lazy(loadProjectsPage);
 const NotFound = lazy(() => import("@/pages/not-found"));
 const PluginsPage = lazy(() => import("@/pages/plugins"));
 const EagleLibraryPage = lazy(() => import("@/pages/plugins/eagle"));
 const ProjectDetailPage = lazy(loadProjectDetailPage);
+const WeddingWorkbenchPage = lazy(loadWeddingWorkbenchPage);
 const SettingsPage = lazy(() => import("@/pages/settings"));
+const LoginPage = lazy(() => import("@/pages/login"));
 const TestVoiceRecording = lazy(() => import("@/pages/test-voice-recording"));
 const UserLayout = lazy(() => import("@/layouts/user-layout"));
 const RequireFeature = lazy(() => import("@/components/workspace/require-feature").then((module) => ({ default: module.RequireFeature })));
@@ -71,12 +75,17 @@ function devRoutes() {
 
 export const router = createWorkspaceRouter([
     ...(import.meta.env.DEV ? devRoutes() : []),
+    // 登录/注册是公开路由，不能套工作区壳，也不能触发 bootstrap。
+    { path: "/login", element: fullScreenDeferred(<LoginPage />), errorElement: <RouteErrorPage /> },
+    { path: "/register", element: fullScreenDeferred(<LoginPage />), errorElement: <RouteErrorPage /> },
     {
         element: <WorkspaceLayout />,
         errorElement: <RouteErrorPage />,
         children: [
             { path: "/", element: deferred(<HomePage />) },
             { path: "/create", element: deferred(<CreatePage />) },
+            { path: "/manju", element: deferred(<ManjuStudioPage />) },
+            { path: "/manju/:projectId", element: deferred(<ManjuStudioPage />) },
             {
                 path: "/tasks",
                 // 任务页暂不开放，保留路由以避免旧链接进入半成品界面。
@@ -99,7 +108,7 @@ export const router = createWorkspaceRouter([
             { path: "/test-voice-recording", element: deferred(<TestVoiceRecording />) },
             {
                 path: "/projects",
-                element: deferred(<CanvasPage />),
+                element: deferred(<ProjectsPage />),
             },
             // LibTV 使用单数 `/project` 作为项目库入口；直接渲染本地项目库，
             // 保留原始 URL，避免像素复刻时出现一次重定向造成的布局/加载闪烁。
@@ -127,6 +136,7 @@ export const router = createWorkspaceRouter([
             },
             { path: "/canvas", element: deferred(<CanvasPage />) },
             { path: "/canvas/:id", element: <CanvasProjectPage /> },
+            { path: "/wedding/:canvasId", element: deferred(<WeddingWorkbenchPage />) },
         ],
     },
     { path: "*", element: fullScreenDeferred(<NotFound />) },
