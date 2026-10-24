@@ -1,0 +1,1284 @@
+{
+  "schema": "visideep.workflow-template/v2",
+  "schemaVersion": 2,
+  "id": "cross-era-wedding-volc",
+  "name": "跨时空婚礼电影",
+  "version": "1.0.0",
+  "category": "婚礼",
+  "badge": "跨时空",
+  "scene": "general",
+  "canvasType": "node",
+  "summary": "上传男女照片，选择 2–5 个朝代，使用后台图片和视频模型生成跨时空婚礼电影。默认火山 Ark 版，Agnes + FaceFusion 为可选版本。",
+  "description": "基于 smart-open/skills 的 timeless-wedding-volc 与 timeless-wedding 重组为后台模型驱动的节点工作流。",
+  "source": {
+    "repository": "https://github.com/smart-open/skills.git",
+    "primarySkill": "timeless-wedding-volc",
+    "optionalSkill": "timeless-wedding",
+    "license": "原仓库标注个人学习与非商业用途；商用前必须单独确认授权"
+  },
+  "globalRules": {
+    "photoConsent": "男女照片必须获得本人授权，只用于当前订单。",
+    "referenceIdentity": "所有肖像、场景和视频必须锁定原始人物身份，不允许美颜漂移或换脸成不同的人。",
+    "providerRouting": "只调用管理后台已配置的渠道模型，不在 JSON、前端或日志中保存 API Key。",
+    "unknownModel": "模型或渠道不可用时停止，不自动换供应商，不自动付费重试。",
+    "commercialLicense": "原仓库许可证为个人学习和非商业用途，正式商用前必须确认授权。"
+  },
+  "runtime": {
+    "mode": "guided_steps",
+    "stateKey": "workflowRuntime",
+    "autoAdvance": false,
+    "statuses": [
+      "not_started",
+      "generating",
+      "awaiting_confirmation",
+      "needs_review",
+      "completed"
+    ],
+    "approvalRoles": {
+      "default": [
+        "producer"
+      ],
+      "C08": [
+        "producer",
+        "couple"
+      ]
+    },
+    "dynamicExpansion": {
+      "source": "variables.dynasties",
+      "min": 2,
+      "max": 5,
+      "nodesPerDynasty": [
+        "dynastyPortraitMale",
+        "dynastyPortraitFemale",
+        "dynastyScene",
+        "dynastyVideo"
+      ]
+    }
+  },
+  "variables": {
+    "maleName": "新郎",
+    "femaleName": "新娘",
+    "customDesc": "",
+    "dynasties": [
+      "tang",
+      "ming",
+      "modern"
+    ],
+    "ratio": "16:9",
+    "duration": 8,
+    "transitionDuration": 1,
+    "resolution": "720p",
+    "addIntroOutro": "添加",
+    "addSubtitles": "添加",
+    "bgmMode": "情绪弧自动"
+  },
+  "forms": {
+    "setup": {
+      "title": "创建跨时空婚礼电影",
+      "description": "上传两张照片，选择朝代和视频规格。所有生成都通过管理后台已配置的渠道模型执行。",
+      "steps": [
+        {
+          "id": "source",
+          "title": "照片与个人信息",
+          "fields": [
+            {
+              "key": "groomPhoto",
+              "type": "image",
+              "label": "新郎清晰正脸照片",
+              "required": true,
+              "uploadKind": "image",
+              "accept": "image/jpeg,image/png,image/webp"
+            },
+            {
+              "key": "bridePhoto",
+              "type": "image",
+              "label": "新娘清晰正脸照片",
+              "required": true,
+              "uploadKind": "image",
+              "accept": "image/jpeg,image/png,image/webp"
+            },
+            {
+              "key": "maleName",
+              "type": "text",
+              "label": "新郎称呼",
+              "defaultValue": "新郎"
+            },
+            {
+              "key": "femaleName",
+              "type": "text",
+              "label": "新娘称呼",
+              "defaultValue": "新娘"
+            },
+            {
+              "key": "customDesc",
+              "type": "textarea",
+              "label": "想加入的个人故事",
+              "placeholder": "选填：相识地点、共同经历、想保留的小细节"
+            }
+          ]
+        },
+        {
+          "id": "dynasties",
+          "title": "朝代与画面",
+          "fields": [
+            {
+              "key": "dynasties",
+              "type": "checkboxGroup",
+              "label": "选择 2–5 个朝代",
+              "required": true,
+              "minSelections": 2,
+              "maxSelections": 5,
+              "options": [
+                {
+                  "label": "夏 · 华夏初光",
+                  "value": "xia"
+                },
+                {
+                  "label": "西周 · 礼乐天下",
+                  "value": "xizhou"
+                },
+                {
+                  "label": "战国 · 烽火佳人",
+                  "value": "warring"
+                },
+                {
+                  "label": "汉 · 大汉雄风",
+                  "value": "han"
+                },
+                {
+                  "label": "晋 · 魏晋风流",
+                  "value": "jin"
+                },
+                {
+                  "label": "南北朝 · 乱世情缘",
+                  "value": "nanbeichao"
+                },
+                {
+                  "label": "唐 · 大唐盛世",
+                  "value": "tang"
+                },
+                {
+                  "label": "宋 · 宋韵清雅",
+                  "value": "song"
+                },
+                {
+                  "label": "元 · 草原雄鹰",
+                  "value": "yuan"
+                },
+                {
+                  "label": "明 · 凤冠霞帔",
+                  "value": "ming"
+                },
+                {
+                  "label": "清 · 满汉情深",
+                  "value": "qing"
+                },
+                {
+                  "label": "民国 · 十里洋场",
+                  "value": "minguo"
+                },
+                {
+                  "label": "现代 · 永恒誓言",
+                  "value": "modern"
+                }
+              ]
+            },
+            {
+              "key": "ratio",
+              "type": "segmented",
+              "label": "画幅",
+              "required": true,
+              "defaultValue": "16:9",
+              "options": [
+                "16:9",
+                "9:16"
+              ]
+            },
+            {
+              "key": "duration",
+              "type": "segmented",
+              "label": "每朝代时长",
+              "required": true,
+              "defaultValue": 8,
+              "options": [
+                4,
+                5,
+                6,
+                8,
+                10,
+                12,
+                15
+              ]
+            },
+            {
+              "key": "transitionDuration",
+              "type": "segmented",
+              "label": "转场时长",
+              "defaultValue": 1,
+              "options": [
+                0.5,
+                1,
+                1.5
+              ]
+            }
+          ]
+        },
+        {
+          "id": "output",
+          "title": "输出设置",
+          "fields": [
+            {
+              "key": "resolution",
+              "type": "segmented",
+              "label": "分辨率",
+              "required": true,
+              "defaultValue": "720p",
+              "options": [
+                "480p",
+                "720p",
+                "1080p"
+              ]
+            },
+            {
+              "key": "addIntroOutro",
+              "type": "segmented",
+              "label": "片头片尾",
+              "defaultValue": "添加",
+              "options": [
+                "添加",
+                "不添加"
+              ]
+            },
+            {
+              "key": "addSubtitles",
+              "type": "segmented",
+              "label": "朝代字幕",
+              "defaultValue": "添加",
+              "options": [
+                "添加",
+                "不添加"
+              ]
+            },
+            {
+              "key": "bgmMode",
+              "type": "segmented",
+              "label": "BGM",
+              "required": true,
+              "defaultValue": "情绪弧自动",
+              "options": [
+                "情绪弧自动",
+                "自备音乐",
+                "关闭"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "promptSources": [
+    {
+      "key": "volcSkill",
+      "title": "火山 Ark 跨时空婚礼核心规则",
+      "path": "timeless-wedding-volc/SKILL.md",
+      "content": "---\r\nname: \"timeless-wedding-volc\"\r\ndescription: \"AI 跨时空婚礼电影生成器。上传男女照片，选择中国朝代，自动生成电影质感的跨时代婚礼视频。当用户想要制作 AI 婚礼视频、跨朝代爱情电影、上传照片生成视频时调用此 Skill。\"\r\n---\r\n\r\n# Timeless Wedding Volc - AI 跨时空婚礼电影生成器\r\n\r\n基于 **Volcengine Ark（豆包）** 平台的 AI 婚礼电影生成 Skill。用户上传男女两张照片，选择 2-5 个中国朝代，即可自动生成一部跨越时空的 cinematic 婚礼电影。\r\n\r\n## 核心特性\r\n\r\n- **Seedream 5.0 Pro** 生成朝代 AI 肖像与场景首帧（i2i 保留面部五官）\r\n- **Seedance 2.0** 生成电影质感动态视频（支持 5 种模式）\r\n- **13 个朝代**完整配置，每个朝代配有独立服装、场景、风俗、时间分段视频分镜剧本\r\n- **朝代标题卡片**：每个朝代转场后显示朝代名 + 核心故事概述\r\n- **FFmpeg 合并**：concat demuxer + 片头片尾 + 朝代标题卡\r\n- **零依赖**：纯 Node.js 内置模块，无需 npm install\r\n- **断点续跑**：通过 `state.json` 支持 `--resume` 和 `--regenerate`\r\n\r\n## 模型说明\r\n\r\n### 图片生成（固定，无需指定）\r\n\r\n| 模型 | 模型 ID | 说明 |\r\n|------|---------|------|\r\n| Seedream 5.0 Pro | `doubao-seedream-5-0-pro-260628` | i2i 肖像 + multi-i2i 场景，最小 921,600 像素 |\r\n\r\n### 视频生成（用户可选）\r\n\r\n通过 `--video-model` 参数指定：\r\n\r\n| 选项 | 模型 ID | 特点 | 适用场景 |\r\n|------|---------|------|----------|\r\n| **标准版**（默认） | `doubao-seedance-2-0-260128` | Seedance 2.0，画质最佳，生成较慢 | **正式输出**，婚礼电影成片 |\r\n| **Mini 快速版** | `doubao-seedance-2-0-mini-260615` | Seedance 2.0 Mini，速度更快 | 快速预览效果、调试分镜 |\r\n| **Fast 版** | `doubao-seedance-2-0-fast-260128` | Seedance 2.0 Fast，极速生成 | 最快验证，牺牲部分画质 |\r\n\r\n> Mini/Fast 模型不支持 `resolution` 参数，代码会自动移除该参数。\r\n> 标准版支持完整参数：`duration`、`ratio`、`resolution`、`generate_audio`、`return_last_frame`。\r\n\r\n### 使用示例\r\n\r\n```powershell\r\n# 标准版（默认，无需指定 --video-model）\r\nnode timeless_wedding_volc.js --dynasties \"tang,ming\" --male-photo ... --female-photo ...\r\n\r\n# Mini 快速版（预览效果）\r\nnode timeless_wedding_volc.js --dynasties \"tang,ming\" --video-model doubao-seedance-2-0-mini-260615 --male-photo ... --female-photo ...\r\n\r\n# Fast 极速版（最快验证）\r\nnode timeless_wedding_volc.js --dynasties \"tang,ming\" --video-model doubao-seedance-2-0-fast-260128 --male-photo ... --female-photo ...\r\n```\r\n\r\n## 环境要求\r\n\r\n- **Node.js** 12+\r\n- **FFmpeg** 4.4+（完整版，需支持 `drawtext` 和 `concat`）\r\n- **Volcengine Ark API Key**\r\n\r\n### FFmpeg 安装（Windows）\r\n\r\n```powershell\r\nwinget install Gyan.FFmpeg\r\n```\r\n\r\n## 工作流\r\n\r\n```\r\n用户照片（男女各1张）\r\n       │\r\n       ▼\r\n┌─────────────────┐\r\n│  Seedream i2i   │  生成朝代 AI 肖像（保留五官特征，朝代服饰）\r\n│  单人肖像生成    │  size: 1424x800\r\n└─────────────────┘\r\n       │\r\n       ▼\r\n┌─────────────────┐\r\n│ Seedream multi- │  男女肖像参考生成双人场景首帧\r\n│    i2i 场景图   │  couplePrompt + portrait references\r\n└─────────────────┘\r\n       │\r\n       ▼\r\n┌─────────────────┐\r\n│  Seedance 视频  │  首帧/参考图驱动生成 cinematic 视频\r\n│    生成         │  无音频，纯画面叙事\r\n└─────────────────┘\r\n       │\r\n       ▼\r\n┌─────────────────┐\r\n│  FFmpeg 合并    │  朝代标题卡 → 视频 → 片头片尾\r\n│    输出         │  concat demuxer, 无音频\r\n└─────────────────┘\r\n```\r\n\r\n## 使用方法\r\n\r\n### 设置 API Key\r\n\r\n```powershell\r\n$env:ARK_API_KEY = \"your-ark-api-key\"\r\n```\r\n\r\n### 基础用法\r\n\r\n```powershell\r\ncd .trae/skills/timeless-wedding-volc/scripts\r\n\r\nnode timeless_wedding_volc.js `\r\n  --male-photo \"C:\\Photos\\groom.jpg\" `\r\n  --female-photo \"C:\\Photos\\bride.jpg\" `\r\n  --dynasties \"tang,song,ming,modern\" `\r\n  --add-title --add-ending\r\n```\r\n\r\n### 完整参数列表\r\n\r\n| 参数 | 必填 | 默认值 | 说明 |\r\n|------|------|--------|------|\r\n| `--male-photo <path>` | 是 | - | 男方照片路径 |\r\n| `--female-photo <path>` | 是 | - | 女方照片路径 |\r\n| `--dynasties <ids>` | 是 | - | 逗号分隔的朝代 ID（2-5 个） |\r\n| `--custom-desc <text>` | 否 | - | 个人故事描述，融入场景生成 |\r\n| `--mode <mode>` | 否 | `first-frame` | 视频模式（见下文） |\r\n| `--video-model <id>` | 否 | 标准版 | Seedance 模型 ID |\r\n| `--duration <s>` | 否 | `8` | 每段视频时长（4-15 秒） |\r\n| `--ratio <r>` | 否 | `16:9` | 宽高比：`16:9` / `9:16` |\r\n| `--resolution <r>` | 否 | `720p` | 分辨率：`480p` / `720p` / `1080p` |\r\n| `--transition-duration <s>` | 否 | `1.0` | 转场时长（秒） |\r\n| `--add-title` | 否 | false | 添加片头（\"几生几世 跨时空相爱\"） |\r\n| `--add-ending` | 否 | false | 添加片尾（\"今生今世 永不分离\"） |\r\n| `--add-subtitles` | 否 | false | 每段添加朝代信息字幕 |\r\n| `--bgm <path\\|auto>` | 否 | auto | BGM：`auto`=按朝代 mood 情绪弧分段（bgm_arc.js + sidechain 避让）；`<path>`=自备曲目 amix 垫底 + loudnorm −14 LUFS |\r\n| `--no-bgm` | 否 | 关闭 | 关闭 BGM 声音层 |\r\n| `--dry-run` | 否 | 关闭 | 只打印全部 ffmpeg 命令（合并/情绪弧/混音），不执行、不消耗额度 |\r\n| `--output <path>` | 否 | 自动 | 最终输出 MP4 路径 |\r\n| `--resume` | 否 | false | 从 state.json 断点续跑 |\r\n| `--regenerate <id>` | 否 | - | 重生成指定朝代 |\r\n| `--api-key <key>` | 否 | 环境变量 | Ark API Key |\r\n| `--work-dir <dir>` | 否 | 自动 | 工作目录 |\r\n\r\n## 视频生成模式\r\n\r\n| 模式 | 说明 | 适用场景 |\r\n|------|------|----------|\r\n| `first-frame` | 场景图作首帧，Seedance 延续画面 | **默认推荐**，场景一致性最佳 |\r\n| `first-last-frame` | 首尾帧双约束，生成过渡视频 | 需要明确起止画面 |\r\n| `multimodal` | 肖像作参考 + 场景作首帧 | 增强面部一致性 |\r\n| `portrait-reference` | 仅肖像参考，文字驱动场景 | 自由度高 |\r\n| `text2video` | 纯文本，跳过图片生成 | 最快但一致性最低 |\r\n\r\n## 可用朝代\r\n\r\n| ID | 朝代 | 主题 | 年代 | 故事概述 |\r\n|----|------|------|------|----------|\r\n| `xia` | 夏 | 华夏初光 | c.2070-1600 BCE | - |\r\n| `xizhou` | 西周 | 礼乐天下 | 1046-771 BCE | - |\r\n| `warring` | 战国 | 烽火佳人 | 475-221 BCE | 烽火连天下的重逢之誓 |\r\n| `han` | 汉 | 大汉雄风 | 202 BCE-220 CE | - |\r\n| `jin` | 晋 | 魏晋风流 | 265-420 | - |\r\n| `nanbeichao` | 南北朝 | 乱世情缘 | 420-589 | - |\r\n| `tang` | 唐 | 大唐盛世 | 618-907 | 长安灯火下的千年之约 |\r\n| `song` | 宋 | 宋韵清雅 | 960-1279 | - |\r\n| `yuan` | 元 | 草原雄鹰 | 1271-1368 | - |\r\n| `ming` | 明 | 凤冠霞帔 | 1368-1644 | 紫禁城中的凤冠之约 |\r\n| `qing` | 清 | 满汉情深 | 1644-1912 | - |\r\n| `minguo` | 民国 | 十里洋场 | 1912-1949 | - |\r\n| `modern` | 现代 | 永恒誓言 | 1949-Present | 山海之间的永恒承诺 |\r\n\r\n> 带\"故事概述\"的朝代已配置完整的电影级时间分段分镜剧本。\r\n\r\n## 输出结构\r\n\r\n```\r\nwork/\r\n└── 20260716-143022-a1b2/\r\n    ├── state.json              # 进度状态（支持 resume）\r\n    ├── portraits/              # 朝代 AI 肖像\r\n    ├── scenes/                 # 双人场景首帧\r\n    ├── videos/                 # 朝代视频片段\r\n    ├── last_frames/            # 视频末帧截图\r\n    ├── temp/                   # 标题卡、concat list、字体\r\n    └── final/                  # 最终合并输出\r\n```\r\n\r\n## 故障排查\r\n\r\n| 问题 | 解决方案 |\r\n|------|----------|\r\n| \"FFmpeg not found\" | `winget install Gyan.FFmpeg`，确保完整版 |\r\n| \"Request body size exceeds 64MB\" | 压缩照片至 2MB 以下 |\r\n| 视频任务 failed | 首帧敏感内容/限流，用 `--regenerate <id>` 重试 |\r\n| 面部保留度低 | 使用正面高清照片，尝试 `--mode multimodal` |\r\n| 朝代标题卡片乱码 | 确认 `C:\\Windows\\Fonts\\simhei.ttf` 存在 |\r\n| 断点续跑找不到目录 | 用 `--work-dir` 指定之前的工作目录 |\r\n\r\n## 技术架构\r\n\r\n| 文件 | 行数 | 职责 |\r\n|------|------|------|\r\n| `timeless_wedding_volc.js` | 432 | 主入口 CLI，状态机，流水线编排 |\r\n| `ark_client.js` | 151 | Ark API 通信封装，指数退避重试 |\r\n| `dynasties.js` | 536 | 13 朝代配置，英文 prompt，时间分段剧本 |\r\n| `image_pipeline.js` | 221 | Seedream i2i 肖像 + multi-i2i 场景 |\r\n| `video_pipeline.js` | 321 | Seedance 5 模式提交、轮询、下载 |\r\n| `merge_engine.js` | 409 | FFmpeg concat 合并、标题卡、片头片尾 |\r\n\r\n## 许可证\r\n\r\n仅供个人学习和非商业用途。请遵守 Volcengine Ark 平台使用条款。\r\n\r\n## 完善记录（2026-09 借鉴 short-drama-studio 一致性方法论）\r\n\r\n- **固定 seed 可复现**：新增 `--seed <n>` 参数；首次运行自动生成 seed 并持久化到 `state.json`，续跑/重生成沿用同一 seed + 同描述即可复现。Seedream 肖像/场景 payload 与 Seedance 视频 payload 均透传该 seed（各朝代共用同一 seed）。\r\n- **identity-lock 身份锚点（三层落点）**：\r\n  - 肖像层：`image_pipeline.js` 的 portrait prompt 追加\"面容/脸型/五官/肤色与参考照片完全一致，强识别特征（痣/疤）必须原样保留，禁止美颜漂移\"；\r\n  - 场景层：couple scene prompt 追加\"男女面容必须与各自参考肖像一致，整幅画面保持不变，无多余人物\"；\r\n  - 视频层：`video_pipeline.js` 新增统一 `CONSISTENCY_SUFFIX` 追加到每个朝代 videoPrompt 末尾——\"全片同男主同女主、同脸同发型同服装、不新增角色、物件不消失\"（对应 short-drama-studio 视频 prompt 六段式中的\"一致性要求\"段）。\r\n- 之前 volc 版 `videoPrompt` 无一致性要求段（Agnes 免费版有），本次补齐对齐。\r\n- **多模态自动质检（qa_scenes.js，借鉴 qa_frames.py）**：对每个朝代场景帧，把「男方定妆照 + 女方定妆照 + 待检场景帧」喂给 Ark doubao 视觉模型（默认 `doubao-seed-1-6-flash-250615`，可 `--qa-model` 覆盖），按固定 JSON 维度判定：硬性通过 `couple_present / face_match_male / face_match_female / outfit_match（朝代婚礼服饰）/ scene_match（朝代场景、无现代穿帮）`，硬性排除 `extra_person / watermark_or_text`。输出 `work/scene_qa.json`；`--delete-bad` 把坏帧归档到 `scenes/versions/`（保留 3 版）并清 `state.scenes[id]`，重跑主程序即可补缺。用法：`node qa_scenes.js --work-dir work/xxx [--only tang,ming] [--delete-bad] [--offline]`。\r\n- **多宫格批量定妆照（grid_portraits.js，借鉴 grid_gen.py）**：把 N 个朝代的同性别定妆照塞进一张 2xN 宫格图一次生成（i2i 单人参考照 + identity-lock），ffmpeg crop 切格后回填 `state.portraits`（结构与逐张生成完全一致，场景帧阶段可直接使用），省 N-1 张图成本；旧图归档到 `portraits/versions/`。⚠ 宫格内一致性弱于逐张 i2i，适合草稿/初稿；对一致性要求高走主流程。用法：`node grid_portraits.js --male-photo him.jpg --female-photo her.jpg --work-dir work/xxx [--gender both] [--grid auto] [--force]`。`ark_client.js` 新增 `postChatCompletion`（OpenAI 兼容 /chat/completions）供质检复用。\r\n\r\n## 完善记录（2026-09-19 统一方法论 P0 落地）\r\n\r\n- **BGM 声音层（P0-3，借鉴 ManjuForge 声音四层设计）**：`merge_engine.js` 新增 `mixBgm()` +\r\n  `hasAudioStream()`，`--bgm <path>` 参数三处联动（parseArgs/help/merge options）。\r\n  成片若有原声：BGM 以 0.28 音量 amix 垫底 + loudnorm −14 LUFS；若无原声：BGM 成为音轨。\r\n  循环铺满、淡入 1.5s/淡出 2.5s；混音失败仅告警、不影响原片。\r\n- **预算防线（P0-2）**：`validateInputs()` 配置面板新增 Estimate 行——按朝代数估算\r\n  图像调用（肖像 ×2 + 场景 ×1）与视频调用（N × duration），并给出整片耗时区间。\r\n\r\n## 完善记录（2026-09-19 补课轮：BGM 情绪弧）\r\n- **BGM 情绪弧（P0-3 补全）**：`--bgm` 默认 `auto`——13 朝代 dynasties.js 各配 `mood` 字段\r\n  （majestic/solemn/tense/serene/lush/nostalgic/warm），`bgm_arc.js` 按 mood 分段选曲、\r\n  段间 0.8s 淡入淡出拼接成整条情绪弧；成片有原声时 `sidechaincompress` 自动避让\r\n  （人声压 BGM，标题卡/转场处原声静默 → 音乐自然浮起）。\r\n- **内置曲库**：`bgm/manifest.json` 声明 mood→曲目（`bgm/<mood>.mp3`，自备放入即生效）；\r\n  缺文件时按和弦参数用 ffmpeg lavfi 合成 64s 环境垫乐占位（零新增依赖，可听但简单）。\r\n- **`--dry-run` / `--no-bgm`**：dry-run 全链路（合并+情绪弧+混音）只打印 ffmpeg 命令不执行。"
+    },
+    {
+      "key": "volcReadme",
+      "title": "火山 Ark 跨时空婚礼产品说明",
+      "path": "timeless-wedding-volc/README.md",
+      "content": "# Timeless Wedding Volc - AI 跨时空婚礼电影生成器\r\n\r\n> 上传两张照片，穿越千年，生成属于你们的跨时空爱情电影。\r\n\r\n## 效果预览\r\n\r\n选择战国、唐朝、明朝、现代四个朝代，生成约 50 秒的电影质感婚礼视频：\r\n\r\n- **片头**（4s）：黑底金字 \"几生几世 跨时空相爱\"\r\n- **战国**（2.5s 标题卡 + 8s 视频）：烽火佳人 - 烽火连天下的重逢之誓\r\n- **唐朝**（2.5s 标题卡 + 8s 视频）：大唐盛世 - 长安灯火下的千年之约\r\n- **明朝**（2.5s 标题卡 + 8s 视频）：凤冠霞帔 - 紫禁城中的凤冠之约\r\n- **现代**（2.5s 标题卡 + 8s 视频）：永恒誓言 - 山海之间的永恒承诺\r\n- **片尾**（5s）：黑底白字 \"今生今世 永不分离\"\r\n\r\n每个朝代的视频中，男女主角的面部特征与上传照片保持一致，服饰、发型、场景均严格还原对应时代。\r\n\r\n## 它是如何工作的\r\n\r\n```\r\n用户照片 → Seedream AI 肖像 → Seedream 场景首帧 → Seedance 动态视频 → FFmpeg 合并输出\r\n```\r\n\r\n1. **AI 肖像生成**：将用户的照片通过 Seedream i2i 转换为对应朝代的古装肖像，保留五官特征\r\n2. **场景首帧生成**：以男女肖像为参考，生成符合朝代背景的双人场景图\r\n3. **动态视频生成**：以场景图为首帧，通过 Seedance 生成 8 秒电影质感动态视频\r\n4. **合并输出**：FFmpeg 将朝代标题卡、视频片段、片头片尾拼接为完整电影\r\n\r\n## 快速开始\r\n\r\n### 前置条件\r\n\r\n- Node.js 12+\r\n- FFmpeg 4.4+（完整版）\r\n- Volcengine Ark API Key\r\n\r\n### 安装 FFmpeg（如尚未安装）\r\n\r\n```powershell\r\nwinget install Gyan.FFmpeg\r\n```\r\n\r\n### 一键生成\r\n\r\n```powershell\r\n# 设置 API Key\r\n$env:ARK_API_KEY = \"your-ark-api-key\"\r\n\r\n# 进入脚本目录\r\ncd .trae/skills/timeless-wedding-volc/scripts\r\n\r\n# 运行（选择4个朝代，带片头片尾）\r\nnode timeless_wedding_volc.js `\r\n  --male-photo \"C:\\Photos\\groom.jpg\" `\r\n  --female-photo \"C:\\Photos\\bride.jpg\" `\r\n  --dynasties \"warring,tang,ming,modern\" `\r\n  --add-title --add-ending\r\n```\r\n\r\n生成完成后，视频输出在 `work/<session>/final/` 目录下。\r\n\r\n## 可选参数\r\n\r\n| 参数 | 说明 | 示例 |\r\n|------|------|------|\r\n| `--custom-desc` | 融入个人故事 | `\"我们在西湖相识\"` |\r\n| `--mode` | 视频模式（默认 first-frame） | `multimodal` |\r\n| `--duration` | 每段时长（默认 8s） | `10` |\r\n| `--ratio` | 宽高比（默认 16:9） | `9:16`（竖屏） |\r\n| `--resolution` | 分辨率（默认 720p） | `1080p` |\r\n| `--resume` | 断点续跑 | - |\r\n| `--regenerate` | 重生成指定朝代 | `tang` |\r\n\r\n## 13 个朝代可选\r\n\r\n夏、西周、战国、汉、晋、南北朝、唐、宋、元、明、清、民国、现代\r\n\r\n其中 **战国、唐、明、现代** 已配置完整的电影级时间分段分镜剧本（0-2s / 2-5s / 5-8s），画面感更强。\r\n\r\n## 文件结构\r\n\r\n```\r\ntimeless-wedding-volc/\r\n├── SKILL.md              # Skill 定义文档\r\n├── README.md             # 本文件\r\n└── scripts/\r\n    ├── timeless_wedding_volc.js   # 主入口（CLI + 状态机）\r\n    ├── ark_client.js     # Ark API 通信层\r\n    ├── dynasties.js       # 13 朝代 prompt 配置\r\n    ├── image_pipeline.js  # 图片生成流水线\r\n    ├── video_pipeline.js  # 视频生成流水线\r\n    └── merge_engine.js   # FFmpeg 合并引擎\r\n```\r\n\r\n纯 Node.js 实现，零外部依赖，所有代码约 2,070 行。\r\n\r\n## 断点续跑\r\n\r\n生成过程中断后，使用 `--resume` 从上次进度继续：\r\n\r\n```powershell\r\nnode timeless_wedding_volc.js `\r\n  --male-photo \"C:\\Photos\\groom.jpg\" `\r\n  --female-photo \"C:\\Photos\\bride.jpg\" `\r\n  --dynasties \"warring,tang,ming,modern\" `\r\n  --work-dir \"work\\20260716-143022-a1b2\" `\r\n  --resume\r\n```\r\n\r\n对某个朝代不满意？单独重生成：\r\n\r\n```powershell\r\nnode timeless_wedding_volc.js `\r\n  --dynasties \"warring,tang,ming,modern\" `\r\n  --work-dir \"work\\20260716-143022-a1b2\" `\r\n  --regenerate \"tang\"\r\n```\r\n\r\n## 技术栈\r\n\r\n- **Seedream 5.0 Pro**（doubao-seedream-5-0-pro-260628）：i2i 图片生成\r\n- **Seedance 2.0** 视频生成（3 个版本可选）：\r\n\r\n| 版本 | 模型 ID | 特点 |\r\n|------|---------|------|\r\n| 标准版（默认） | `doubao-seedance-2-0-260128` | 画质最佳，适合正式输出 |\r\n| Mini 快速版 | `doubao-seedance-2-0-mini-260615` | 速度更快，适合预览 |\r\n| Fast 极速版 | `doubao-seedance-2-0-fast-260128` | 最快验证，牺牲部分画质 |\r\n\r\n```powershell\r\n# 使用 Mini 快速版预览\r\nnode timeless_wedding_volc.js --dynasties \"tang,ming\" --video-model doubao-seedance-2-0-mini-260615 ...\r\n\r\n# 使用 Fast 极速版\r\nnode timeless_wedding_volc.js --dynasties \"tang,ming\" --video-model doubao-seedance-2-0-fast-260128 ...\r\n```\r\n\r\n> Mini/Fast 模型不支持 `resolution` 参数，代码会自动处理。\r\n\r\n- **FFmpeg 8.1.1**：concat demuxer 合并 + drawtext 中文字幕\r\n- **Node.js**：零依赖纯内置模块实现\r\n\r\n## 许可证\r\n\r\n仅供个人学习和非商业用途。请遵守 Volcengine Ark 平台使用条款。"
+    },
+    {
+      "key": "volcDynasties",
+      "title": "13 朝代结构、肖像/场景/视频提示词",
+      "path": "timeless-wedding-volc/scripts/dynasties.js",
+      "content": "完整 13 朝代结构、男女肖像提示词、双人场景提示词、视频提示词与 mood 已结构化保存在顶层 dynastyCatalog。运行时只展开用户选中的 2–5 个朝代。"
+    },
+    {
+      "key": "volcImages",
+      "title": "肖像与双人场景生成规则",
+      "path": "timeless-wedding-volc/scripts/image_pipeline.js",
+      "content": "肖像阶段：Seedream 5.0 Pro i2i，保留原始面部、脸型、眼睛、鼻子、嘴和肤色；痣、疤等识别特征原样保留；禁止美颜漂移。\n场景阶段：男女双肖像 multi-i2i，人物脸、发型、服装与场景保持一致；禁止多余人物；背景必须符合朝代且无现代穿帮。"
+    },
+    {
+      "key": "volcVideos",
+      "title": "Seedance 5 种视频模式与身份锁定",
+      "path": "timeless-wedding-volc/scripts/video_pipeline.js",
+      "content": "视频模式：first-frame、first-last-frame、multimodal、portrait-reference、text2video。\n一致性后缀：全片同男主同女主、同脸同发型同服装、不新增角色、物件不消失、无文字水印。\n标准模型支持 duration、ratio、resolution、generate_audio、return_last_frame；Mini/Fast 不支持 resolution。"
+    },
+    {
+      "key": "volcMerge",
+      "title": "标题卡、片头片尾、BGM 与合并规则",
+      "path": "timeless-wedding-volc/scripts/merge_engine.js",
+      "content": "按选中朝代顺序输出：片头 → 朝代标题卡 → 朝代视频 → 片尾。\nBGM 默认按 dynasty mood 形成情绪弧；自备音乐循环铺满并使用 loudnorm -14 LUFS；失败不影响原片。\nFFmpeg concat demuxer 合并，保留每个朝代片段、state.json 和 QC 记录。"
+    },
+    {
+      "key": "agnesSkill",
+      "title": "Agnes 免费版与 FaceFusion 规则",
+      "path": "timeless-wedding/SKILL.md",
+      "content": "---\r\nname: \"timeless-wedding\"\r\ndescription: \"AI 跨时空婚礼电影生成器（免费 API 版）。基于 Agnes 免费图片/视频 API，上传男女照片穿越 2-4 个中国历史朝代生成电影级婚礼短片。当用户想要免费制作 AI 婚礼视频、跨朝代爱情电影、或 dynasty-themed couple video with face-swap enhancement 时调用此 Skill。\"\r\n---\r\n\r\n# Timeless Wedding - AI 跨时空婚礼电影生成器（免费 API 版）\r\n\r\n> **核心优势**：基于 **Agnes 免费图片/视频 API**，零成本生成跨时空婚礼电影。上传两张个人照片，穿越 2–4 个中国历史朝代，生成一段\"几生几世跨时空相爱\"的电影级婚礼短片。\r\n\r\n## 功能概述\r\n\r\n1. **首帧生成**：为每个选中的朝代生成电影级双人婚礼场景首帧（Agnes Image t2i，**免费**）\r\n2. **AI 肖像**（可选）：为每个朝代生成保留面部特征的古装单人肖像（Agnes Image i2i，**免费**）\r\n3. **换脸增强**（可选但强烈推荐）：通过 FaceFusion 将用户真实面部替换到场景中，实现 80%+ 面部复刻\r\n4. **视频生成**：以首帧驱动生成每朝代约 5–8 秒电影级视频（Agnes Video image2video，**免费**），含时间分段分镜剧本\r\n5. **合并输出**：通过 FFmpeg 将所有片段合并为完整 MP4，含**朝代标题卡片**（朝代名 + 核心故事概述）、片头片尾\r\n\r\n## API 费用说明\r\n\r\n| 服务 | 提供商 | 费用 |\r\n|------|--------|------|\r\n| 图片生成（t2i / i2i） | Agnes Image Gen 2 | **免费** |\r\n| 视频生成（image2video） | Agnes Video Gen 2 | **免费** |\r\n| 视频合并 | FFmpeg（本地） | **免费** |\r\n| 换脸增强 | FaceFusion（本地开源） | **免费** |\r\n\r\n> 本 Skill 全程使用 Agnes 免费 API，无需付费即可生成完整婚礼电影。仅当 API 限流或内容审核失败时需要重试。\r\n\r\n## 支持的朝代\r\n\r\n每个朝代均配有：年代范围、核心故事概述、电影级时间分段分镜剧本（0-2s / 2-5s / 5-8s）。\r\n\r\n| ID | 朝代 | 主题 | 年代 | 核心故事概述 |\r\n|---|---|---|---|---|\r\n| xia | 夏 | 上古盟誓 | c.2070–1600 BCE | 黄河岸边的远古盟誓 |\r\n| xizhou | 西周 | 礼乐婚典 | 1046–771 BCE | 青铜礼器前的神圣盟约 |\r\n| warring | 战国 | 剑客侠侣 | 475–221 BCE | 烽火连天下的重逢之誓 |\r\n| han | 汉 | 汉风红妆 | 202 BCE–220 CE | 未央宫中结发同心的誓言 |\r\n| jin | 晋 | 魏晋风骨 | 265–420 | 竹林曲水间的琴瑟和鸣 |\r\n| nanbeichao | 南北朝 | 丝路情缘 | 420–589 | 石窟佛像前的千年祈愿 |\r\n| tang | 唐 | 大唐盛世 | 618–907 | 长安灯火下的千年之约 |\r\n| song | 宋 | 宋韵清雅 | 960–1279 | 汴河虹桥上的柔情蜜意 |\r\n| yuan | 元 | 草原盟约 | 1271–1368 | 草原落日中的敖包相会 |\r\n| ming | 明 | 凤冠霞帔 | 1368–1644 | 紫禁城中的凤冠之约 |\r\n| qing | 清 | 满汉合璧 | 1644–1912 | 红墙喜堂里的跨族之缘 |\r\n| minguo | 民国 | 十里洋场 | 1912–1949 | 外滩钟声里的西洋誓约 |\r\n| modern | 现代 | 永恒誓言 | 1949–Present | 山海之间的永恒承诺 |\r\n\r\n## 依赖要求\r\n\r\n### 必需\r\n- **Node.js 12+**（仅使用内置模块，无需 npm install）\r\n- **Agnes API Key**（环境变量 `agnes-api-key` 或 `--api-key`）\r\n- **FFmpeg 4.4+**（用于视频合并与转场，旧版自动降级为无转场拼接）\r\n\r\n### 强烈推荐（实现 80%+ 面部复刻）\r\n- **Python 3.10+**\r\n- **FaceFusion**（开源换脸工具，支持 CPU 运行）\r\n\r\n### FaceFusion 安装（Windows）\r\n```powershell\r\n# 方式1：手动安装\r\ngit clone https://github.com/facefusion/facefusion.git\r\ncd facefusion\r\npython install.py --onnxruntime cpu\r\n\r\n# 方式2：使用附带脚本（如果存在）\r\n.\\.trae\\skills\\timeless-wedding\\scripts\\install_facefusion.bat\r\n```\r\n\r\n安装后设置环境变量：\r\n```powershell\r\n$env:FACEFUSION_PATH=\"C:\\facefusion\\run.py\"\r\n```\r\n\r\n## 使用方法\r\n\r\n### 基本用法（2–4 个朝代）\r\n\r\n```bash\r\nnode .trae/skills/timeless-wedding/scripts/timeless_wedding.js \\\r\n  --male-photo \"D:\\photos\\groom.jpg\" \\\r\n  --female-photo \"D:\\photos\\bride.jpg\" \\\r\n  --dynasties tang,song,ming,modern \\\r\n  --output \"D:\\output\\wedding.mp4\"\r\n```\r\n\r\n### 完整参数示例\r\n\r\n```bash\r\nnode .trae/skills/timeless-wedding/scripts/timeless_wedding.js \\\r\n  --male-photo \"D:\\photos\\groom.jpg\" \\\r\n  --female-photo \"D:\\photos\\bride.jpg\" \\\r\n  --dynasties tang,song,ming,modern \\\r\n  --transition-duration 1.0 \\\r\n  --add-title \\\r\n  --add-ending \\\r\n  --num-frames 121 \\\r\n  --frame-rate 24 \\\r\n  --output \"D:\\output\\wedding.mp4\"\r\n```\r\n\r\n### 断点续跑\r\n\r\n如果中途中断，使用 `--resume` 从上次状态继续：\r\n\r\n```bash\r\nnode .trae/skills/timeless-wedding/scripts/timeless_wedding.js \\\r\n  --resume \\\r\n  --work-dir \"D:\\...\\work\\20250101-120000-xxxx\"\r\n```\r\n\r\n### 重生成单个朝代\r\n\r\n```bash\r\nnode .trae/skills/timeless-wedding/scripts/timeless_wedding.js \\\r\n  --resume \\\r\n  --work-dir \"D:\\...\\work\\20250101-120000-xxxx\" \\\r\n  --regenerate tang\r\n```\r\n\r\n### 禁用换脸（纯 Agnes 模式）\r\n\r\n如果不安装 FaceFusion，使用 `--no-face-swap` 运行。面部相似度约 50–60%，流程仍然完整：\r\n\r\n```bash\r\nnode .trae/skills/timeless-wedding/scripts/timeless_wedding.js \\\r\n  --male-photo \"D:\\photos\\groom.jpg\" \\\r\n  --female-photo \"D:\\photos\\bride.jpg\" \\\r\n  --dynasties tang,song,ming,modern \\\r\n  --no-face-swap \\\r\n  --output \"D:\\output\\wedding.mp4\"\r\n```\r\n\r\n## 参数速查\r\n\r\n| 参数 | 说明 | 必填 | 默认 |\r\n|---|---|---|---|\r\n| `--male-photo <path>` | 男方照片路径 | 是 | — |\r\n| `--female-photo <path>` | 女方照片路径 | 是 | — |\r\n| `--dynasties <ids>` | 逗号分隔的朝代 ID（2–4 个） | 是 | — |\r\n| `--transition-duration <s>` | 转场时长（秒） | 否 | `1.0` |\r\n| `--add-title` | 添加片头 | 否 | 关闭 |\r\n| `--add-ending` | 添加片尾 | 否 | 关闭 |\r\n| `--output <path>` | 最终输出 MP4 路径 | 否 | `work/{session}/final/wedding_movie_{id}.mp4` |\r\n| `--resume` | 从 state.json 断点续跑 | 否 | 关闭 |\r\n| `--regenerate <id>` | 重生成指定朝代 | 否 | — |\r\n| `--no-face-swap` | 禁用 FaceFusion 换脸 | 否 | 关闭 |\r\n| `--bgm <path\\|auto>` | 为成片混入背景音乐。`auto`（默认）= 按朝代 mood 情绪弧分段；`<path>` = 自备曲目。音量 0.28、淡入 1.5s/淡出 2.5s、loudnorm −14 LUFS；失败保持原片 | 否 | auto |\r\n| `--no-bgm` | 关闭 BGM 声音层 | 否 | 关闭 |\r\n| `--dry-run` | 只打印全部 ffmpeg 命令（合并/情绪弧/混音），不执行、不消耗额度 | 否 | 关闭 |\r\n| `--facefusion-path <path>` | FaceFusion run.py 路径 | 否 | 自动检测 |\r\n| `--api-key <key>` | Agnes API Key | 否 | 环境变量 `agnes-api-key` |\r\n| `--work-dir <dir>` | 工作目录 | 否 | `work/{sessionId}/` |\r\n| `--num-frames <n>` | 每朝代视频帧数 | 否 | `121`（约 5 秒） |\r\n| `--frame-rate <n>` | 视频帧率 | 否 | `24` |\r\n\r\n## 帧数与时长对照\r\n\r\n| 帧数 | 时长（@24fps） | 备注 |\r\n|---|---|---|\r\n| 121 | ~5.0 秒 | 默认，最稳妥 |\r\n| 169 | ~7.0 秒 | 推荐 |\r\n| 193 | ~8.0 秒 | 推荐 |\r\n| 241 | ~10.0 秒 | 较长 |\r\n\r\n**注意**：`num-frames` 必须满足 `8n+1` 规则且 `<= 441`。\r\n\r\n## 工作流程详解\r\n\r\n```\r\n用户照片(男) ──┐\r\n用户照片(女) ──┤\r\n               │\r\n     步骤1: Agnes t2i 生成朝代双人场景首帧（免费）\r\n               ↓\r\n     步骤2（可选）: Agnes i2i 生成朝代 AI 肖像（保留五官，免费）\r\n               ↓\r\n     步骤3（可选）: FaceFusion 换脸增强（男→女顺序替换，本地免费）\r\n               ↓\r\n     步骤4: Agnes i2i 上传首帧获取公开 URL（免费）\r\n               ↓\r\n     步骤5: Agnes image2video 生成每朝代视频（免费）\r\n               ↓\r\n     步骤6: FFmpeg concat demuxer 合并 + 朝代标题卡 + 片头片尾\r\n               ↓\r\n          最终婚礼电影 MP4\r\n```\r\n\r\n## 文件结构\r\n\r\n```\r\nwork/\r\n└── {YYYYMMDD-HHMMSS-sessionId}/\r\n    ├── state.json                 # 断点状态\r\n    ├── frames/\r\n    │   └── {dynasty}_scene.jpg    # 原始首帧\r\n    ├── portraits/\r\n    │   ├── {dynasty}_male.jpg     # AI 肖像（男）\r\n    │   └── {dynasty}_female.jpg   # AI 肖像（女）\r\n    ├── swapped/\r\n    │   ├── {dynasty}_male_swapped.jpg\r\n    │   └── {dynasty}_final.jpg    # 换脸后最终首帧\r\n    ├── videos/\r\n    │   └── {dynasty}.mp4          # 单朝代视频\r\n    ├── temp/\r\n    │   ├── {dynasty}_uploaded.jpg # 上传用中间文件\r\n    │   ├── {dynasty}_card.mp4     # 朝代标题卡（朝代名+故事概述）\r\n    │   ├── title.mp4              # 片头（\"几生几世 跨时空相爱\"）\r\n    │   ├── ending.mp4             # 片尾（\"今生今世 永不分离\"）\r\n    │   ├── simhei.ttf             # 中文字体（自动复制）\r\n    │   └── concat_list.txt        # FFmpeg 合并列表\r\n    └── final/\r\n        └── wedding_movie_{id}.mp4 # 最终输出\r\n```\r\n\r\n## 环境变量\r\n\r\n| 变量 | 说明 |\r\n|---|---|\r\n| `agnes-api-key` | Agnes Image/Video API Key |\r\n| `AGNES_API_KEY` | Agnes API Key（备用） |\r\n| `FACEFUSION_PATH` | FaceFusion run.py 的绝对路径 |\r\n\r\n## 注意事项\r\n\r\n1. **API 完全免费**：本 Skill 全程使用 Agnes 免费 API（图片生成 + 视频生成），无需任何付费\r\n2. **API Key 优先级**：`--api-key` > 环境变量 `agnes-api-key` > `AGNES_API_KEY`\r\n3. **FFmpeg 路径检测**：脚本自动检测完整版 FFmpeg（winget 安装路径），避免使用 TRAE 内置轻量版（缺少 drawtext/concat）\r\n4. **中文字体处理**：Windows 下自动将 `simhei.ttf` 复制到工作目录，使用相对路径避免 FFmpeg filter 冒号解析错误\r\n5. **FaceFusion 检测**：脚本自动检测 FaceFusion，未安装时提示安装指引并降级运行\r\n6. **视频下载**：每段视频下载后立即设为只读，防止工作区清空为 0 字节\r\n7. **并发控制**：视频生成任务并发数为 2，避免 API 限流\r\n8. **合并策略**：默认使用 `concat demuxer + re-encode`（更可靠），避免 xfade 导致的视频流截断问题\r\n9. **照片建议**：使用正面清晰照片，光线均匀，面部无遮挡，换脸效果最佳\r\n10. **生成耗时**：2 个朝代约 10–15 分钟，4 个朝代约 20–30 分钟（取决于 API 排队情况）\r\n11. **Prompt 长度**：Agnes API 对长 prompt 敏感，所有 image/video prompt 均保持简洁（~200 字符），避免 content_policy_violation\r\n\r\n## 完善记录（2026-09 借鉴 short-drama-studio 一致性方法论）\r\n\r\n- **定妆照先行 + 参考基准统一**：`timeless_wedding.js` 的场景帧 i2i 参考优先使用**本朝代男方定妆照**（已穿朝代服装、身份已锁定，`--generate-portraits` 生成），而非原始现代照片——参考图与目标场景语义差距越小，人脸漂移越少；缺定妆照时回退原始照片（老行为）。\r\n- **identity-lock 身份锚点**：场景帧 prompt 追加身份锁定段——男方面容必须与参考照完全一致（禁止美颜/漂移），男女双方在整幅画面中保持同一张脸，禁止多余人物。\r\n- **重拍版本归档（archive_old_file）**：`--regenerate <id>` 时旧朝代视频先归档到 `videos/versions/` 再重建，覆盖不再等于销毁。\r\n- **已知局限**：Agnes 图像 CLI 仅支持单参考图（i2i 单图输入），女方图像锚点依赖 FaceFusion 换脸兜底（步骤 2 已有）；如需双人双参考锁定，改用 `timeless-wedding-volc`（Seedream multi-i2i 支持男女双肖像参考）。\r\n\r\n## 完善记录（2026-09-19 统一方法论 P0 落地）\r\n\r\n- **BGM 声音层（P0-3，借鉴 ManjuForge 声音四层设计）**：新增 `--bgm <path>`。成片拼接后混入\r\n  背景音乐（`mixBgm()`）：循环铺满全片、音量 0.28、淡入 1.5s/淡出 2.5s、loudnorm −14 LUFS；\r\n  本版成片为无声拼接（`-an`），BGM 直接成为音轨；混音失败仅告警、不影响原片。\r\n  这是\"音乐层\"最小实现；环境/生理/细节层留待后续。\r\n- **预算防线（P0-2）**：`run()` 启动时打印生成预估——场景图/定妆照/视频调用次数与\r\n  每段时长、整片耗时量级，让成本先于账单出现（免费期仍提示限流风险）。\r\n\r\n## 完善记录（2026-09-19 补课轮：BGM 情绪弧）\r\n- **BGM 情绪弧（P0-3 补全，与 -volc 版同源 bgm_arc.js）**：`--bgm` 默认 `auto`——dynasties.js\r\n  13 朝代各配 `mood` 字段，按 mood 分段选曲拼接情绪弧；成片无声（Agnes 输出 -an）时\r\n  BGM 直接成为音轨 + loudnorm −14 LUFS。\r\n- **内置曲库**：`bgm/manifest.json`（mood→曲目映射 + ffmpeg 合成参数）；缺文件自动合成\r\n  环境垫乐占位。\r\n- **`--dry-run` / `--no-bgm`**：dry-run 只打印 ffmpeg 命令不执行。"
+    },
+    {
+      "key": "agnesDynasties",
+      "title": "Agnes 朝代提示词兼容配置",
+      "path": "timeless-wedding/scripts/dynasties.js",
+      "content": "Agnes 版兼容配置与 Volc 版朝代目录同源。Agnes 图片 i2i 只支持单参考图；高相似度依赖可选 FaceFusion。需要 Python 3.10+ 与 FaceFusion，仅作为可选版本。"
+    }
+  ],
+  "dynastyCatalog": [
+    {
+      "id": "xia",
+      "name": "夏",
+      "mood": "majestic",
+      "eraTheme": "华夏初光",
+      "eraYears": "c.2070–1600 BCE",
+      "storySummary": "",
+      "costume": "麻布素衣、兽皮披风、玉饰",
+      "scene": "黄河岸边、祭坛、篝火、青铜初现",
+      "customs": "祭祀天地、部落盟誓、火种传承",
+      "colorPalette": "土黄、深褐、青铜绿",
+      "portraitPromptMale": "A photorealistic portrait of an ancient Xia Dynasty tribal leader, wearing simple hemp robe with jade pendant necklace. Bonfire and ritual altar background at dusk. Cinematic lighting, shallow depth of field, 8K, highly detailed facial features.",
+      "portraitPromptFemale": "A photorealistic portrait of an ancient Xia Dynasty noblewoman, wearing elegant hemp dress with shell and jade ornaments in her hair. Yellow River bank with reeds at golden hour. Soft cinematic lighting, shallow depth of field, 8K, highly detailed facial features.",
+      "couplePrompt": "A cinematic wide shot of an ancient Xia Dynasty couple standing together by the Yellow River at sunset. The man in simple hemp robe with jade pendant, the woman in elegant dress with shell ornaments. A sacred bronze ritual vessel between them, bonfire flames dancing. Warm golden sunset light, earth tones and bronze palette, photorealistic, 8K, epic composition.",
+      "videoPrompt": "0–2s: Slow push-in. The couple stands by the river at sunset, holding hands. Golden light reflects on the water surface. Camera slowly pushes toward them. 2–5s: Medium shot. They turn to face each other, the man gently places a jade pendant around the woman's neck. Her eyes fill with tender emotion. Bonfire sparks drift upward in the background. 5–8s: Wide shot. They raise their joined hands toward the sky as the sun sets. Camera slowly pulls back revealing the vast river and sacred altar. Epic grand atmosphere. Cinematic film look, warm golden grading, shallow depth of field.",
+      "firstFramePrompt": "Ancient Xia Dynasty couple by Yellow River at sunset, bronze ritual vessel, bonfire, warm golden light",
+      "lastFramePrompt": "The couple's silhouettes against the setting sun, hands raised to sky, vast river landscape",
+      "videoSettings": {
+        "ratio": "16:9",
+        "duration": 8,
+        "camera": "push-in then pull-back"
+      }
+    },
+    {
+      "id": "xizhou",
+      "name": "西周",
+      "mood": "solemn",
+      "eraTheme": "礼乐天下",
+      "eraYears": "1046–771 BCE",
+      "storySummary": "",
+      "costume": "深衣、冕冠、玉组佩",
+      "scene": "宗庙、礼乐殿堂、青铜礼器",
+      "customs": "周礼婚制、纳采问名、合卺礼",
+      "colorPalette": "玄黑、纁红、玉白",
+      "portraitPromptMale": "A photorealistic portrait of a Western Zhou Dynasty noble groom, wearing black shenyi robe with jade belt and ceremonial crown. Ancestral temple background with bronze bells. Dramatic side lighting, shallow depth of field, 8K, highly detailed facial features.",
+      "portraitPromptFemale": "A photorealistic portrait of a Western Zhou Dynasty noble bride, wearing red xun robe with layered jade pendants and elaborate hairpins. Ritual hall with silk curtains background. Soft dramatic lighting, shallow depth of field, 8K, highly detailed facial features.",
+      "couplePrompt": "A cinematic wide shot of a Western Zhou Dynasty noble wedding couple in a grand ancestral temple. The groom in black shenyi with jade crown, the bride in red ceremonial dress with layered jade ornaments. Ancient bronze bells and ritual vessels surround them. Silk curtains drift gently. Dramatic temple lighting, black and crimson palette, photorealistic, 8K, majestic composition.",
+      "videoPrompt": "0–2s: Slow orbit shot. The couple stands before bronze bells in the temple. Incense smoke drifts through beams of light. Camera orbits slowly around them. 2–5s: Medium close-up. They perform the hejin ritual, sharing a gourd cup. Their eyes meet with deep reverence. Bronze bells chime softly in background. 5–8s: Wide crane shot. Camera rises upward showing the full temple hall. The couple bows together before the ancestral tablets. Sunlight streams through windows. Cinematic film look, dramatic chiaroscuro lighting, majestic atmosphere.",
+      "firstFramePrompt": "Western Zhou couple in ancestral temple, bronze bells, incense smoke, dramatic light beams",
+      "lastFramePrompt": "Couple bowing before ancestral tablets, sunlight streaming through temple windows, crane shot",
+      "videoSettings": {
+        "ratio": "16:9",
+        "duration": 8,
+        "camera": "orbit then crane-up"
+      }
+    },
+    {
+      "id": "warring",
+      "name": "战国",
+      "mood": "tense",
+      "eraTheme": "烽火佳人",
+      "eraYears": "475–221 BCE",
+      "storySummary": "烽火连天下的重逢之誓",
+      "costume": "男子束发戴冠、曲裾深衣配皮甲腰剑；女子高髻云鬟、暗红曲裾长裙配金玉步摇",
+      "scene": "长城烽火台、古战场硝烟、残阳如血",
+      "customs": "战地重逢、烽火为证、生死相托",
+      "colorPalette": "铁灰、暗红、残阳金",
+      "portraitPromptMale": "A photorealistic cinematic portrait of a Warring States era Chinese warrior. Keep the exact same facial features, face shape, eyes, nose, mouth and expression from the reference photo. The man has traditional long dark hair tied in a topknot with a simple jade hair crown. Wearing dark leather armor over layered quju shenyi robes, a bronze sword at his waist. Standing before a Great Wall beacon tower at dusk with smoke and signal fires in the distance. Dramatic side-backlighting from the setting sun, dust particles in the air. Shallow depth of field, 8K, cinematic color grading, film grain texture.",
+      "portraitPromptFemale": "A photorealistic cinematic portrait of a Warring States era Chinese noblewoman. Keep the exact same facial features, face shape, eyes, nose, mouth and expression from the reference photo. The woman has elaborate traditional Chinese updo hairstyle with gold hairpins and jade ornaments. Wearing flowing dark crimson quju dress with layered silk skirts and intricate gold embroidery. Standing on an ancient stone fortress wall with tattered battle flags waving behind. Dramatic golden sunset backlight, wind blowing silk ribbons. Shallow depth of field, 8K, cinematic color grading, film grain texture.",
+      "couplePrompt": "A cinematic epic wide shot of a Warring States Chinese couple reunited on the Great Wall at sunset. The warrior man in leather armor with long hair tied in topknot, the woman in flowing dark crimson dress with elaborate updo. Smoke rises from distant beacon towers, battle flags wave in the wind, dust fills the golden air. The man gently holds the woman's face with both hands after years of separation. Dramatic golden hour backlight, iron grey and crimson palette, volumetric light rays through dust. Photorealistic, 8K, anamorphic lens flare, epic war-romance composition.",
+      "videoPrompt": "0–2s: Slow dolly-in tracking shot. The warrior man walks through swirling battlefield dust toward the woman waiting on the Great Wall parapet. His armor catches the golden sunset light. Her dark crimson dress flows in the wind. Tattered battle flags wave violently. 2–5s: Medium close-up on faces. They stop inches apart. He gently lifts her chin with a gauntleted hand. Tears glisten on her cheeks. Distant beacon fires flare orange against the darkening sky. Dust particles dance in golden backlight. 5–8s: Extreme wide aerial pull-back. The couple embraces as the camera rises high above, revealing the winding Great Wall stretching across mountains. Signal fires burn along the entire length. The sky explodes in crimson and gold. Epic heartbreaking beauty. Cinematic film look, anamorphic lens, volumetric dust light, war-romance color grading, film grain.",
+      "firstFramePrompt": "Warring States warrior walking through dust toward woman on Great Wall, battle flags, golden sunset",
+      "lastFramePrompt": "Couple embracing, aerial view of Great Wall stretching across mountains, signal fires, crimson sky",
+      "videoSettings": {
+        "ratio": "16:9",
+        "duration": 8,
+        "camera": "dolly-in then aerial pull-back"
+      }
+    },
+    {
+      "id": "han",
+      "name": "汉",
+      "mood": "majestic",
+      "eraTheme": "大汉雄风",
+      "eraYears": "202 BCE–220 CE",
+      "storySummary": "",
+      "costume": "曲裾袍、直裾、玉具剑",
+      "scene": "未央宫、丝绸之路、大漠孤烟",
+      "customs": "六礼成婚、合卺交杯、结发同心",
+      "colorPalette": "玄黑、朱红、金绣",
+      "portraitPromptMale": "A photorealistic portrait of a Han Dynasty noble groom, wearing black quju robe with red trim and jade sword at waist. Weiyang Palace corridor with red pillars background. Warm palace lighting, shallow depth of field, 8K, highly detailed facial features.",
+      "portraitPromptFemale": "A photorealistic portrait of a Han Dynasty noble bride, wearing red quju dress with gold embroidery and jade hair ornaments. Palace garden with blooming flowers background. Soft warm lighting, shallow depth of field, 8K, highly detailed facial features.",
+      "couplePrompt": "A cinematic wide shot of a Han Dynasty wedding couple in the magnificent Weiyang Palace. The groom in black robe with red trim and jade sword, the bride in red dress with gold embroidery. Red pillars and golden decorations fill the grand hall. Silk Road treasures displayed. Warm golden palace light, black and crimson palette, photorealistic, 8K, majestic composition.",
+      "videoPrompt": "0–2s: Slow push-in. The couple stands in the palace hall surrounded by red pillars. Golden decorations shimmer in warm light. Camera pushes in slowly. 2–5s: Medium shot. They perform the hejin ritual with an elaborate bronze cup. Close-up on their hands intertwined around the cup. Tender eye contact. 5–8s: Wide shot. Camera orbits around them as they walk together toward the palace gate. Desert landscape visible through the gate, Silk Road caravans in distance. Epic scope. Cinematic film look, warm golden grading, majestic palace atmosphere.",
+      "firstFramePrompt": "Han Dynasty couple in Weiyang Palace, red pillars, golden decorations, warm light",
+      "lastFramePrompt": "Couple walking toward palace gate, desert landscape and Silk Road visible, epic scope",
+      "videoSettings": {
+        "ratio": "16:9",
+        "duration": 8,
+        "camera": "push-in then orbit"
+      }
+    },
+    {
+      "id": "jin",
+      "name": "晋",
+      "mood": "serene",
+      "eraTheme": "魏晋风流",
+      "eraYears": "265–420",
+      "storySummary": "",
+      "costume": "宽袖长衫、纶巾、木屐",
+      "scene": "竹林、兰亭、曲水流觞",
+      "customs": "曲水流觞、竹林雅集、琴瑟和鸣",
+      "colorPalette": "竹青、素白、墨黑",
+      "portraitPromptMale": "A photorealistic portrait of a Jin Dynasty scholar groom, wearing flowing wide-sleeve robe with silk scarf and bamboo hat. Bamboo forest with mist background. Soft diffused lighting, shallow depth of field, 8K, highly detailed facial features.",
+      "portraitPromptFemale": "A photorealistic portrait of a Jin Dynasty elegant bride, wearing white flowing dress with simple jade hairpin. Orchid garden beside a flowing stream background. Soft natural lighting, shallow depth of field, 8K, highly detailed facial features.",
+      "couplePrompt": "A cinematic wide shot of a Jin Dynasty couple in a misty bamboo forest beside a flowing stream. The scholar groom in flowing wide-sleeve robe, the bride in white dress with jade hairpin. Bamboo stalks sway gently, orchids bloom by the water. Soft misty morning light, bamboo green and white palette, photorealistic, 8K, poetic composition.",
+      "videoPrompt": "0–2s: Slow tracking shot. The couple walks along a stone path by the stream in the bamboo forest. Mist drifts between bamboo stalks. Water flows gently over stones. 2–5s: Medium shot. They sit together by the stream, he plays a guqin, she listens with closed eyes. Orchid petals float on the water surface. Serene and intimate moment. 5–8s: Wide shot. Camera slowly pulls up through bamboo canopy. The couple becomes small in the vast misty forest. Sunlight filters through leaves. Cinematic film look, soft misty grading, poetic Zen atmosphere.",
+      "firstFramePrompt": "Jin Dynasty couple in misty bamboo forest by stream, orchids, soft morning light",
+      "lastFramePrompt": "Aerial view through bamboo canopy, couple small in vast misty forest, sunlight filtering",
+      "videoSettings": {
+        "ratio": "16:9",
+        "duration": 8,
+        "camera": "tracking then crane-up"
+      }
+    },
+    {
+      "id": "nanbeichao",
+      "name": "南北朝",
+      "mood": "serene",
+      "eraTheme": "乱世情缘",
+      "eraYears": "420–589",
+      "storySummary": "",
+      "costume": "褒衣博带、鲜卑服饰、飞天飘带",
+      "scene": "敦煌石窟、佛寺、大漠",
+      "customs": "佛前盟誓、莲花灯、转经祈福",
+      "colorPalette": "石青、赭红、金箔",
+      "portraitPromptMale": "A photorealistic portrait of a Northern-Southern Dynasties noble groom, wearing flowing robe with wide sash and Buddhist prayer beads. Dunhuang cave temple with painted murals background. Warm temple lighting, shallow depth of field, 8K, highly detailed facial features.",
+      "portraitPromptFemale": "A photorealistic portrait of a Northern-Southern Dynasties graceful bride, wearing flowing dress with celestial ribbon scarves and lotus hair ornament. Buddhist temple courtyard with blooming lotus pond background. Soft golden lighting, shallow depth of field, 8K, highly detailed facial features.",
+      "couplePrompt": "A cinematic wide shot of a Northern-Southern Dynasties couple in a Buddhist temple courtyard. The groom in flowing robe with prayer beads, the bride with celestial ribbons and lotus ornament. Lotus pond with blooming flowers, temple bells, painted murals on walls. Warm golden temple light, lapis and crimson palette, photorealistic, 8K, spiritual composition.",
+      "videoPrompt": "0–2s: Slow orbit. The couple stands before a lotus pond in the temple courtyard. Lotus flowers bloom around them. Temple bells chime softly. 2–5s: Medium shot. They light a lotus lantern together, hands touching. Warm golden light reflects on the pond surface. Murals glow in background. 5–8s: Wide shot. Camera pulls back showing the full temple complex against desert mountains. The couple's lantern rises into the twilight sky. Spiritual and epic atmosphere. Cinematic film look, warm golden grading, spiritual serenity.",
+      "firstFramePrompt": "Northern-Southern Dynasties couple in Buddhist temple courtyard, lotus pond, temple bells",
+      "lastFramePrompt": "Temple complex against desert mountains, lotus lantern rising into twilight sky",
+      "videoSettings": {
+        "ratio": "16:9",
+        "duration": 8,
+        "camera": "orbit then pull-back"
+      }
+    },
+    {
+      "id": "tang",
+      "name": "唐",
+      "mood": "lush",
+      "eraTheme": "大唐盛世",
+      "eraYears": "618–907",
+      "storySummary": "长安灯火下的千年之约",
+      "costume": "男子幞头束发、圆领绯红袍配玉带；女子高髻花钗、齐胸翠绿襦裙配金钿",
+      "scene": "长安朱雀门、牡丹花海、华灯初上",
+      "customs": "却扇礼、交杯合卺、花前月下",
+      "colorPalette": "朱红、翠绿、明金、暖烛黄",
+      "portraitPromptMale": "A photorealistic cinematic portrait of a Tang Dynasty Chinese nobleman. Keep the exact same facial features, face shape, eyes, nose, mouth and expression from the reference photo. The man has traditional dark hair neatly styled under a black futou hat with two wing-like extensions. Wearing a magnificent crimson red round-collar robe with intricate golden dragon embroidery, jade belt with hanging ornaments. Standing in a grand Tang palace hall with hundreds of glowing red lanterns. Warm golden candlelight illuminates his face, dramatic chiaroscuro lighting. Shallow depth of field, 8K, cinematic color grading, film grain texture.",
+      "portraitPromptFemale": "A photorealistic cinematic portrait of a Tang Dynasty Chinese noblewoman. Keep the exact same facial features, face shape, eyes, nose, mouth and expression from the reference photo. The woman has an elaborate Tang Dynasty high bun hairstyle adorned with golden phoenix hairpins, pearl strands and flower ornaments. Wearing a stunning jade-green qixiong ruqun with wide silk sleeves, golden phoenix embroidery and layered pearl necklaces. Standing in a lush peony garden with palace architecture and red lanterns. Warm soft lighting from hundreds of lanterns, bokeh of red lights in background. Shallow depth of field, 8K, cinematic color grading, film grain texture.",
+      "couplePrompt": "A cinematic epic wide shot of a Tang Dynasty Chinese couple in the magnificent Chang'an palace at night. The man in crimson robe with golden dragon embroidery and black futou hat, the woman in jade-green qixiong ruqun with elaborate high bun and phoenix crown. Hundreds of red lanterns glow around them, peonies bloom in golden vases, candle flames flicker on marble floors. The man gently lifts the woman's red silk veil, revealing her shy smile. Warm golden lantern light, crimson and jade green palette, volumetric light from candles. Photorealistic, 8K, anamorphic lens flare, grand festive composition.",
+      "videoPrompt": "0–2s: Slow intimate push-in. The man gently lifts the woman's red silk veil with both hands. Her face is revealed beneath the phoenix crown, a shy tearful smile. Golden candlelight flickers across both faces, casting dancing shadows on palace pillars. Falling peony petals drift through golden light beams. 2–5s: Medium close-up two-shot. They share the jiao-bei wedding cup, arms intertwined in an elegant figure-eight. Their eyes lock with deep emotion. Close-up on their hands around the ornate golden cup. Warm candle bokeh fills the background. Intimate and tender atmosphere. 5–8s: Wide majestic orbit shot. They turn together toward the massive palace window. Magnificent fireworks burst across the night sky over Chang'an city. The camera slowly orbits around them, revealing the grand palace hall with hundreds of lanterns reflected on polished marble. Epic grand romantic finale. Cinematic film look, anamorphic lens, warm golden lantern grading, shallow depth of field, film grain.",
+      "firstFramePrompt": "Tang Dynasty man lifting woman's red veil in palace, phoenix crown, candlelight, peonies",
+      "lastFramePrompt": "Tang couple by palace window with fireworks over Chang'an, hundreds of lanterns, orbit shot",
+      "videoSettings": {
+        "ratio": "16:9",
+        "duration": 8,
+        "camera": "push-in then orbit"
+      }
+    },
+    {
+      "id": "song",
+      "name": "宋",
+      "mood": "serene",
+      "eraTheme": "宋韵清雅",
+      "eraYears": "960–1279",
+      "storySummary": "",
+      "costume": "淡青/浅红褙子、凤冠霞帔雏形、珍珠妆",
+      "scene": "汴河虹桥、园林水榭、灯笼街市",
+      "customs": "奠雁、交拜、牵巾、撒帐",
+      "colorPalette": "淡粉、天青、素白",
+      "portraitPromptMale": "A photorealistic portrait of a Song Dynasty scholar groom, wearing light blue ruqun robe with jade belt and scholar's cap. Waterside garden pavilion with willow trees background. Soft natural lighting, shallow depth of field, 8K, highly detailed facial features.",
+      "portraitPromptFemale": "A photorealistic portrait of a Song Dynasty elegant bride, wearing delicate pink beizi dress with pearl ornaments and simple hairpins. Stone bridge over a serene pond with lotus flowers background. Soft twilight lighting, shallow depth of field, 8K, highly detailed facial features.",
+      "couplePrompt": "A cinematic wide shot of a Song Dynasty wedding couple in an elegant waterside garden pavilion. The groom in light blue robe, the bride in delicate pink dress with pearl ornaments. A stone bridge spans the river behind, red lanterns under soft twilight. Soft twilight light, pink and sky blue tones, photorealistic, 8K, elegant tender composition.",
+      "videoPrompt": "0–2s: Slow zoom-in. The couple stands on a stone bridge over a serene river at twilight. Red silk ribbon flows between their hands. Willow branches sway gently. 2–5s: Medium shot. They face each other and bow in the traditional jiao-bai ritual. River shimmers with reflected lantern light. Tender emotional moment. 5–8s: Wide shot. Camera slowly pulls back showing the full garden pavilion scene. Lanterns sway in evening breeze, petals float on the water. Elegant romantic atmosphere. Cinematic film look, soft twilight grading, elegant and tender mood.",
+      "firstFramePrompt": "Song Dynasty couple on stone bridge at twilight, red silk ribbon, willow branches",
+      "lastFramePrompt": "Garden pavilion at dusk, lanterns swaying, petals on water, romantic atmosphere",
+      "videoSettings": {
+        "ratio": "16:9",
+        "duration": 8,
+        "camera": "zoom-in then pull-back"
+      }
+    },
+    {
+      "id": "yuan",
+      "name": "元",
+      "mood": "majestic",
+      "eraTheme": "草原雄鹰",
+      "eraYears": "1271–1368",
+      "storySummary": "",
+      "costume": "质孙服、姑姑冠、皮袍",
+      "scene": "蒙古草原、毡帐、马群、星空",
+      "customs": "草原婚俗、敖包相会、赛马迎亲",
+      "colorPalette": "草原绿、天空蓝、篝火橙",
+      "portraitPromptMale": "A photorealistic portrait of a Yuan Dynasty Mongol groom, wearing traditional blue del robe with leather belt and fur trim. Mongolian grassland with yurts and horses background at sunset. Dramatic sunset lighting, shallow depth of field, 8K, highly detailed facial features.",
+      "portraitPromptFemale": "A photorealistic portrait of a Yuan Dynasty Mongol bride, wearing red del dress with elaborate boqta headdress and silver ornaments. Grassland with wildflowers and distant mountains background. Warm sunset lighting, shallow depth of field, 8K, highly detailed facial features.",
+      "couplePrompt": "A cinematic wide shot of a Yuan Dynasty Mongol couple on the vast grassland at sunset. The groom in blue robe with fur trim, the bride in red dress with elaborate headdress. Mongolian yurts dot the landscape, horses graze nearby, bonfires burn in distance. Dramatic sunset light, grassland green and sky blue palette, photorealistic, 8K, epic nomadic composition.",
+      "videoPrompt": "0–2s: Tracking shot. The couple rides together across the grassland at sunset. Her dress and his cape flow in the wind. Horses gallop beside them. 2–5s: Medium shot. They dismount and face each other beside a sacred ovoo stone pile. He presents her with a ceremonial blue scarf. Tender moment with vast sky behind. 5–8s: Wide shot. Camera pulls back showing the couple against the vast grassland. The Milky Way appears above as twilight deepens. Epic and romantic atmosphere. Cinematic film look, dramatic sunset-to-starry-sky grading, epic nomadic romance.",
+      "firstFramePrompt": "Yuan Dynasty couple riding across grassland at sunset, horses, flowing capes",
+      "lastFramePrompt": "Couple against vast grassland under Milky Way, epic starry sky, twilight deepening",
+      "videoSettings": {
+        "ratio": "16:9",
+        "duration": 8,
+        "camera": "tracking then pull-back"
+      }
+    },
+    {
+      "id": "ming",
+      "name": "明",
+      "mood": "solemn",
+      "eraTheme": "凤冠霞帔",
+      "eraYears": "1368–1644",
+      "storySummary": "紫禁城中的凤冠之约",
+      "costume": "男子乌纱帽束发、大红圆领袍配玉带；女子凤冠霞帔、真红大袖衫配绣花鞋",
+      "scene": "紫禁城大婚殿堂、红绸高悬、龙凤花烛",
+      "customs": "挑盖头、交杯合卺、结发同心",
+      "colorPalette": "正红、明黄、金绣、暖烛橙",
+      "portraitPromptMale": "A photorealistic cinematic portrait of a Ming Dynasty Chinese nobleman. Keep the exact same facial features, face shape, eyes, nose, mouth and expression from the reference photo. The man has traditional dark hair neatly styled under a black wusha official hat with winged sides. Wearing a magnificent true-red round-collar robe with intricate golden dragon and cloud embroidery, jade belt with jade pendants. Standing in a grand Forbidden City wedding hall with red silk curtains and golden screens. Warm candlelight illuminates his face, dramatic chiaroscuro from dragon-phoenix candles. Shallow depth of field, 8K, cinematic color grading, film grain texture.",
+      "portraitPromptFemale": "A photorealistic cinematic portrait of a Ming Dynasty Chinese bride. Keep the exact same facial features, face shape, eyes, nose, mouth and expression from the reference photo. The woman wears the iconic Ming Dynasty phoenix crown xiapei — an elaborate golden phoenix headdress with dangling pearl strands and ruby ornaments, plus a red silk veil partially covering her face. Wearing a magnificent true-red daxiu robe with golden phoenix embroidery and wide flowing sleeves. Standing in the Forbidden City wedding hall with red silk decorations and golden candle stands. Warm golden candlelight, red silk reflections on her face. Shallow depth of field, 8K, cinematic color grading, film grain texture.",
+      "couplePrompt": "A cinematic epic wide shot of a Ming Dynasty Chinese couple in the grand Forbidden City wedding hall. The man in true-red robe with golden dragon embroidery and black wusha hat, the woman in phoenix crown xiapei with red veil and true-red daxiu robe. Massive dragon-phoenix wedding candles burn on both sides, red silk drapes from the ceiling, golden screens reflect candlelight. The man reaches out to gently lift her red veil. Warm golden candle glow, true red and gold palette, volumetric smoke from incense burners. Photorealistic, 8K, anamorphic lens flare, grand ceremonial composition.",
+      "videoPrompt": "0–2s: Slow dramatic push-in. The man reaches forward with both hands and gently lifts the woman's red silk veil. Her face is revealed beneath the magnificent phoenix crown, eyes glistening with emotion. Massive dragon-phoenix candles flicker on both sides, casting dancing golden light on palace pillars. Incense smoke drifts through beams of warm light. 2–5s: Medium close-up two-shot. They hold the jiao-bei cup together and drink, arms intertwined in the traditional figure-eight. Close-up on the golden embroidery of their robes shimmering in candlelight. Tender emotional expressions, tears of joy on her cheeks. Intimate and sacred atmosphere. 5–8s: Wide majestic pull-back. They turn and walk together through the grand hall as camera slowly pulls back, revealing the entire Forbidden City wedding scene. Hundreds of red lanterns and golden decorations. Fireworks burst above the traditional yellow-tiled rooftops visible through the palace gate. Epic ceremonial romantic finale. Cinematic film look, anamorphic lens, warm golden candle grading, shallow depth of field, film grain.",
+      "firstFramePrompt": "Ming Dynasty man lifting woman's red veil in Forbidden City, phoenix crown, dragon-phoenix candles",
+      "lastFramePrompt": "Ming couple walking through grand hall, fireworks above yellow rooftops, pull-back shot",
+      "videoSettings": {
+        "ratio": "16:9",
+        "duration": 8,
+        "camera": "push-in then pull-back"
+      }
+    },
+    {
+      "id": "qing",
+      "name": "清",
+      "mood": "lush",
+      "eraTheme": "满汉情深",
+      "eraYears": "1644–1912",
+      "storySummary": "",
+      "costume": "旗装、长袍马褂、花盆底鞋、朝珠",
+      "scene": "颐和园、紫禁城、江南水乡",
+      "customs": "跨火盆、掀盖头、坐帐、合卺",
+      "colorPalette": "绛紫、宝蓝、金线",
+      "portraitPromptMale": "A photorealistic portrait of a Qing Dynasty noble groom, wearing dark blue changpao robe with mandarin square badge and court beads. Summer Palace corridor with painted ceiling background. Warm palace lighting, shallow depth of field, 8K, highly detailed facial features.",
+      "portraitPromptFemale": "A photorealistic portrait of a Qing Dynasty Manchu bride, wearing red qipao-style dress with elaborate headdress and flowerpot shoes. Jiangnan water town with willows and boats background. Soft golden lighting, shallow depth of field, 8K, highly detailed facial features.",
+      "couplePrompt": "A cinematic wide shot of a Qing Dynasty couple in a Jiangnan water town at dusk. The groom in dark blue robe with court beads, the bride in red dress with elaborate headdress. Stone bridges, willow trees, and traditional boats on the canal. Lanterns begin to light. Soft twilight light, crimson and indigo palette, photorealistic, 8K, romantic water-town composition.",
+      "videoPrompt": "0–2s: Slow tracking shot. The couple walks along a canal-side stone path at dusk. Willow branches brush the water surface. Traditional boats float by. 2–5s: Medium shot. They stop on a stone bridge, he presents her with a jade pendant. Lanterns reflect in the canal water. Tender romantic moment. 5–8s: Wide shot. Camera slowly rises showing the full water town at night. Thousands of lanterns illuminate the canals. The couple stands on the bridge as centerpiece. Cinematic film look, twilight-to-night grading, romantic water-town atmosphere.",
+      "firstFramePrompt": "Qing Dynasty couple walking by canal at dusk, willows, traditional boats, lanterns",
+      "lastFramePrompt": "Aerial view of water town at night, thousands of lanterns, couple on stone bridge",
+      "videoSettings": {
+        "ratio": "16:9",
+        "duration": 8,
+        "camera": "tracking then crane-up"
+      }
+    },
+    {
+      "id": "minguo",
+      "name": "民国",
+      "mood": "nostalgic",
+      "eraTheme": "十里洋场",
+      "eraYears": "1912–1949",
+      "storySummary": "",
+      "costume": "旗袍、长衫、西装、婚纱",
+      "scene": "上海外滩、老式电车、百乐门",
+      "customs": "新式婚礼、交换戒指、舞会",
+      "colorPalette": "墨绿、酒红、香槟金",
+      "portraitPromptMale": "A photorealistic portrait of a Republic of China era groom, wearing elegant dark suit with vest and pocket watch. Old Shanghai Bund with art deco buildings background at night. Dramatic neon lighting, shallow depth of field, 8K, highly detailed facial features.",
+      "portraitPromptFemale": "A photorealistic portrait of a Republic of China era bride, wearing elegant white Western-style wedding dress with veil and pearls. Vintage Shanghai ballroom with crystal chandelier background. Warm golden lighting, shallow depth of field, 8K, highly detailed facial features.",
+      "couplePrompt": "A cinematic wide shot of a Republic of China era couple on the Shanghai Bund at night. The groom in elegant dark suit, the bride in white wedding dress with veil. Art deco buildings line the waterfront, vintage cars pass by, neon signs glow. Dramatic neon and warm light, jade green and champagne palette, photorealistic, 8K, glamorous composition.",
+      "videoPrompt": "0–2s: Tracking shot. The couple walks along the Bund promenade at night. Vintage cars pass behind them. Neon signs reflect on the Huangpu River. 2–5s: Medium shot. They stop and face each other, he presents a ring. Close-up on the ring exchange. Crystal chandelier reflections in background. 5–8s: Wide shot. Camera pulls back showing the full Bund skyline. They embrace as fireworks burst above the art deco buildings. Glamorous romantic finale. Cinematic film look, dramatic neon grading, glamorous 1930s atmosphere.",
+      "firstFramePrompt": "Republic era couple on Shanghai Bund at night, vintage cars, neon signs, river reflections",
+      "lastFramePrompt": "Couple embracing with Bund skyline and fireworks, art deco buildings, glamorous finale",
+      "videoSettings": {
+        "ratio": "16:9",
+        "duration": 8,
+        "camera": "tracking then pull-back"
+      }
+    },
+    {
+      "id": "modern",
+      "name": "现代",
+      "mood": "warm",
+      "eraTheme": "永恒誓言",
+      "eraYears": "1949–Present",
+      "storySummary": "山海之间的永恒承诺",
+      "costume": "男子黑色西装三件套配领结；女子白色拖尾婚纱配长头纱",
+      "scene": "海边悬崖玻璃教堂、落日余晖、漫天孔明灯",
+      "customs": "交换戒指、拥吻誓言、放飞孔明灯",
+      "colorPalette": "纯白、香槟金、落日橙、海蓝",
+      "portraitPromptMale": "A photorealistic cinematic portrait of a modern Chinese groom. Keep the exact same facial features, face shape, eyes, nose, mouth and expression from the reference photo. The man wears an elegant tailored black three-piece suit with a crisp white shirt and black bow tie. Modern clean hairstyle, confident and warm expression. Standing in a stunning modern glass chapel on a seaside cliff at golden sunset. Golden hour light streams through glass walls, ocean visible behind. Shallow depth of field, 8K, cinematic color grading, film grain texture.",
+      "portraitPromptFemale": "A photorealistic cinematic portrait of a modern Chinese bride. Keep the exact same facial features, face shape, eyes, nose, mouth and expression from the reference photo. The woman wears a magnificent white mermaid wedding gown with a long flowing cathedral veil and delicate pearl jewelry. Elegant modern bridal hairstyle with soft waves and a crystal hairpin. Standing in the glass seaside chapel with golden sunset backlight creating a radiant halo through her veil. Ocean waves visible through the glass behind her. Shallow depth of field, 8K, cinematic color grading, film grain texture.",
+      "couplePrompt": "A cinematic epic wide shot of a modern Chinese couple in a stunning glass chapel on a seaside cliff at golden sunset. The man in elegant black three-piece suit, the woman in magnificent white mermaid gown with long cathedral veil. Golden sunset light streams through the glass walls creating a cathedral of light, ocean waves crash below the cliff. They stand facing each other at the chapel altar, about to exchange rings. Golden sunset light, white and champagne gold palette, lens flare from the setting sun. Photorealistic, 8K, anamorphic lens flare, romantic epic composition.",
+      "videoPrompt": "0–2s: Slow intimate dolly-in. The couple stands at the glass chapel altar facing each other, golden sunset light streaming through floor-to-ceiling glass walls. Her long cathedral veil catches the wind and flows like silk. His eyes are filled with emotion. The ocean sparkles golden behind them. 2–5s: Medium close-up two-shot. He gently takes her hand and slides the wedding ring onto her finger. She looks up at him with tears of joy. They lean in for a gentle kiss. Behind them, dozens of sky lanterns begin to rise into the twilight sky. Intimate and deeply emotional atmosphere. 5–8s: Extreme wide aerial pull-back. Camera pulls back through the glass chapel revealing the stunning coastal landscape — the chapel perched on a cliff, the ocean stretching to the horizon, and hundreds of sky lanterns floating upward into the deepening blue sky. The sun dips below the horizon painting everything in gold and rose. Epic romantic finale. Cinematic film look, anamorphic lens, golden hour grading, shallow depth of field, film grain.",
+      "firstFramePrompt": "Modern couple at glass seaside chapel altar, golden sunset through glass, veil flowing, ocean",
+      "lastFramePrompt": "Couple kissing in glass chapel, aerial view of cliff and ocean, hundreds of sky lanterns rising",
+      "videoSettings": {
+        "ratio": "16:9",
+        "duration": 8,
+        "camera": "dolly-in then aerial pull-back"
+      }
+    }
+  ],
+  "steps": [
+    {
+      "promptSourceKeys": [
+        "volcSkill",
+        "volcReadme",
+        "agnesSkill"
+      ],
+      "taskPrompt": "确认男女各一张清晰正脸原图、2–5 个朝代、画幅、每朝代时长、分辨率、视频模式和 BGM。人脸照片必须获得当事人授权，图片仅用于本订单。",
+      "id": "C01",
+      "title": "照片与参数确认",
+      "action": "validate_cross_era_inputs",
+      "mode": "human_input",
+      "keys": [
+        "volcSkill",
+        "volcReadme",
+        "agnesSkill"
+      ],
+      "task": "确认男女各一张清晰正脸原图、2–5 个朝代、画幅、每朝代时长、分辨率、视频模式和 BGM。人脸照片必须获得当事人授权，图片仅用于本订单。",
+      "outputs": [
+        "CROSS_ERA_SPEC.json",
+        "PHOTO_MAP.json"
+      ],
+      "approval": {
+        "roles": [
+          "producer"
+        ],
+        "evidence": "制作方确认照片、朝代和输出规格。"
+      }
+    },
+    {
+      "promptSourceKeys": [
+        "volcDynasties",
+        "volcImages"
+      ],
+      "taskPrompt": "按每个朝代生成男女各一张肖像，保持原始五官、脸型、肤色和识别特征，禁止美颜漂移。火山版使用 Seedream 5.0 Pro；Agnes 版使用其图片渠道。",
+      "id": "C02",
+      "title": "朝代人物肖像",
+      "action": "generate_dynasty_portraits",
+      "mode": "managed_image_model",
+      "keys": [
+        "volcDynasties",
+        "volcImages"
+      ],
+      "task": "按每个朝代生成男女各一张肖像，保持原始五官、脸型、肤色和识别特征，禁止美颜漂移。火山版使用 Seedream 5.0 Pro；Agnes 版使用其图片渠道。",
+      "dynamicNodes": [
+        "dynastyPortraitMale",
+        "dynastyPortraitFemale"
+      ],
+      "outputs": [
+        "portraits/{dynasty}_male.jpg",
+        "portraits/{dynasty}_female.jpg",
+        "PORTRAIT_QC.json"
+      ],
+      "approval": {
+        "roles": [
+          "producer"
+        ],
+        "evidence": "逐朝代检查男女肖像，确认身份、服饰和时代质感。"
+      }
+    },
+    {
+      "promptSourceKeys": [
+        "volcDynasties",
+        "volcImages",
+        "agnesSkill"
+      ],
+      "taskPrompt": "以男女肖像为参考，按每个朝代的 couplePrompt 生成双人婚礼场景。必须保留两张参考脸，不添加额外人物、文字和水印。Agnes 版缺少双参考时，必须明确标记需要 FaceFusion 的镜头。",
+      "id": "C03",
+      "title": "双人场景首帧",
+      "action": "generate_dynasty_scenes",
+      "mode": "managed_image_model",
+      "keys": [
+        "volcDynasties",
+        "volcImages",
+        "agnesSkill"
+      ],
+      "task": "以男女肖像为参考，按每个朝代的 couplePrompt 生成双人婚礼场景。必须保留两张参考脸，不添加额外人物、文字和水印。Agnes 版缺少双参考时，必须明确标记需要 FaceFusion 的镜头。",
+      "dynamicNodes": [
+        "dynastyScene"
+      ],
+      "outputs": [
+        "scenes/{dynasty}_scene.jpg",
+        "SCENE_QA.json"
+      ],
+      "approval": {
+        "roles": [
+          "producer"
+        ],
+        "evidence": "制作方检查双人身份、朝代服饰、场景和穿帮。"
+      }
+    },
+    {
+      "promptSourceKeys": [
+        "volcSkill",
+        "volcReadme"
+      ],
+      "taskPrompt": "逐朝检查男女是否同时出现、各自像本人、服饰与场景符合朝代、无多余人物、无文字水印。坏帧归档到版本目录，修复后重新确认。",
+      "id": "C04",
+      "title": "场景质检",
+      "action": "qa_dynasty_scenes",
+      "mode": "managed_vision_model",
+      "keys": [
+        "volcSkill",
+        "volcReadme"
+      ],
+      "task": "逐朝检查男女是否同时出现、各自像本人、服饰与场景符合朝代、无多余人物、无文字水印。坏帧归档到版本目录，修复后重新确认。",
+      "outputs": [
+        "scene_qa.json",
+        "SCENE_FIX_LIST.json"
+      ],
+      "approval": {
+        "roles": [
+          "producer"
+        ],
+        "evidence": "所有选用场景帧通过硬性质检。"
+      }
+    },
+    {
+      "promptSourceKeys": [
+        "volcDynasties",
+        "volcVideos",
+        "agnesSkill"
+      ],
+      "taskPrompt": "按每个朝代的 videoPrompt、时长、画幅、分辨率和视频模式提交任务。保持同男主、同女主、同服装和同场景，不新增角色，不生成文字水印。",
+      "id": "C05",
+      "title": "朝代视频",
+      "action": "generate_dynasty_videos",
+      "mode": "managed_video_model",
+      "keys": [
+        "volcDynasties",
+        "volcVideos",
+        "agnesSkill"
+      ],
+      "task": "按每个朝代的 videoPrompt、时长、画幅、分辨率和视频模式提交任务。保持同男主、同女主、同服装和同场景，不新增角色，不生成文字水印。",
+      "dynamicNodes": [
+        "dynastyVideo"
+      ],
+      "outputs": [
+        "videos/{dynasty}.mp4",
+        "VIDEO_SELECTION.json",
+        "VIDEO_QC.json"
+      ],
+      "approval": {
+        "roles": [
+          "producer"
+        ],
+        "evidence": "逐朝观看视频，确认动作、脸手、服饰和时代场景。"
+      }
+    },
+    {
+      "promptSourceKeys": [
+        "volcDynasties",
+        "volcMerge"
+      ],
+      "taskPrompt": "生成片头、片尾和朝代标题卡。按 mood 构建 BGM 情绪弧；用户自备音乐时循环铺满并使用 loudnorm −14 LUFS；关闭时保留无 BGM 版本。",
+      "id": "C06",
+      "title": "标题卡与音乐",
+      "action": "prepare_titles_and_bgm",
+      "mode": "managed_media",
+      "keys": [
+        "volcDynasties",
+        "volcMerge"
+      ],
+      "task": "生成片头、片尾和朝代标题卡。按 mood 构建 BGM 情绪弧；用户自备音乐时循环铺满并使用 loudnorm −14 LUFS；关闭时保留无 BGM 版本。",
+      "materializeNodes": [
+        "bgmAudio"
+      ],
+      "outputs": [
+        "title.mp4",
+        "ending.mp4",
+        "{dynasty}_card.mp4",
+        "bgm-arc.wav",
+        "BGM_SELECTION.json"
+      ],
+      "approval": {
+        "roles": [
+          "producer"
+        ],
+        "evidence": "制作方确认片头片尾文字、朝代标题和音乐情绪弧。"
+      }
+    },
+    {
+      "promptSourceKeys": [
+        "volcMerge"
+      ],
+      "taskPrompt": "按朝代顺序拼接标题卡和视频，添加转场、片头片尾及 BGM。保留每个朝代片段和 state.json，正式输出 MP4。",
+      "id": "C07",
+      "title": "合并正式成片",
+      "action": "merge_cross_era_movie",
+      "mode": "local_ffmpeg",
+      "keys": [
+        "volcMerge"
+      ],
+      "task": "按朝代顺序拼接标题卡和视频，添加转场、片头片尾及 BGM。保留每个朝代片段和 state.json，正式输出 MP4。",
+      "materializeNodes": [
+        "finalVideo"
+      ],
+      "outputs": [
+        "wedding_movie_final.mp4",
+        "state.json",
+        "MERGE_QC.json"
+      ],
+      "approval": {
+        "roles": [
+          "producer"
+        ],
+        "evidence": "制作方完整观看正式成片并确认转场、字幕、声音和结尾。"
+      }
+    },
+    {
+      "promptSourceKeys": [
+        "volcSkill",
+        "volcMerge"
+      ],
+      "taskPrompt": "交付正式 MP4、朝代素材清单、使用的模型与参数、seed、BGM 来源和 QC 记录。制作者确认后，由新人验收。",
+      "id": "C08",
+      "title": "交付与验收",
+      "action": "deliver_cross_era_movie",
+      "mode": "human_acceptance",
+      "keys": [
+        "volcSkill",
+        "volcMerge"
+      ],
+      "task": "交付正式 MP4、朝代素材清单、使用的模型与参数、seed、BGM 来源和 QC 记录。制作者确认后，由新人验收。",
+      "materializeNodes": [
+        "deliveryNotes"
+      ],
+      "outputs": [
+        "FINAL_QC.json",
+        "MATERIAL_MAP.json",
+        "DELIVERY_README.md"
+      ],
+      "approval": {
+        "roles": [
+          "producer",
+          "couple"
+        ],
+        "evidence": "制作方确认导出；新人明确验收。"
+      }
+    }
+  ],
+  "canvas": {
+    "layout": "three_phase_dynamic",
+    "nodes": [
+      {
+        "ref": "frameInput",
+        "type": "frame",
+        "title": "01 照片与跨时空设定",
+        "x": 0,
+        "y": 0,
+        "width": 1900,
+        "height": 1200,
+        "metadata": {
+          "frame": {
+            "collapsed": false,
+            "expandedWidth": 1900,
+            "expandedHeight": 1200
+          },
+          "workflowTitle": "跨时空婚礼电影",
+          "workflowDescription": "01 照片与跨时空设定"
+        }
+      },
+      {
+        "ref": "frameEra",
+        "type": "frame",
+        "title": "02 朝代资产（按选择动态生成）",
+        "x": 2100,
+        "y": 0,
+        "width": 3900,
+        "height": 2500,
+        "metadata": {
+          "frame": {
+            "collapsed": false,
+            "expandedWidth": 3900,
+            "expandedHeight": 2500
+          },
+          "workflowTitle": "跨时空婚礼电影",
+          "workflowDescription": "02 朝代资产（按选择动态生成）"
+        }
+      },
+      {
+        "ref": "frameOutput",
+        "type": "frame",
+        "title": "03 音乐与正式成片",
+        "x": 6200,
+        "y": 0,
+        "width": 2400,
+        "height": 1200,
+        "metadata": {
+          "frame": {
+            "collapsed": false,
+            "expandedWidth": 2400,
+            "expandedHeight": 1200
+          },
+          "workflowTitle": "跨时空婚礼电影",
+          "workflowDescription": "03 音乐与正式成片"
+        }
+      },
+      {
+        "ref": "crossEraSpec",
+        "type": "text",
+        "title": "跨时空婚礼设定",
+        "parentId": "frameInput",
+        "x": 100,
+        "y": 120,
+        "width": 620,
+        "height": 760,
+        "metadata": {
+          "status": "success",
+          "workflowKind": "styleboard",
+          "workflowTitle": "跨时空婚礼设定",
+          "workflowDescription": "版本、人物、朝代、画幅、视频模型、片头片尾和 BGM",
+          "contentTemplate": "# 跨时空婚礼设定\n新郎：{{maleName}}\n新娘：{{femaleName}}\n朝代：{{dynasties}}\n画幅：{{ratio}}\n每朝代时长：{{duration}} 秒\n转场：{{transitionDuration}} 秒\n分辨率：{{resolution}}\n图片模型：由管理后台默认图片模型执行\n视频模型：由管理后台默认视频模型执行\n视频模式：场景＋双肖像多模态身份锁定\n片头片尾：{{addIntroOutro}}\n朝代字幕：{{addSubtitles}}\nBGM：{{bgmMode}}\n个人故事：{{customDesc}}",
+          "pluginData": {
+            "promptSourceKeys": [
+              "volcSkill",
+              "volcReadme",
+              "agnesSkill"
+            ]
+          }
+        }
+      },
+      {
+        "ref": "groomPhoto",
+        "type": "image",
+        "title": "新郎原始照片",
+        "parentId": "frameInput",
+        "x": 800,
+        "y": 120,
+        "width": 520,
+        "height": 350,
+        "metadata": {
+          "content": "",
+          "status": "idle",
+          "uploadField": "groomPhoto",
+          "nodeRole": "result",
+          "resultOrigin": "upload",
+          "workflowKind": "character",
+          "workflowTitle": "新郎原始照片",
+          "workflowDescription": "清晰正脸原图；所有朝代肖像的第 1 身份参考"
+        }
+      },
+      {
+        "ref": "bridePhoto",
+        "type": "image",
+        "title": "新娘原始照片",
+        "parentId": "frameInput",
+        "x": 1360,
+        "y": 120,
+        "width": 460,
+        "height": 350,
+        "metadata": {
+          "content": "",
+          "status": "idle",
+          "uploadField": "bridePhoto",
+          "nodeRole": "result",
+          "resultOrigin": "upload",
+          "workflowKind": "character",
+          "workflowTitle": "新娘原始照片",
+          "workflowDescription": "清晰正脸原图；所有朝代肖像的第 2 身份参考"
+        }
+      },
+      {
+        "ref": "dynastyGuide",
+        "type": "text",
+        "title": "朝代任务台",
+        "parentId": "frameEra",
+        "x": 2200,
+        "y": 120,
+        "width": 560,
+        "height": 520,
+        "metadata": {
+          "content": "# 朝代任务台\n先完成每个朝代的男女肖像，再生成双人场景。\n双人场景通过后生成朝代视频，可单独重试失败朝代。\n片头、片尾、标题和合并使用同一画幅顺序输出。\n生成规则保存在服务端，不在画布、浏览器或任务详情中显示。",
+          "status": "success",
+          "workflowKind": "reference_set",
+          "workflowTitle": "朝代任务台",
+          "workflowDescription": "按选中朝代展开肖像、场景、质检和视频节点"
+        }
+      },
+      {
+        "ref": "sceneQa",
+        "type": "text",
+        "title": "场景质检报告",
+        "parentId": "frameEra",
+        "x": 2820,
+        "y": 120,
+        "width": 620,
+        "height": 520,
+        "metadata": {
+          "content": "等待朝代场景生成后写入质检结果。",
+          "status": "idle",
+          "workflowKind": "free",
+          "workflowTitle": "场景质检报告",
+          "workflowDescription": "逐朝检查双人身份、服饰、场景、穿帮、文字水印",
+          "pluginData": {
+            "promptSourceKeys": [
+              "volcSkill",
+              "volcReadme"
+            ]
+          }
+        }
+      },
+      {
+        "ref": "bgmAudio",
+        "type": "audio",
+        "title": "BGM 情绪弧",
+        "parentId": "frameOutput",
+        "x": 6320,
+        "y": 120,
+        "width": 560,
+        "height": 430,
+        "metadata": {
+          "content": "",
+          "status": "idle",
+          "nodeRole": "result",
+          "resultOrigin": "derived",
+          "workflowKind": "final",
+          "workflowTitle": "BGM 情绪弧",
+          "workflowDescription": "按朝代 mood 拼接；可自动、自备或关闭",
+          "promptTemplate": "按选中朝代的 mood 生成或拼接 BGM 情绪弧。旁白或原声存在时自动避让；输出 loudnorm -14 LUFS。"
+        }
+      },
+      {
+        "ref": "finalVideo",
+        "type": "video",
+        "title": "跨时空婚礼正式成片",
+        "parentId": "frameOutput",
+        "x": 6980,
+        "y": 120,
+        "width": 900,
+        "height": 560,
+        "metadata": {
+          "content": "",
+          "status": "idle",
+          "nodeRole": "result",
+          "resultOrigin": "derived",
+          "workflowKind": "final",
+          "workflowTitle": "跨时空婚礼正式成片",
+          "workflowDescription": "按朝代顺序拼接标题卡、视频、片头片尾和 BGM",
+          "pluginData": {
+            "promptSourceKeys": [
+              "volcMerge"
+            ]
+          }
+        }
+      },
+      {
+        "ref": "deliveryNotes",
+        "type": "text",
+        "title": "交付与授权清单",
+        "parentId": "frameOutput",
+        "x": 7960,
+        "y": 120,
+        "width": 480,
+        "height": 760,
+        "metadata": {
+          "content": "# 交付清单\n☐ 正式 MP4\n☐ 每个朝代视频片段\n☐ 朝代资产清单\n☐ 模型、参数和 seed\n☐ BGM 来源\n☐ QC 记录\n\n## 合规提醒\n必须取得男女双方照片使用授权。\n原仓库许可证标注为个人学习和非商业使用；商用前需确认授权。",
+          "status": "success",
+          "workflowKind": "final",
+          "workflowTitle": "交付与授权清单",
+          "workflowDescription": "素材授权、模型参数、seed 和最终验收",
+          "pluginData": {
+            "promptSourceKeys": [
+              "volcSkill",
+              "agnesSkill"
+            ]
+          }
+        }
+      }
+    ],
+    "connections": [
+      {
+        "id": "E01",
+        "from": "groomPhoto",
+        "to": "crossEraSpec",
+        "type": "reference"
+      },
+      {
+        "id": "E02",
+        "from": "bridePhoto",
+        "to": "crossEraSpec",
+        "type": "reference"
+      },
+      {
+        "id": "E03",
+        "from": "crossEraSpec",
+        "to": "dynastyGuide",
+        "type": "reference"
+      },
+      {
+        "id": "E04",
+        "from": "dynastyGuide",
+        "to": "sceneQa",
+        "type": "reference"
+      },
+      {
+        "id": "E05",
+        "from": "dynastyGuide",
+        "to": "bgmAudio",
+        "type": "reference"
+      },
+      {
+        "id": "E06",
+        "from": "bgmAudio",
+        "to": "finalVideo",
+        "type": "audio_reference"
+      },
+      {
+        "id": "E07",
+        "from": "sceneQa",
+        "to": "finalVideo",
+        "type": "reference"
+      },
+      {
+        "id": "E08",
+        "from": "finalVideo",
+        "to": "deliveryNotes",
+        "type": "output"
+      }
+    ],
+    "dynamicNodes": [
+      {
+        "ref": "dynastyPortraitMale",
+        "type": "image",
+        "per": "dynasty",
+        "createdByStep": "C02",
+        "titleTemplate": "02 {{dynasty.name}} · 新郎肖像",
+        "parentId": "frameEra",
+        "width": 420,
+        "height": 280,
+        "layout": {
+          "x": 2200,
+          "y": 700,
+          "columnWidth": 560
+        },
+        "dependsOn": [
+          "groomPhoto"
+        ],
+        "metadata": {
+          "workflowKind": "character",
+          "status": "idle",
+          "nodeRole": "result",
+          "resultOrigin": "generated",
+          "generationMode": "image",
+          "size": "{{ratio}}",
+          "quality": "auto",
+          "promptTemplate": "{{dynasty.portraitPromptMale}} Keep the exact same facial features, face shape, eyes, nose, mouth and skin tone as the reference photo. Any distinctive identifying marks (mole, scar) must be preserved exactly, no beautification, no face drift."
+        }
+      },
+      {
+        "ref": "dynastyPortraitFemale",
+        "type": "image",
+        "per": "dynasty",
+        "createdByStep": "C02",
+        "titleTemplate": "03 {{dynasty.name}} · 新娘肖像",
+        "parentId": "frameEra",
+        "width": 420,
+        "height": 280,
+        "layout": {
+          "x": 2200,
+          "y": 1060,
+          "columnWidth": 560
+        },
+        "dependsOn": [
+          "bridePhoto"
+        ],
+        "metadata": {
+          "workflowKind": "character",
+          "status": "idle",
+          "nodeRole": "result",
+          "resultOrigin": "generated",
+          "generationMode": "image",
+          "size": "{{ratio}}",
+          "quality": "auto",
+          "promptTemplate": "{{dynasty.portraitPromptFemale}} Keep the exact same facial features, face shape, eyes, nose, mouth and skin tone as the reference photo. Any distinctive identifying marks (mole, scar) must be preserved exactly, no beautification, no face drift."
+        }
+      },
+      {
+        "ref": "dynastyScene",
+        "type": "image",
+        "per": "dynasty",
+        "createdByStep": "C03",
+        "titleTemplate": "04 {{dynasty.name}} · 双人婚礼场景",
+        "parentId": "frameEra",
+        "width": 520,
+        "height": 320,
+        "layout": {
+          "x": 2200,
+          "y": 1420,
+          "columnWidth": 560
+        },
+        "dependsOn": [
+          "dynastyPortraitMale",
+          "dynastyPortraitFemale"
+        ],
+        "metadata": {
+          "workflowKind": "scene",
+          "status": "idle",
+          "nodeRole": "result",
+          "resultOrigin": "generated",
+          "generationMode": "image",
+          "generationType": "generation",
+          "size": "{{ratio}}",
+          "quality": "auto",
+          "promptTemplate": "{{dynasty.couplePrompt}} {{personalStoryClause}} The man and the woman must keep the exact same facial features, face shape and skin tone as their respective reference portrait photos; both faces stay consistent throughout the frame, no beautification, no face drift, no extra people, no text, no watermark."
+        }
+      },
+      {
+        "ref": "dynastyVideo",
+        "type": "video",
+        "per": "dynasty",
+        "createdByStep": "C05",
+        "titleTemplate": "05 {{dynasty.name}} · 朝代视频",
+        "parentId": "frameEra",
+        "width": 520,
+        "height": 360,
+        "layout": {
+          "x": 2200,
+          "y": 1820,
+          "columnWidth": 560
+        },
+        "dependsOn": [
+          "dynastyPortraitMale",
+          "dynastyPortraitFemale",
+          "dynastyScene"
+        ],
+        "connectsTo": [
+          "finalVideo"
+        ],
+        "metadata": {
+          "workflowKind": "shot",
+          "status": "idle",
+          "allowProducerPromptOverride": true,
+          "generationMode": "video",
+          "videoEditOperation": "reference_to_video",
+          "seconds": "{{duration}}",
+          "size": "{{ratio}}",
+          "vquality": "{{resolution}}",
+          "promptTemplate": "{{dynasty.videoPrompt}} {{personalStoryClause}} Keep the same man and woman throughout the video: same faces, same hairstyles, same dynasty clothing and same scene. No new characters, no face changes, no disappearing props, no text, no watermark. Cinematic film look, photorealistic."
+        }
+      }
+    ]
+  },
+  "compatibility": {
+    "managedNodeTypes": [
+      "frame",
+      "text",
+      "image",
+      "audio",
+      "video"
+    ],
+    "replacesRunnerScripts": true,
+    "executionNote": "JSON 只描述流程、表单和节点，不直接执行 Node.js 原脚本；运行时由后台模型和节点执行器完成生成。"
+  }
+}
