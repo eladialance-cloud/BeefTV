@@ -46,6 +46,10 @@ describe("wedding production state", () => {
         ]);
         expect(state.stages.setup.status).toBe("ready");
         expect(state.stages.dynasties.status).toBe("ready");
+        expect(state.stages.portraits.status).toBe("ready");
+        expect(state.stages.scenes.status).toBe("ready");
+        expect(state.stages.videos.status).toBe("ready");
+        expect(state.stages.packaging.status).toBe("not_started");
         expect(state.dynasties[0]).toMatchObject({
             id: "tang",
             name: "唐",
