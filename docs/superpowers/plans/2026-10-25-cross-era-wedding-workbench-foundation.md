@@ -813,7 +813,7 @@ git commit -m "feat(wedding-workbench): 跨时空婚礼电影 - 新增制作方�
 
 **Files:**
 - Modify: `docs/superpowers/specs/2026-10-25-cross-era-wedding-producer-workbench-design.md`
-- Create: `docs/superpowers/plans/2026-10-25-cross-era-wedding-production-stages.md`
+- Create: `docs/superpowers/plans/2026-10-25-cross-era-wedding-workbench-setup-stage.md`
 
 **Interfaces:**
 - Consumes: completed foundation and prompt chain.
@@ -846,20 +846,20 @@ Expected: all commands PASS.
 
 - [ ] **Step 3: Write the next implementation plan**
 
-Create `docs/superpowers/plans/2026-10-25-cross-era-wedding-production-stages.md` covering:
+Create `docs/superpowers/plans/2026-10-25-cross-era-wedding-workbench-setup-stage.md` covering:
 
-- Setup and dynasty editing.
-- Portrait batch generation and selection.
-- Scene generation and QC override.
-- Video generation with prompt override and version comparison.
+- Editable setup fields with consent and photo-reference validation.
+- Stage blockers and approval flow for project setup.
+- Downstream invalidation for photo, story and output-spec changes.
+- Browser coverage for editing, saving and reloading setup.
 
-The next plan must reference the exact functions and types produced by this plan and use the same TDD and commit structure.
+Dynasty planning, portrait, scene and video generation get separate follow-up plans after setup editing is verified. The next plan must reference the exact functions and types produced by this plan and use the same TDD and commit structure.
 
 - [ ] **Step 4: Commit**
 
 ```powershell
 cd D:\画布\BeefTV
-git add docs/superpowers/specs/2026-10-25-cross-era-wedding-producer-workbench-design.md docs/superpowers/plans/2026-10-25-cross-era-wedding-production-stages.md
+git add docs/superpowers/specs/2026-10-25-cross-era-wedding-producer-workbench-design.md docs/superpowers/plans/2026-10-25-cross-era-wedding-workbench-setup-stage.md
 git commit -m "docs(wedding-workbench): 跨时空婚礼电影 - 记录基础阶段验收与后续计划"
 ```
 
@@ -878,7 +878,7 @@ This plan implements the spec sections:
 - 视频提示词预览 API
 - 对应单元、后端和浏览器测试
 
-The spec sections for real portrait, scene, video generation, packaging and delivery are intentionally assigned to the next plan because they depend on the state and prompt interfaces delivered here. The next plan file is a required deliverable of Task 7.
+The spec sections for dynasty planning, real portrait, scene, video generation, packaging and delivery are intentionally assigned to later plans because they depend on the state and prompt interfaces delivered here. The setup editing plan is the next required deliverable of Task 7.
 
 ### Placeholder Scan
 
