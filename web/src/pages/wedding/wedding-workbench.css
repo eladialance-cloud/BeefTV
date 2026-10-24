@@ -212,12 +212,20 @@
 }
 
 .wedding-workbench-topbar a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     padding: 7px 10px;
     border: 1px solid var(--wedding-line);
     border-radius: 5px;
     color: var(--wedding-muted);
     font-size: 9px;
     text-decoration: none;
+}
+
+.wedding-workbench-topbar a svg {
+    width: 13px;
+    height: 13px;
 }
 
 .wedding-workbench-heading {
@@ -271,6 +279,7 @@
 .wedding-workbench-grid {
     display: grid;
     grid-template-columns: minmax(0, 1.4fr) minmax(320px, .6fr);
+    align-items: start;
     gap: 12px;
 }
 
@@ -391,6 +400,222 @@
     padding: 20px 13px;
     color: var(--wedding-muted);
     font-size: 10px;
+}
+
+.wedding-prompt-inspector {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    border: 1px solid var(--wedding-line);
+    border-radius: 7px;
+    background: var(--wedding-panel);
+}
+
+.wedding-prompt-inspector > header {
+    display: flex;
+    min-height: 52px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0 13px;
+    border-bottom: 1px solid #22292e;
+}
+
+.wedding-prompt-inspector > header small,
+.wedding-prompt-inspector > header strong {
+    display: block;
+}
+
+.wedding-prompt-inspector > header small {
+    color: var(--wedding-faint);
+    font-size: 8px;
+    letter-spacing: .1em;
+}
+
+.wedding-prompt-inspector > header strong {
+    margin-top: 4px;
+    font-size: 10px;
+}
+
+.wedding-prompt-inspector > header > span {
+    flex: 0 0 auto;
+    padding: 4px 7px;
+    border: 1px solid var(--wedding-line);
+    border-radius: 99px;
+    color: var(--wedding-muted);
+    font-size: 8px;
+}
+
+.wedding-prompt-inspector > header > span.is-overridden {
+    border-color: rgba(216, 170, 97, .3);
+    background: rgba(216, 170, 97, .07);
+    color: var(--wedding-amber);
+}
+
+.wedding-prompt-state,
+.wedding-prompt-error {
+    display: flex;
+    min-height: 260px;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 9px;
+    padding: 20px;
+    color: var(--wedding-muted);
+    font-size: 9px;
+    text-align: center;
+}
+
+.wedding-prompt-error strong {
+    color: #d9a09c;
+    font-size: 10px;
+}
+
+.wedding-prompt-error button {
+    padding: 6px 9px;
+    border: 1px solid var(--wedding-line);
+    border-radius: 4px;
+    background: var(--wedding-panel-raised);
+    color: var(--wedding-text);
+    font-size: 8px;
+    cursor: pointer;
+}
+
+.wedding-prompt-meta {
+    display: flex;
+    gap: 6px;
+    padding: 11px 12px 0;
+}
+
+.wedding-prompt-meta span {
+    padding: 4px 7px;
+    border: 1px solid #263036;
+    border-radius: 4px;
+    background: #111619;
+    color: var(--wedding-muted);
+    font-size: 8px;
+}
+
+.wedding-prompt-editor {
+    display: block;
+    padding: 11px 12px 0;
+}
+
+.wedding-prompt-editor > span {
+    display: block;
+    margin-bottom: 7px;
+    color: #cfd6d8;
+    font-size: 9px;
+    font-weight: 550;
+}
+
+.wedding-prompt-editor textarea {
+    width: 100%;
+    min-height: 292px;
+    padding: 11px;
+    resize: vertical;
+    border: 1px solid #303a40;
+    border-radius: 5px;
+    outline: 0;
+    background: #0d1214;
+    color: #c7d4d1;
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 9px;
+    line-height: 1.65;
+}
+
+.wedding-prompt-editor textarea:focus {
+    border-color: rgba(216, 170, 97, .45);
+    box-shadow: 0 0 0 2px rgba(216, 170, 97, .08);
+}
+
+.wedding-prompt-count {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 5px 13px 0;
+    color: var(--wedding-faint);
+    font-size: 8px;
+}
+
+.wedding-prompt-count strong {
+    color: #d77772;
+    font-weight: 500;
+}
+
+.wedding-prompt-default {
+    margin: 9px 12px 0;
+    border: 1px solid #252d32;
+    border-radius: 5px;
+    background: #111619;
+}
+
+.wedding-prompt-default summary {
+    padding: 8px 9px;
+    color: var(--wedding-muted);
+    font-size: 8px;
+    cursor: pointer;
+}
+
+.wedding-prompt-default pre {
+    max-height: 150px;
+    margin: 0;
+    overflow: auto;
+    padding: 0 9px 9px;
+    color: #8f9ca1;
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 8px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+}
+
+.wedding-prompt-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 7px;
+    margin-top: 11px;
+    padding: 11px 12px;
+    border-top: 1px solid #22292e;
+}
+
+.wedding-prompt-actions button {
+    display: inline-flex;
+    height: 32px;
+    align-items: center;
+    gap: 6px;
+    padding: 0 10px;
+    border: 1px solid var(--wedding-line);
+    border-radius: 5px;
+    background: var(--wedding-panel-raised);
+    color: var(--wedding-muted);
+    font-size: 8px;
+    cursor: pointer;
+}
+
+.wedding-prompt-actions button svg {
+    width: 12px;
+    height: 12px;
+}
+
+.wedding-prompt-actions button.is-primary {
+    border-color: #d8aa61;
+    background: #d8aa61;
+    color: #17130d;
+    font-weight: 700;
+}
+
+.wedding-prompt-actions button:disabled {
+    cursor: not-allowed;
+    opacity: .42;
+}
+
+.wedding-prompt-feedback {
+    margin: 0;
+    padding: 0 12px 11px;
+    color: var(--wedding-teal);
+    font-size: 8px;
+    line-height: 1.55;
 }
 
 @media (max-width: 1120px) {

@@ -21,10 +21,15 @@ const READY_ITEM_STATUSES = new Set<WeddingItemStatus>(["ready", "approved"]);
 
 export function createWeddingProductionState(input: CreateWeddingProductionInput): WeddingProductionState {
     const stageTimestamp = input.now;
+    const hasDynasties = input.dynasties.length > 0;
     const stages = Object.fromEntries(WEDDING_STAGE_IDS.map((stage) => [
         stage,
         {
-            status: stage === "setup" || stage === "dynasties" ? "ready" : "not_started",
+            status: stage === "setup"
+                || stage === "dynasties"
+                || (hasDynasties && (stage === "portraits" || stage === "scenes" || stage === "videos"))
+                ? "ready"
+                : "not_started",
             updatedAt: stageTimestamp,
         },
     ])) as WeddingProductionState["stages"];
