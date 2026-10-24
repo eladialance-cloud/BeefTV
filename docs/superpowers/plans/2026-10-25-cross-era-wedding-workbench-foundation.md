@@ -121,6 +121,7 @@ const input = {
     },
     dynasties: [{
         id: "tang",
+        name: "唐",
         order: 0,
         portraitMaleNodeId: "tang-male",
         portraitFemaleNodeId: "tang-female",
@@ -137,7 +138,7 @@ describe("wedding production state", () => {
             "setup", "dynasties", "portraits", "scenes", "videos", "packaging", "delivery",
         ]);
         expect(state.stages.setup.status).toBe("ready");
-        expect(state.dynasties[0]).toMatchObject({ id: "tang", order: 0, statuses: { portrait: "ready" } });
+        expect(state.dynasties[0]).toMatchObject({ id: "tang", name: "唐", order: 0, statuses: { portrait: "ready" } });
     });
 
     test("prompt invalidation marks video and final stages stale", () => {
@@ -259,6 +260,7 @@ test("maps selected dynasty nodes into production state", () => {
     expect(state.dynasties).toHaveLength(1);
     expect(state.dynasties[0]).toMatchObject({
         id: "tang",
+        name: "唐",
         portraitMaleNodeId: "male-tang",
         portraitFemaleNodeId: "female-tang",
         sceneNodeId: "scene-tang",
@@ -391,7 +393,7 @@ export function weddingWorkbenchPathForTemplate(
 }
 ```
 
-The first `workbench.tsx` render reads `canvasId`, finds the project in `useCanvasStore`, renders the project title and the seven-stage rail from the persisted `weddingProduction`, and shows a precise error when the project or production state is missing. It must not create replacement demo state.
+The first `workbench.tsx` render reads `canvasId`, finds the project in `useCanvasStore`, calls `openLocalCanvasProjectFromBackend(canvasId)` when the live project is absent, renders the project title and the seven-stage rail from the persisted `weddingProduction`, and shows a precise error when the project or production state is missing. It must not create replacement demo state.
 
 - [ ] **Step 4: Wire the home entry and router**
 
@@ -614,7 +616,7 @@ const state = createWeddingProductionState({
         groomPhotoNodeId: "g", bridePhotoNodeId: "b", maleName: "男", femaleName: "女",
         story: "", consentConfirmed: true, ratio: "16:9", resolution: "720p",
     },
-    dynasties: [{ id: "tang", order: 0, portraitMaleNodeId: "pm", portraitFemaleNodeId: "pf", sceneNodeId: "s", videoNodeId: "v" }],
+    dynasties: [{ id: "tang", name: "唐", order: 0, portraitMaleNodeId: "pm", portraitFemaleNodeId: "pf", sceneNodeId: "s", videoNodeId: "v" }],
     now: "2026-10-25T00:00:00.000Z",
 });
 
@@ -721,7 +723,7 @@ test("renders all seven producer stages", () => {
             groomPhotoNodeId: "g", bridePhotoNodeId: "b", maleName: "男", femaleName: "女",
             story: "", consentConfirmed: true, ratio: "16:9", resolution: "720p",
         },
-        dynasties: [{ id: "tang", order: 0, portraitMaleNodeId: "pm", portraitFemaleNodeId: "pf", sceneNodeId: "s", videoNodeId: "v" }],
+        dynasties: [{ id: "tang", name: "唐", order: 0, portraitMaleNodeId: "pm", portraitFemaleNodeId: "pf", sceneNodeId: "s", videoNodeId: "v" }],
         now: "2026-10-25T00:00:00.000Z",
     });
     const html = renderToStaticMarkup(<WorkbenchStageRail state={state} activeStage="videos" onSelect={() => undefined} />);

@@ -232,6 +232,7 @@ type WeddingVideoQc = {
 
 type WeddingDynastyState = {
     id: string;
+    name: string;
     order: number;
     portraitMaleNodeId: string;
     portraitFemaleNodeId: string;
