@@ -50,6 +50,8 @@ type CanvasTopBarProps = {
     onOpenSearch: () => void;
     projectContext?: CanvasContextSummary & { projectId: string; projectName: string };
     backToManjuPath?: string;
+    backToPath?: string;
+    backLabel?: string;
     onEnterFocusMode: () => void;
     shortDramaGuide?: { progress: CanvasShortDramaProgress; collapsed: boolean; onToggle: () => void };
     localOnly?: boolean;
@@ -95,6 +97,8 @@ export function CanvasTopBar({
     onOpenSearch,
     projectContext,
     backToManjuPath,
+    backToPath,
+    backLabel,
     onEnterFocusMode,
     shortDramaGuide,
     localOnly = false,
@@ -195,14 +199,14 @@ export function CanvasTopBar({
                             </button>
                     </Dropdown>
 
-                    {backToManjuPath ? (
+                    {backToPath || backToManjuPath ? (
                         <Link
-                            to={backToManjuPath}
+                            to={backToPath || backToManjuPath!}
                             className="canvas-topbar-action inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium"
                             style={{ color: theme.node.text, background: theme.toolbar.panel, border: `1px solid ${theme.toolbar.border}` }}
                         >
                             <ArrowLeft className="size-3.5" />
-                            <span className="hidden sm:inline">返回漫剧工作台</span>
+                            <span className="hidden sm:inline">{backLabel || (backToPath ? "返回制作台" : "返回漫剧工作台")}</span>
                         </Link>
                     ) : null}
 

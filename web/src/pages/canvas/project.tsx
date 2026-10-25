@@ -113,6 +113,7 @@ import { CanvasNodeActionContext, type CanvasNodeActionContextValue } from "@/co
 import { bringCanvasNodeToFront, type CanvasNodeStackOrder } from "@/lib/canvas/canvas-node-stack-order";
 import { CanvasNodeGraphContext, type CanvasNodeGraphContextValue } from "@/components/canvas/canvas-node-graph-context";
 import { CanvasRefreshShell } from "./canvas-refresh-shell";
+import { weddingWorkbenchCanvasPath } from "@/lib/wedding/routing";
 import type { CanvasImageEmotionPayload } from "@/components/canvas/canvas-node-emotion-panel";
 import { CanvasEmotionWorkspace } from "@/components/canvas/canvas-emotion-workspace";
 import { removeCanvasDrawing } from "@/lib/canvas/canvas-drawing-storage";
@@ -1114,6 +1115,13 @@ function InfiniteCanvasPage() {
         const stage = searchParams.get("stage") || "p2";
         return `/manju/${encodeURIComponent(linkedManjuProjectId)}?tab=stages&stage=${encodeURIComponent(stage)}`;
     }, [currentProject?.projectId, linkedProjectQuery.data?.project.type, searchParams]);
+    const backToWeddingPath = useMemo(() => {
+        if (!projectId || !workspaceProject) return undefined;
+        const weddingProject = Boolean(workspaceProject.weddingProduction)
+            || workspaceProject.nodes.some((node) =>
+                node.metadata?.pluginData?.creationTemplateKey === "cross-era-wedding-volc");
+        return weddingProject ? weddingWorkbenchCanvasPath(projectId) : undefined;
+    }, [projectId, workspaceProject]);
     const isManjuLinkedProject = linkedProjectQuery.data?.project.type === "manju" || Boolean(searchParams.get("manjuProjectId"));
     const directorReferenceTargetRef = useRef<{ projectId: string; nodeId: string | null; scope: string } | null>(null);
     directorReferenceTargetRef.current = { projectId, nodeId: directorNodeId, scope: canvasStorageScope };
@@ -2865,6 +2873,8 @@ function InfiniteCanvasPage() {
                                     onMediaPerformanceModeChange={setMediaPerformanceMode}
                                     onOpenSearch={() => setNodeSearchOpen(true)}
                                     backToManjuPath={backToManjuPath}
+                                    backToPath={backToWeddingPath}
+                                    backLabel="返回婚礼制作台"
                                     projectContext={
                                         shortDramaEnabled && currentProject?.projectId
                                             ? {

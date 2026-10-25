@@ -321,6 +321,7 @@ export function WeddingWorkbenchSurface({
                     metadata: {
                         ...node.metadata,
                         ...imageMetadata(uploaded),
+                        assetId: uploaded.assetId,
                         resultOrigin: "upload" as const,
                     },
                 }

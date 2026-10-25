@@ -215,6 +215,7 @@ test("generates a portrait through the existing canvas task chain and persists t
         outputs: [{ outputIndex: 0, mediaType: "image", materializedAssetId: "asset-male-tang" }],
     };
 
+    let ensuredNodeId = "";
     const summary = await generateWeddingPortraits({
         projectId: "canvas-1",
         production,
@@ -256,6 +257,15 @@ test("generates a portrait through the existing canvas task chain and persists t
                 await consumer({ task, output, effectKey: "effect-1" });
                 return task;
             },
+            ensureAsset: async ({ node }) => {
+                ensuredNodeId = node.id;
+                return {
+                    assetId: "asset-male-tang",
+                    created: false,
+                    linkedToProject: true,
+                    confirmed: true,
+                };
+            },
             getAsset: (assetId) => assetId === "asset-male-tang"
                 ? {
                     id: assetId,
@@ -276,6 +286,7 @@ test("generates a portrait through the existing canvas task chain and persists t
     });
 
     expect(summary).toEqual({ attempted: 1, succeeded: 1, failed: 0, errors: [] });
+    expect(ensuredNodeId).toBe("male-tang");
     expect(submitted).toMatchObject({
         mode: "image",
         prompt: "02 唐 · 新郎肖像",

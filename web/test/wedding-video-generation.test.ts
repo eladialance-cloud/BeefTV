@@ -181,6 +181,7 @@ test("generates video from confirmed portraits and scene with producer prompt ov
         },
     };
 
+    let ensuredNodeId = "";
     const summary = await generateWeddingVideos({
         projectId: "canvas-1",
         production,
@@ -225,11 +226,21 @@ test("generates video from confirmed portraits and scene with producer prompt ov
                 await consumer({ task, output, effectKey: "effect-video" });
                 return task;
             },
+            ensureAsset: async ({ node }) => {
+                ensuredNodeId = node.id;
+                return {
+                    assetId: "asset-video-tang",
+                    created: false,
+                    linkedToProject: true,
+                    confirmed: true,
+                };
+            },
             getAsset: (assetId) => assets[assetId as keyof typeof assets],
         },
     });
 
     expect(summary).toEqual({ attempted: 1, succeeded: 1, failed: 0, errors: [] });
+    expect(ensuredNodeId).toBe("video-tang");
     expect(submitted).toMatchObject({
         projectId: "canvas-1",
         mode: "video",

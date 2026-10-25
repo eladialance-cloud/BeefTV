@@ -30,7 +30,7 @@ import {
     sceneQcPrompt,
 } from "@/lib/wedding/scene-qc";
 import { persistCanvasDocument } from "@/services/local-workspace-repository";
-import { consumeGenerationTaskNode } from "@/services/project-asset-sync";
+import { consumeGenerationTaskNode, ensureCanvasNodeAsset } from "@/services/project-asset-sync";
 import { runBackendGenerationTask, type BackendGenerationResult } from "@/services/api/generation-task";
 import type { GenerationTask } from "@/services/api/task-center";
 import { useAssetStore } from "@/stores/use-asset-store";
@@ -74,6 +74,7 @@ export type WeddingSceneGenerationDependencies = {
             effectKey: string;
         }) => Promise<void>,
     ) => Promise<GenerationTask>;
+    ensureAsset?: typeof ensureCanvasNodeAsset;
     getAsset?: (assetId: string) => WeddingGenerationAsset | undefined;
 };
 
@@ -349,6 +350,13 @@ async function generateWeddingSceneJob(
                     ...(metadata.generationEffectKeys || []),
                     effectKey,
                 ]));
+                const ensured = await dependencies.ensureAsset({
+                    canvasId: runtime.projectId,
+                    node: { ...latestTarget, metadata },
+                    source: "canvas-generation",
+                    taskId: task.id,
+                });
+                metadata.assetId = ensured.assetId;
                 const nextProduction = recordWeddingSceneVersion(
                     latest.weddingProduction,
                     job,
@@ -404,6 +412,7 @@ function dependenciesWithDefaults(
         persist: overrides.persist || ((projectId, patch) => persistCanvasDocument(projectId, patch)),
         runTask: overrides.runTask || runBackendGenerationTask,
         consumeTask: overrides.consumeTask || consumeGenerationTaskNode,
+        ensureAsset: overrides.ensureAsset || ensureCanvasNodeAsset,
         getAsset: overrides.getAsset || ((assetId) => {
             const asset = useAssetStore.getState().assets.find((item) => item.id === assetId);
             if (!asset) return undefined;

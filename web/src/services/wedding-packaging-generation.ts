@@ -11,7 +11,7 @@ import {
 } from "@/lib/canvas/canvas-project-generation";
 import type { WeddingGenerationAsset } from "@/lib/wedding/generation-runtime";
 import type { WeddingProductionState } from "@/lib/wedding/types";
-import { consumeGenerationTaskNode } from "@/services/project-asset-sync";
+import { consumeGenerationTaskNode, ensureCanvasNodeAsset } from "@/services/project-asset-sync";
 import { runBackendGenerationTask, type BackendGenerationResult } from "@/services/api/generation-task";
 import type { GenerationTask } from "@/services/api/task-center";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
@@ -62,6 +62,7 @@ export type WeddingPackagingGenerationDependencies = {
             effectKey: string;
         }) => Promise<void>,
     ) => Promise<GenerationTask>;
+    ensureAsset?: typeof ensureCanvasNodeAsset;
     getAsset?: (assetId: string) => WeddingGenerationAsset | undefined;
 };
 
@@ -103,7 +104,7 @@ export async function generateWeddingTitleCards(runtime: WeddingPackagingGenerat
     const uploaded = await Promise.all(documents.map((document) => dependencies.uploadImage(renderTitleCard(document))));
     const maxX = Math.max(0, ...project.nodes.map((node) => node.position.x + node.width));
     const now = new Date().toISOString();
-    const nodes = documents.map((document, index): CanvasNodeData => ({
+    const generatedNodes = documents.map((document, index): CanvasNodeData => ({
         id: `wedding-title-${document.kind}-${nanoid(8)}`,
         type: CanvasNodeType.Image,
         title: document.kind === "intro" ? "跨时空婚礼 · 片头标题卡" : "跨时空婚礼 · 片尾标题卡",
@@ -118,6 +119,20 @@ export async function generateWeddingTitleCards(runtime: WeddingPackagingGenerat
             resultOrigin: "generated",
             workflowKind: "final",
         },
+    }));
+    const nodes = await Promise.all(generatedNodes.map(async (node) => {
+        const ensured = await dependencies.ensureAsset({
+            canvasId: runtime.projectId,
+            node,
+            source: "canvas-generation",
+        });
+        return {
+            ...node,
+            metadata: {
+                ...node.metadata,
+                assetId: ensured.assetId,
+            },
+        };
     }));
     const nextProduction = structuredClone(production);
     nextProduction.packaging.titleCardNodeIds = nodes.map((node) => node.id);
@@ -205,6 +220,15 @@ export async function generateWeddingBgm(runtime: WeddingPackagingGenerationRunt
             assetId,
             generationEffectKeys: [effectKey],
         };
+        node.metadata = {
+            ...node.metadata,
+            assetId: (await dependencies.ensureAsset({
+                canvasId: runtime.projectId,
+                node,
+                source: "canvas-generation",
+                taskId: task.id,
+            })).assetId,
+        };
         const nextProduction = structuredClone(latest.weddingProduction);
         nextProduction.packaging.bgmNodeId = nodeId;
         nextProduction.packaging.bgmMode = "generated";
@@ -240,6 +264,14 @@ export async function uploadWeddingBgm(runtime: WeddingPackagingGenerationRuntim
         updatedAt: now,
         metadata: audioMetadata(uploaded),
     };
+    node.metadata = {
+        ...node.metadata,
+        assetId: (await dependencies.ensureAsset({
+            canvasId: runtime.projectId,
+            node,
+            source: "canvas-upload",
+        })).assetId,
+    };
     const nextProduction = structuredClone(project.weddingProduction);
     nextProduction.packaging.bgmNodeId = nodeId;
     nextProduction.packaging.bgmMode = "uploaded";
@@ -251,7 +283,7 @@ export async function uploadWeddingBgm(runtime: WeddingPackagingGenerationRuntim
         nodes: [...project.nodes, node],
         weddingProduction: nextProduction,
     });
-    return { nodeId, assetId: uploaded.storageKey };
+    return { nodeId, assetId: node.metadata.assetId || uploaded.storageKey };
 }
 
 function renderTitleCard(card: WeddingTitleCardDocument) {
@@ -290,6 +322,7 @@ function dependenciesWithDefaults(
         uploadAudio: overrides.uploadAudio || ((file) => uploadMediaFile(file, "audio")),
         runTask: overrides.runTask || runBackendGenerationTask,
         consumeTask: overrides.consumeTask || consumeGenerationTaskNode,
+        ensureAsset: overrides.ensureAsset || ensureCanvasNodeAsset,
         getAsset: overrides.getAsset || ((assetId) => {
             const asset = useAssetStore.getState().assets.find((item) => item.id === assetId);
             if (!asset) return undefined;

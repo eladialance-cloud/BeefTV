@@ -21,7 +21,7 @@ import type {
 } from "@/lib/wedding/generation-runtime";
 import type { WeddingProductionState } from "@/lib/wedding/types";
 import { persistCanvasDocument } from "@/services/local-workspace-repository";
-import { consumeGenerationTaskNode } from "@/services/project-asset-sync";
+import { consumeGenerationTaskNode, ensureCanvasNodeAsset } from "@/services/project-asset-sync";
 import {
     runBackendGenerationTask,
     type BackendGenerationResult,
@@ -67,6 +67,7 @@ export type WeddingPortraitGenerationDependencies = {
             effectKey: string;
         }) => Promise<void>,
     ) => Promise<GenerationTask>;
+    ensureAsset?: typeof ensureCanvasNodeAsset;
     getAsset?: (assetId: string) => WeddingGenerationAsset | undefined;
 };
 
@@ -269,6 +270,13 @@ async function generateWeddingPortraitJob(
                     ...(metadata.generationEffectKeys || []),
                     effectKey,
                 ]));
+                const ensured = await dependencies.ensureAsset({
+                    canvasId: runtime.projectId,
+                    node: { ...latestTarget, metadata },
+                    source: "canvas-generation",
+                    taskId: task.id,
+                });
+                metadata.assetId = ensured.assetId;
                 const nextProduction = recordWeddingPortraitVersion(
                     latest.weddingProduction,
                     job,
@@ -313,6 +321,7 @@ function dependenciesWithDefaults(
         persist: overrides.persist || ((projectId, patch) => persistCanvasDocument(projectId, patch)),
         runTask: overrides.runTask || runBackendGenerationTask,
         consumeTask: overrides.consumeTask || consumeGenerationTaskNode,
+        ensureAsset: overrides.ensureAsset || ensureCanvasNodeAsset,
         getAsset: overrides.getAsset || ((assetId) => {
             const asset = useAssetStore.getState().assets.find((item) => item.id === assetId);
             if (!asset) return undefined;

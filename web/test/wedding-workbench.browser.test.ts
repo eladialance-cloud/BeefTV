@@ -396,10 +396,11 @@ test("setup stage exposes direct photo uploads and the workspace scrolls vertica
     });
     await page.getByText("新娘照片已上传。").waitFor();
     const uploadedProject = project as {
-        nodes: Array<{ id: string; metadata?: { content?: string; storageKey?: string } }>;
+        nodes: Array<{ id: string; metadata?: { content?: string; storageKey?: string; assetId?: string } }>;
         weddingProduction?: { source?: { groomPhotoNodeId?: string; groomPhotoReady?: boolean } };
     };
     expect(uploadedProject.nodes.find((node) => node.id === "groom")?.metadata?.content).toBeTruthy();
+    expect(uploadedProject.nodes.find((node) => node.id === "groom")?.metadata?.assetId).toBeTruthy();
     expect(uploadedProject.weddingProduction?.source).toMatchObject({
         groomPhotoNodeId: "groom",
         groomPhotoReady: true,
@@ -619,7 +620,12 @@ test("an existing cross-era canvas backfills production state in the dedicated w
 
     const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
     await page.goto(new URL("/canvas/c1", server.url).toString());
+    await page.getByRole("button", { name: "打开画布菜单" }).waitFor();
     expect(await page.getByRole("button", { name: "打开婚礼制作台" }).count()).toBe(0);
+    const returnToWorkbench = page.getByRole("link", { name: /返回婚礼制作台/ });
+    expect(await returnToWorkbench.count()).toBe(1);
+    await returnToWorkbench.click();
+    await page.getByRole("heading", { name: "项目设定", exact: true }).waitFor();
 
     await page.goto(new URL("/wedding/c1", server.url).toString());
     await page.getByRole("heading", { name: "项目设定", exact: true }).waitFor();

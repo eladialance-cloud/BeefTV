@@ -103,6 +103,7 @@ test("generates a scene from both confirmed portraits through the canvas task ch
         outputs: [{ outputIndex: 0, mediaType: "image", materializedAssetId: "asset-scene-tang" }],
     };
 
+    let ensuredNodeId = "";
     const summary = await generateWeddingScenes({
         projectId: "canvas-1",
         production,
@@ -142,6 +143,15 @@ test("generates a scene from both confirmed portraits through the canvas task ch
                 const output = task.outputs?.find((item) => item.outputIndex === outputIndex)!;
                 await consumer({ task, output, effectKey: "effect-scene" });
                 return task;
+            },
+            ensureAsset: async ({ node }) => {
+                ensuredNodeId = node.id;
+                return {
+                    assetId: "asset-scene-tang",
+                    created: false,
+                    linkedToProject: true,
+                    confirmed: true,
+                };
             },
             getAsset: (assetId) => {
                 const assets = {
@@ -191,6 +201,7 @@ test("generates a scene from both confirmed portraits through the canvas task ch
     });
 
     expect(summary).toEqual({ attempted: 1, succeeded: 1, failed: 0, errors: [] });
+    expect(ensuredNodeId).toBe("scene-tang");
     expect(submitted).toMatchObject({
         projectId: "canvas-1",
         mode: "image",
