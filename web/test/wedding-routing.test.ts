@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
     legacyWeddingWorkbenchPath,
+    weddingWorkbenchReturnPathForCanvas,
     weddingModelsPath,
     weddingTemplateInitialVariables,
     weddingWorkbenchPathForTemplate,
@@ -36,6 +37,30 @@ describe("wedding workbench routing", () => {
 
     test("opens the dedicated wedding model selection page", () => {
         expect(weddingModelsPath("a/b")).toBe("/wedding/a%2Fb/models");
+    });
+
+    test("returns to the wedding workbench only from the current wedding canvas", () => {
+        const canvases = [
+            {
+                id: "wedding-root",
+                weddingProduction: {},
+                nodes: [],
+            },
+            {
+                id: "manju-canvas",
+                nodes: [{
+                    metadata: {
+                        pluginData: {
+                            creationTemplateKey: "manju-studio",
+                        },
+                    },
+                }],
+            },
+        ];
+
+        expect(weddingWorkbenchReturnPathForCanvas(canvases, "manju-canvas")).toBeUndefined();
+        expect(weddingWorkbenchReturnPathForCanvas(canvases, "wedding-root"))
+            .toBe("/wedding/wedding-root");
     });
 
     test("cross-era wedding creation starts with template defaults and no entry form", () => {

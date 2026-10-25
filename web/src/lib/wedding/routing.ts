@@ -21,6 +21,28 @@ export function weddingModelsPath(canvasId: string) {
     return `${weddingWorkbenchCanvasPath(canvasId)}/models`;
 }
 
+type WeddingCanvasCandidate = {
+    id: string;
+    weddingProduction?: unknown;
+    nodes?: Array<{
+        metadata?: {
+            pluginData?: Record<string, unknown>;
+        };
+    }>;
+};
+
+export function weddingWorkbenchReturnPathForCanvas(
+    canvases: readonly WeddingCanvasCandidate[],
+    currentCanvasId: string,
+) {
+    const current = canvases.find((canvas) => canvas.id === currentCanvasId);
+    if (!current) return undefined;
+    const isWedding = Boolean(current.weddingProduction)
+        || Boolean(current.nodes?.some((node) =>
+            node.metadata?.pluginData?.creationTemplateKey === "cross-era-wedding-volc"));
+    return isWedding ? weddingWorkbenchCanvasPath(current.id) : undefined;
+}
+
 export function isWeddingCanvasView(search: string | URLSearchParams) {
     const params = typeof search === "string" ? new URLSearchParams(search) : search;
     return params.get("canvasView") === "wedding";
