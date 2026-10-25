@@ -124,25 +124,25 @@ git commit -m "feat(wedding-workbench): 跨时空婚礼电影 - 新增包装时�
   - `generateWeddingBgm(runtime): Promise<{nodeId;assetId}>`
   - `uploadWeddingBgm(runtime, file): Promise<{nodeId;assetId}>`
 
-- [ ] **Step 1: Add behavior tests around deterministic titles**
+- [x] **Step 1: Add behavior tests around deterministic titles**
 
 Test `buildWeddingTitleCardDocument` for intro/outro text and duration; test BGM request metadata contains theme, duration and `source:"wedding-workbench"`.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```powershell
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-packaging-runtime.test.ts
 ```
 
-- [ ] **Step 3: Implement title card rasterization**
+- [x] **Step 3: Implement title card rasterization**
 
 Use browser Canvas at the selected output dimensions, draw a dark cinematic background and the Chinese title text, call `uploadImage`, create `CanvasNodeData` image nodes, and persist both nodes and `titleCardNodeIds`.
 
-- [ ] **Step 4: Implement generated/uploaded BGM**
+- [x] **Step 4: Implement generated/uploaded BGM**
 
 Generated BGM uses `runBackendGenerationTask({ mode: "audio" })` and `consumeGenerationTaskNode`. Upload uses `uploadMediaFile(file, "audio")`. Persist `bgmNodeId` and the audio node.
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 ```powershell
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-packaging-runtime.test.ts
@@ -165,7 +165,7 @@ git commit -m "feat(wedding-workbench): 跨时空婚礼电影 - 接入包装素�
 **Interfaces:**
 - Produces `PackagingStage` with intro/outro fields, BGM mode, title card previews, timeline strip, seekable video preview, build timeline action and stage confirmation.
 
-- [ ] **Step 1: Write failing render test**
+- [x] **Step 1: Write failing render test**
 
 ```ts
 expect(html).toContain("片头文案");
@@ -175,21 +175,21 @@ expect(html).toContain("生成标题卡");
 expect(html).toContain("确认包装阶段");
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```powershell
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-packaging-stage.test.tsx
 ```
 
-- [ ] **Step 3: Build packaging workspace**
+- [x] **Step 3: Build packaging workspace**
 
 The preview walks title card → selected videos in dynasty order → outro. Show BGM state, subtitle/transition controls and clip durations. Save settings before building timeline.
 
-- [ ] **Step 4: Wire workbench actions**
+- [x] **Step 4: Wire workbench actions**
 
 Generate title cards, generate/upload BGM, build timeline from real assets, persist `project.timeline`, mark packaging ready, then allow explicit packaging approval.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 ```powershell
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-packaging-stage.test.tsx test/wedding-workbench.browser.test.ts

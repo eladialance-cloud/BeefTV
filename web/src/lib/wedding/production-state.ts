@@ -177,9 +177,13 @@ export function weddingStageBlockers(state: WeddingProductionState, stage: Weddi
         });
     }
     if (stage === "packaging") {
-        return state.packaging.status === "ready" || state.packaging.status === "approved"
-            ? []
-            : ["包装素材尚未准备"];
+        const blockers: string[] = [];
+        const requiredCards = Number(state.packaging.intro.enabled) + Number(state.packaging.outro.enabled);
+        if (state.packaging.titleCardNodeIds.filter(Boolean).length < requiredCards) blockers.push("片头或片尾标题卡尚未生成");
+        if (state.packaging.bgmMode !== "none" && !state.packaging.bgmNodeId) blockers.push("BGM 尚未生成或上传");
+        if (!state.packaging.timelineRevision || !state.packaging.previewReadyAt) blockers.push("时间线预览尚未构建");
+        if (!["ready", "approved"].includes(state.packaging.status)) blockers.push("包装素材尚未准备");
+        return blockers;
     }
 
     const blockers: string[] = [];

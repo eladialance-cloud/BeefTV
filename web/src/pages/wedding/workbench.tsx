@@ -41,6 +41,19 @@ import {
     generateWeddingVideos,
     runWeddingVideoQc,
 } from "@/services/wedding-video-generation";
+import { PackagingStage } from "@/pages/wedding/packaging-stage";
+import {
+    markWeddingPackagingReady,
+    updateWeddingPackaging,
+    type WeddingPackagingPatch,
+} from "@/lib/wedding/packaging-runtime";
+import { buildWeddingPackagingTimeline } from "@/lib/wedding/packaging-timeline";
+import {
+    generateWeddingBgm,
+    generateWeddingTitleCards,
+    uploadWeddingBgm,
+} from "@/services/wedding-packaging-generation";
+import { useAssetStore } from "@/stores/use-asset-store";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import type { GenerationTask } from "@/services/api/task-center";
 import { nanoid } from "nanoid";
@@ -72,6 +85,8 @@ export function WeddingWorkbenchSurface({
     const [sceneTasks, setSceneTasks] = useState<Record<string, GenerationTask>>({});
     const [videoRunning, setVideoRunning] = useState(false);
     const [videoTasks, setVideoTasks] = useState<Record<string, GenerationTask>>({});
+    const [packagingRunning, setPackagingRunning] = useState(false);
+    const [bgmTask, setBgmTask] = useState<GenerationTask>();
     const effectiveConfig = useEffectiveConfig();
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const backfillStartedRef = useRef("");
@@ -705,6 +720,194 @@ export function WeddingWorkbenchSurface({
         }
     };
 
+    const savePackaging = async (patch: WeddingPackagingPatch) => {
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        const next = updateWeddingPackaging(latestProduction, patch, new Date().toISOString());
+        setStageSaving(true);
+        try {
+            await persistCanvasDocument(project.id, { weddingProduction: next });
+            setStageFeedback("包装设置已保存。");
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "包装设置保存失败");
+        } finally {
+            setStageSaving(false);
+        }
+    };
+
+    const generatePackagingTitles = async () => {
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        setPackagingRunning(true);
+        setStageFeedback("");
+        try {
+            await generateWeddingTitleCards({
+                projectId: latestProject.id,
+                production: latestProduction,
+                config: effectiveConfig,
+            });
+            setStageFeedback("片头和片尾标题卡已生成并保存为图片资源。");
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "标题卡生成失败");
+        } finally {
+            setPackagingRunning(false);
+        }
+    };
+
+    const generatePackagingBgm = async () => {
+        const audioModel = effectiveConfig.audioModel || effectiveConfig.model;
+        if (!audioModel || !isAiConfigReady(effectiveConfig, audioModel)) {
+            setStageFeedback("请先在模型设置中配置可用的音频模型。");
+            return;
+        }
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        setPackagingRunning(true);
+        setStageFeedback("");
+        try {
+            await generateWeddingBgm({
+                projectId: latestProject.id,
+                production: latestProduction,
+                config: effectiveConfig,
+                onTaskUpdate: (_kind, task) => setBgmTask(task),
+            });
+            setStageFeedback("主题 BGM 已生成并写入时间线素材。");
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "BGM 生成失败");
+        } finally {
+            setPackagingRunning(false);
+        }
+    };
+
+    const uploadPackagingBgm = async (file: File) => {
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        setPackagingRunning(true);
+        setStageFeedback("");
+        try {
+            await uploadWeddingBgm({
+                projectId: latestProject.id,
+                production: latestProduction,
+                config: effectiveConfig,
+            }, file);
+            setStageFeedback("上传 BGM 已保存到画布音频节点。");
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "BGM 上传失败");
+        } finally {
+            setPackagingRunning(false);
+        }
+    };
+
+    const buildPackagingTimeline = async () => {
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        const nodeByID = new Map(latestProject.nodes.map((node) => [node.id, node]));
+        const assetByID = new Map(useAssetStore.getState().assets.map((asset) => [asset.id, asset]));
+        const cardMedia = (nodeId: string | undefined, title: string, durationMs: number) => {
+            const node = nodeId ? nodeByID.get(nodeId) : undefined;
+            if (!node?.metadata?.content) return undefined;
+            return {
+                nodeId: node.id,
+                title,
+                storageKey: node.metadata.storageKey,
+                url: node.metadata.content,
+                mimeType: node.metadata.mimeType,
+                width: node.metadata.naturalWidth || node.width,
+                height: node.metadata.naturalHeight || node.height,
+                durationMs,
+            };
+        };
+        const videos = latestProduction.dynasties.flatMap((dynasty) => {
+            const version = dynasty.videoVersions?.find((item) => item.assetId === dynasty.videoSelection);
+            if (!version) return [];
+            const asset = assetByID.get(version.assetId);
+            const url = (asset?.kind === "video" ? asset.data.url : "") || version.previewUrl || "";
+            const storageKey = (asset?.kind === "video" ? asset.data.storageKey : "") || version.storageKey;
+            if (!url || !storageKey) return [];
+            return [{
+                nodeId: version.assetId,
+                dynastyId: dynasty.id,
+                title: `${dynasty.name} · 朝代视频`,
+                storageKey,
+                url,
+                mimeType: asset?.kind === "video" ? asset.data.mimeType : "video/mp4",
+                width: asset?.kind === "video" ? asset.data.width : undefined,
+                height: asset?.kind === "video" ? asset.data.height : undefined,
+                durationMs: version.durationMs || (asset?.kind === "video" ? asset.data.durationMs : 0) || 8000,
+            }];
+        });
+        if (videos.length !== latestProduction.dynasties.length) {
+            setStageFeedback("部分朝代视频资源不可用，无法构建完整时间线。");
+            return;
+        }
+        const bgmNode = latestProduction.packaging.bgmNodeId ? nodeByID.get(latestProduction.packaging.bgmNodeId) : undefined;
+        const bgm = latestProduction.packaging.bgmMode !== "none" && bgmNode?.metadata?.content
+            ? {
+                nodeId: bgmNode.id,
+                title: bgmNode.title,
+                storageKey: bgmNode.metadata.storageKey,
+                url: bgmNode.metadata.content,
+                mimeType: bgmNode.metadata.mimeType || "audio/mpeg",
+                durationMs: bgmNode.metadata.durationMs || 0,
+            }
+            : undefined;
+        if (latestProduction.packaging.bgmMode !== "none" && !bgm) {
+            setStageFeedback("请先生成或上传 BGM，再构建时间线。");
+            return;
+        }
+        const timeline = buildWeddingPackagingTimeline({
+            production: latestProduction,
+            intro: cardMedia(
+                latestProduction.packaging.titleCardNodeIds[0],
+                "片头标题",
+                latestProduction.packaging.intro.durationSeconds * 1000,
+            ),
+            outro: cardMedia(
+                latestProduction.packaging.titleCardNodeIds[1],
+                "片尾标题",
+                latestProduction.packaging.outro.durationSeconds * 1000,
+            ),
+            videos,
+            bgm,
+        });
+        setPackagingRunning(true);
+        try {
+            const next = markWeddingPackagingReady(
+                latestProduction,
+                (latestProduction.packaging.timelineRevision || 0) + 1,
+                new Date().toISOString(),
+            );
+            await persistCanvasDocument(latestProject.id, {
+                timeline,
+                weddingProduction: next,
+            });
+            setStageFeedback("时间线已构建并保存，可以预览和确认包装。");
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "时间线构建失败");
+        } finally {
+            setPackagingRunning(false);
+        }
+    };
+
+    const approvePackaging = async () => {
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        const next = approveWeddingStage(latestProduction, "packaging", new Date().toISOString());
+        if (next === latestProduction) {
+            setStageFeedback("请先完成标题卡、BGM 和时间线预览。");
+            return;
+        }
+        setStageSaving(true);
+        try {
+            await persistCanvasDocument(project.id, { weddingProduction: next });
+            setStageFeedback("包装阶段已确认，可以进入成片交付。");
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "包装阶段确认失败");
+        } finally {
+            setStageSaving(false);
+        }
+    };
+
     return (
         <main className={`wedding-workbench ${embedded ? "wedding-workbench-embedded" : ""}`}>
             <aside className="wedding-workbench-rail">
@@ -816,6 +1019,21 @@ export function WeddingWorkbenchSurface({
                         onConfirm={confirmVideo}
                         onOverrideQc={overrideVideoQc}
                         onApprove={approveVideos}
+                    />
+                ) : resolvedStage === "packaging" ? (
+                    <PackagingStage
+                        production={production}
+                        nodes={project.nodes}
+                        timeline={project.timeline}
+                        saving={stageSaving || packagingRunning}
+                        feedback={stageFeedback}
+                        bgmTask={bgmTask}
+                        onSave={savePackaging}
+                        onGenerateTitles={generatePackagingTitles}
+                        onGenerateBgm={generatePackagingBgm}
+                        onUploadBgm={uploadPackagingBgm}
+                        onBuildTimeline={buildPackagingTimeline}
+                        onApprove={approvePackaging}
                     />
                 ) : (
                 <div className="wedding-workbench-grid">

@@ -5,6 +5,10 @@ import {
     updateWeddingPackaging,
 } from "@/lib/wedding/packaging-runtime";
 import { createWeddingProductionState } from "@/lib/wedding/production-state";
+import {
+    buildWeddingTitleCardDocument,
+    weddingBgmPrompt,
+} from "@/services/wedding-packaging-generation";
 
 const production = createWeddingProductionState({
     template: { id: "template-1", key: "cross-era-wedding-volc", version: "1.0.0" },
@@ -62,4 +66,25 @@ test("marking a timeline ready persists its revision and clears packaging approv
     expect(changed.packaging.previewReadyAt).toBe("2026-10-25T08:10:00.000Z");
     expect(changed.packaging.approvedAt).toBeUndefined();
     expect(changed.stages.delivery.status).toBe("stale");
+});
+
+test("builds deterministic title card documents and BGM theme prompt", () => {
+    const intro = buildWeddingTitleCardDocument(production, "intro");
+    const outro = buildWeddingTitleCardDocument(production, "outro");
+
+    expect(intro).toMatchObject({
+        kind: "intro",
+        text: production.packaging.intro.text,
+        width: 1280,
+        height: 720,
+    });
+    expect(outro).toMatchObject({
+        kind: "outro",
+        text: production.packaging.outro.text,
+        width: 1280,
+        height: 720,
+    });
+    expect(weddingBgmPrompt(production)).toContain("跨时空婚礼");
+    expect(weddingBgmPrompt(production)).toContain(production.packaging.intro.text);
+    expect(weddingBgmPrompt(production)).toContain("16:9");
 });

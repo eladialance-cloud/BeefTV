@@ -281,6 +281,41 @@ test("scene stage renders references, QC and real generation controls", async ()
     await page.close();
 }, 30000);
 
+test("packaging stage renders titles, BGM and a real timeline preview", async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto(new URL("/wedding/c1", server.url).toString());
+
+    await page.getByRole("navigation", { name: "婚礼制作阶段" })
+        .getByRole("button", { name: /包装制作/ })
+        .click();
+    await page.getByRole("heading", { name: "包装制作", exact: true }).waitFor();
+    await page.getByText("片头文案", { exact: true }).waitFor();
+    await page.getByText("片尾文案", { exact: true }).waitFor();
+    await page.getByText("时间线预览", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "生成标题卡" }).waitFor();
+    await page.getByRole("button", { name: "构建时间线" }).waitFor();
+    await page.getByRole("button", { name: "确认包装阶段" }).waitFor();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({
+        path: "D:/画布/BeefTV/build/wedding-packaging-stage-1440.png",
+        fullPage: true,
+    });
+    await page.getByRole("button", { name: "构建时间线" }).click();
+    await page.getByText("部分朝代视频资源不可用，无法构建完整时间线。").waitFor();
+
+    await page.setViewportSize({ width: 390, height: 900 });
+    await page.waitForTimeout(100);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({
+        path: "D:/画布/BeefTV/build/wedding-packaging-stage-390.png",
+        fullPage: true,
+    });
+    expect(errors).toEqual([]);
+    await page.close();
+}, 30000);
+
 test("an existing cross-era canvas backfills production state in the dedicated workbench", async () => {
     const currentProduction = project.weddingProduction as {
         source: Record<string, unknown>;
