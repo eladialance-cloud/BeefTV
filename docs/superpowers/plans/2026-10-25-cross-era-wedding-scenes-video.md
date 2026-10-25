@@ -453,7 +453,7 @@ git commit -m "feat(wedding-workbench): 跨时空婚礼电影 - 接入视频生�
 - Consumes `VideoPromptInspector`, video generation service and video runtime.
 - Produces `VideoStage` with real prompt save/restore, generation, playback, version selection, QC and confirmation.
 
-- [ ] **Step 1: Write failing render test**
+- [x] **Step 1: Write failing render test**
 
 ```ts
 expect(html).toContain("最终英文视频提示词");
@@ -462,7 +462,7 @@ expect(html).toContain("历史版本");
 expect(html).toContain("确认视频阶段");
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```powershell
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-video-stage.test.tsx
@@ -470,11 +470,11 @@ D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-video-stage.
 
 Expected: FAIL because `video-stage.tsx` does not exist.
 
-- [ ] **Step 3: Build video workspace**
+- [x] **Step 3: Build video workspace**
 
 Show the selected dynasty prompt editor, reference thumbnails, video settings, generation status, playable result, historical versions, video QC checks, and per-dynasty confirm action. The batch action generates only missing/failed videos; each dynasty exposes a retry action.
 
-- [ ] **Step 4: Verify GREEN and browser**
+- [x] **Step 4: Verify GREEN and browser**
 
 ```powershell
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-video-stage.test.tsx test/wedding-workbench.browser.test.ts
@@ -484,7 +484,7 @@ D:\画布\_tools\bun\node_modules\bun\bin\bun.exe run lint
 
 The browser test must switch to video stage, verify the prompt editor and generation action are present, and confirm no overflow at desktop and mobile sizes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add web/src/pages/wedding/video-stage.tsx web/src/pages/wedding/workbench.tsx web/src/pages/wedding/wedding-workbench.css web/test/wedding-video-stage.test.tsx web/test/wedding-workbench.browser.test.ts

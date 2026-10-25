@@ -180,6 +180,9 @@ test("producer can load, edit, save and restore the dynasty video prompt", async
 
     await page.getByRole("heading", { name: "视频导演", exact: true }).waitFor();
     await page.getByLabel("唐最终英文视频提示词").waitFor();
+    await page.getByText("自动 QC", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "生成缺失视频" }).waitFor();
+    await page.getByRole("button", { name: "确认视频阶段" }).waitFor();
     expect(await page.getByLabel("唐最终英文视频提示词").inputValue()).toBe("DEFAULT TANG VIDEO PROMPT");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({
@@ -199,6 +202,8 @@ test("producer can load, edit, save and restore the dynasty video prompt", async
     await page.getByRole("button", { name: "恢复默认" }).click();
     await page.getByRole("status").filter({ hasText: "已恢复朝代默认提示词" }).waitFor();
     expect(await page.getByLabel("唐最终英文视频提示词").inputValue()).toBe("DEFAULT TANG VIDEO PROMPT");
+    await page.getByRole("button", { name: "生成缺失视频" }).click();
+    await page.getByText("请先在模型设置中配置可用的视频模型。").waitFor();
 
     await page.setViewportSize({ width: 390, height: 900 });
     await page.waitForTimeout(100);

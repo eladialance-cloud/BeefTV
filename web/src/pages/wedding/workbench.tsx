@@ -31,6 +31,16 @@ import {
     generateWeddingScenes,
     runWeddingSceneQc,
 } from "@/services/wedding-scene-generation";
+import { VideoStage } from "@/pages/wedding/video-stage";
+import {
+    confirmWeddingVideo,
+    selectWeddingVideoVersion,
+} from "@/lib/wedding/video-runtime";
+import { overrideWeddingVideoQc } from "@/lib/wedding/video-qc";
+import {
+    generateWeddingVideos,
+    runWeddingVideoQc,
+} from "@/services/wedding-video-generation";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import type { GenerationTask } from "@/services/api/task-center";
 import { nanoid } from "nanoid";
@@ -60,6 +70,8 @@ export function WeddingWorkbenchSurface({
     const [portraitTasks, setPortraitTasks] = useState<Record<string, GenerationTask>>({});
     const [sceneRunning, setSceneRunning] = useState(false);
     const [sceneTasks, setSceneTasks] = useState<Record<string, GenerationTask>>({});
+    const [videoRunning, setVideoRunning] = useState(false);
+    const [videoTasks, setVideoTasks] = useState<Record<string, GenerationTask>>({});
     const effectiveConfig = useEffectiveConfig();
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const backfillStartedRef = useRef("");
@@ -553,6 +565,146 @@ export function WeddingWorkbenchSurface({
         }
     };
 
+    const generateVideos = async (dynastyId?: string) => {
+        const videoModel = effectiveConfig.videoModel || effectiveConfig.model;
+        if (!videoModel || !isAiConfigReady(effectiveConfig, videoModel)) {
+            setStageFeedback("请先在模型设置中配置可用的视频模型。");
+            return;
+        }
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        setVideoRunning(true);
+        setStageFeedback("");
+        try {
+            const summary = await generateWeddingVideos({
+                projectId: latestProject.id,
+                production: latestProduction,
+                config: effectiveConfig,
+                onTaskUpdate: (job, task) => {
+                    setVideoTasks((current) => ({ ...current, [job.nodeId]: task }));
+                },
+            }, dynastyId, {
+                force: Boolean(dynastyId),
+            });
+            if (!summary.attempted) {
+                setStageFeedback("没有需要生成的朝代视频。");
+            } else if (summary.failed) {
+                setStageFeedback(`${summary.succeeded} 个视频已生成，${summary.failed} 个失败。失败朝代可单独重试。`);
+            } else {
+                setStageFeedback(`${summary.succeeded} 个视频已生成，请运行 QC 并逐朝确认。`);
+            }
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "朝代视频批量生成失败");
+        } finally {
+            setVideoRunning(false);
+        }
+    };
+
+    const runVideoQc = async (dynastyId: string) => {
+        const textModel = effectiveConfig.textModel || effectiveConfig.model;
+        if (!textModel || !isAiConfigReady(effectiveConfig, textModel)) {
+            setStageFeedback("请先在模型设置中配置支持视频参考检查的文本模型。");
+            return;
+        }
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        setVideoRunning(true);
+        setStageFeedback("");
+        try {
+            const qc = await runWeddingVideoQc({
+                projectId: latestProject.id,
+                production: latestProduction,
+                config: effectiveConfig,
+                onTaskUpdate: (_dynastyId, task) => {
+                    const dynasty = latestProduction.dynasties.find((item) => item.id === dynastyId);
+                    if (!dynasty) return;
+                    setVideoTasks((current) => ({ ...current, [dynasty.videoNodeId]: task }));
+                },
+            }, dynastyId);
+            setStageFeedback(qc.verdict === "pass"
+                ? "视频 QC 已通过。"
+                : `视频 QC 未通过：${qc.reason || "请查看检查项"}`);
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "视频 QC 执行失败");
+        } finally {
+            setVideoRunning(false);
+        }
+    };
+
+    const selectVideoVersion = async (dynastyId: string, assetId: string) => {
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        const next = selectWeddingVideoVersion(
+            latestProduction,
+            dynastyId,
+            assetId,
+            new Date().toISOString(),
+        );
+        try {
+            await persistCanvasDocument(project.id, { weddingProduction: next });
+            setStageFeedback("已切换视频版本，旧 QC 已失效，请重新检查。");
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "视频版本保存失败");
+        }
+    };
+
+    const confirmVideo = async (dynastyId: string, assetId: string) => {
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        const next = confirmWeddingVideo(
+            latestProduction,
+            dynastyId,
+            assetId,
+            new Date().toISOString(),
+        );
+        try {
+            await persistCanvasDocument(project.id, { weddingProduction: next });
+            setStageFeedback("当前朝代视频已确认。");
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "视频确认失败");
+        }
+    };
+
+    const overrideVideoQc = async (dynastyId: string, reason: string) => {
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        const next = overrideWeddingVideoQc(
+            latestProduction,
+            dynastyId,
+            reason,
+            new Date().toISOString(),
+        );
+        if (next === latestProduction) {
+            setStageFeedback("请填写具体的人工覆盖原因。");
+            return;
+        }
+        try {
+            await persistCanvasDocument(project.id, { weddingProduction: next });
+            setStageFeedback("已记录视频 QC 人工覆盖原因，可以确认当前视频。");
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "视频 QC 覆盖保存失败");
+        }
+    };
+
+    const approveVideos = async () => {
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        const next = approveWeddingStage(latestProduction, "videos", new Date().toISOString());
+        if (next === latestProduction) {
+            setStageFeedback("请先确认每个朝代的视频，并完成 QC 或记录覆盖。");
+            return;
+        }
+        setStageSaving(true);
+        try {
+            await persistCanvasDocument(project.id, { weddingProduction: next });
+            setStageFeedback("视频阶段已确认，可以进入包装制作。");
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "视频阶段确认失败");
+        } finally {
+            setStageSaving(false);
+        }
+    };
+
     return (
         <main className={`wedding-workbench ${embedded ? "wedding-workbench-embedded" : ""}`}>
             <aside className="wedding-workbench-rail">
@@ -635,6 +787,36 @@ export function WeddingWorkbenchSurface({
                         onOverrideQc={overrideSceneQc}
                         onApprove={approveScenes}
                     />
+                ) : resolvedStage === "videos" ? (
+                    <VideoStage
+                        production={production}
+                        nodes={project.nodes}
+                        tasks={videoTasks}
+                        selectedDynastyId={resolvedDynastyId}
+                        saving={stageSaving || videoRunning}
+                        feedback={stageFeedback}
+                        promptInspector={resolvedDynasty ? (
+                            <VideoPromptInspector
+                                templateId={production.template.id}
+                                dynastyId={resolvedDynasty.id}
+                                dynastyName={resolvedDynasty.name}
+                                variables={promptVariables}
+                                production={production}
+                                saving={promptSaving}
+                                feedback={promptFeedback}
+                                onSave={savePrompt}
+                                onRestore={restorePrompt}
+                            />
+                        ) : <div className="wedding-video-empty">当前项目没有可制作朝代。</div>}
+                        onSelectDynasty={setSelectedDynastyId}
+                        onGenerateAll={() => generateVideos()}
+                        onGenerateDynasty={(dynastyId) => generateVideos(dynastyId)}
+                        onRunQc={runVideoQc}
+                        onSelectVersion={selectVideoVersion}
+                        onConfirm={confirmVideo}
+                        onOverrideQc={overrideVideoQc}
+                        onApprove={approveVideos}
+                    />
                 ) : (
                 <div className="wedding-workbench-grid">
                     <section className="wedding-workbench-panel">
@@ -663,34 +845,20 @@ export function WeddingWorkbenchSurface({
                         </div>
                     </section>
 
-                    {resolvedStage === "videos" && resolvedDynasty ? (
-                        <VideoPromptInspector
-                            templateId={production.template.id}
-                            dynastyId={resolvedDynasty.id}
-                            dynastyName={resolvedDynasty.name}
-                            variables={promptVariables}
-                            production={production}
-                            saving={promptSaving}
-                            feedback={promptFeedback}
-                            onSave={savePrompt}
-                            onRestore={restorePrompt}
-                        />
-                    ) : (
-                        <aside className="wedding-workbench-panel">
-                            <header>
-                                <strong>{resolvedDynasty ? `${resolvedDynasty.name} · 当前状态` : "当前状态"}</strong>
-                                <span>{resolvedDynasty ? "真实项目数据" : "无朝代"}</span>
-                            </header>
-                            {resolvedDynasty ? (
-                                <div className="wedding-workbench-state-list">
-                                    <div><span>定妆照</span><strong>{weddingStatusLabels[resolvedDynasty.statuses.portrait]}</strong></div>
-                                    <div><span>场景首帧</span><strong>{weddingStatusLabels[resolvedDynasty.statuses.scene]}</strong></div>
-                                    <div><span>视频导演</span><strong>{weddingStatusLabels[resolvedDynasty.statuses.video]}</strong></div>
-                                    <div><span>提示词覆盖</span><strong>{resolvedDynasty.promptOverride ? "已启用" : "使用模板"}</strong></div>
-                                </div>
-                            ) : <p className="wedding-workbench-empty">当前项目没有可用朝代。</p>}
-                        </aside>
-                    )}
+                    <aside className="wedding-workbench-panel">
+                        <header>
+                            <strong>{resolvedDynasty ? `${resolvedDynasty.name} · 当前状态` : "当前状态"}</strong>
+                            <span>{resolvedDynasty ? "真实项目数据" : "无朝代"}</span>
+                        </header>
+                        {resolvedDynasty ? (
+                            <div className="wedding-workbench-state-list">
+                                <div><span>定妆照</span><strong>{weddingStatusLabels[resolvedDynasty.statuses.portrait]}</strong></div>
+                                <div><span>场景首帧</span><strong>{weddingStatusLabels[resolvedDynasty.statuses.scene]}</strong></div>
+                                <div><span>视频导演</span><strong>{weddingStatusLabels[resolvedDynasty.statuses.video]}</strong></div>
+                                <div><span>提示词覆盖</span><strong>{resolvedDynasty.promptOverride ? "已启用" : "使用模板"}</strong></div>
+                            </div>
+                        ) : <p className="wedding-workbench-empty">当前项目没有可用朝代。</p>}
+                    </aside>
                 </div>
                 )}
             </section>

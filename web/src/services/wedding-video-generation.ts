@@ -14,6 +14,7 @@ import type {
 import {
     weddingPortraitReference,
     weddingSceneReference,
+    weddingVideoReference,
 } from "@/lib/wedding/generation-runtime";
 import {
     failWeddingVideoGeneration,
@@ -23,6 +24,12 @@ import {
     type WeddingVideoJob,
 } from "@/lib/wedding/video-runtime";
 import type { WeddingProductionState } from "@/lib/wedding/types";
+import {
+    applyWeddingVideoQc,
+    errorWeddingVideoQc,
+    parseWeddingVideoQc,
+    videoQcPrompt,
+} from "@/lib/wedding/video-qc";
 import { persistCanvasDocument } from "@/services/local-workspace-repository";
 import { consumeGenerationTaskNode } from "@/services/project-asset-sync";
 import { runBackendGenerationTask, type BackendGenerationResult } from "@/services/api/generation-task";
@@ -70,6 +77,23 @@ export type WeddingVideoGenerationDependencies = {
     ) => Promise<GenerationTask>;
     getAsset?: (assetId: string) => WeddingGenerationAsset | undefined;
 };
+
+export type WeddingVideoQcRuntime = {
+    projectId: string;
+    production: WeddingProductionState;
+    config: AiConfig;
+    signal?: AbortSignal;
+    onTaskUpdate?: (dynastyId: string, task: GenerationTask) => void;
+};
+
+export type WeddingVideoQcOptions = {
+    dependencies?: WeddingVideoQcDependencies;
+};
+
+export type WeddingVideoQcDependencies = Pick<
+    WeddingVideoGenerationDependencies,
+    "getProject" | "persist" | "runTask" | "getAsset"
+>;
 
 export async function generateWeddingVideos(
     runtime: WeddingVideoGenerationRuntime,
@@ -144,6 +168,69 @@ export async function generateWeddingVideos(
     await Promise.all(Array.from({ length: Math.min(2, jobs.length) }, () => worker()));
     await commitTail;
     return { attempted: jobs.length, succeeded, failed: errors.length, errors };
+}
+
+export async function runWeddingVideoQc(
+    runtime: WeddingVideoQcRuntime,
+    dynastyId: string,
+    options: WeddingVideoQcOptions = {},
+) {
+    const dependencies = videoQcDependenciesWithDefaults(options.dependencies);
+    const project = dependencies.getProject(runtime.projectId);
+    if (!project?.weddingProduction) throw new Error("婚礼制作状态不存在");
+    const dynasty = project.weddingProduction.dynasties.find((item) => item.id === dynastyId);
+    const target = dynasty ? project.nodes.find((node) => node.id === dynasty.videoNodeId) : undefined;
+    if (!dynasty) throw new Error("朝代状态不存在");
+    if (!target) throw new Error("视频节点不存在");
+    if (!dynasty.videoSelection) throw new Error("请先确认朝代视频");
+    const referenceImages = [
+        weddingPortraitReference(dynasty, "male", dependencies.getAsset),
+        weddingPortraitReference(dynasty, "female", dependencies.getAsset),
+        weddingSceneReference(dynasty, dependencies.getAsset),
+    ];
+    const referenceVideos = [weddingVideoReference(dynasty, dependencies.getAsset)];
+    const checkedAt = new Date().toISOString();
+    try {
+        const result = await dependencies.runTask({
+            projectId: runtime.projectId,
+            mode: "text",
+            prompt: videoQcPrompt(dynasty.name),
+            config: buildGenerationConfig(runtime.config, target, "text"),
+            referenceImages,
+            referenceVideos,
+            signal: runtime.signal,
+            metadata: {
+                source: "wedding-workbench",
+                stage: "video-qc",
+                dynastyId,
+            },
+            onTaskUpdate: (task) => runtime.onTaskUpdate?.(dynastyId, task),
+        });
+        if (!result.text?.trim()) throw new Error("视频 QC 没有返回文本结果");
+        const qc = parseWeddingVideoQc(result.text, checkedAt);
+        const latest = dependencies.getProject(runtime.projectId);
+        if (!latest?.weddingProduction) throw new Error("婚礼制作状态不存在");
+        await dependencies.persist(runtime.projectId, {
+            nodes: latest.nodes,
+            weddingProduction: applyWeddingVideoQc(latest.weddingProduction, dynastyId, qc, checkedAt),
+        });
+        return qc;
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "视频 QC 执行失败";
+        const latest = dependencies.getProject(runtime.projectId);
+        if (latest?.weddingProduction) {
+            await dependencies.persist(runtime.projectId, {
+                nodes: latest.nodes,
+                weddingProduction: errorWeddingVideoQc(
+                    latest.weddingProduction,
+                    dynastyId,
+                    message,
+                    checkedAt,
+                ),
+            });
+        }
+        throw error;
+    }
 }
 
 async function generateWeddingVideoJob(
@@ -303,6 +390,18 @@ function weddingVideoNeedsGeneration(
     if (["failed", "stale", "not_started"].includes(dynasty.statuses.video)) return true;
     if (!dynasty.videoSelection) return true;
     return !node.metadata?.content && !node.metadata?.storageKey;
+}
+
+function videoQcDependenciesWithDefaults(
+    overrides: WeddingVideoQcDependencies = {},
+): Required<WeddingVideoQcDependencies> {
+    const defaults = dependenciesWithDefaults();
+    return {
+        getProject: overrides.getProject || defaults.getProject,
+        persist: overrides.persist || defaults.persist,
+        runTask: overrides.runTask || defaults.runTask,
+        getAsset: overrides.getAsset || defaults.getAsset,
+    };
 }
 
 function dependenciesWithDefaults(

@@ -26,6 +26,7 @@ export type WeddingGenerationSummary = {
     }>;
 };
 import type { ReferenceImage } from "@/types/image";
+import type { ReferenceVideo } from "@/types/media";
 import type {
     WeddingDynastyState,
     WeddingPortraitGender,
@@ -102,4 +103,27 @@ export function weddingSceneReference(
     } catch {
         throw new Error("场景首帧素材不可用");
     }
+}
+
+export function weddingVideoReference(
+    dynasty: WeddingDynastyState,
+    getAsset: (assetId: string) => WeddingGenerationAsset | undefined,
+): ReferenceVideo {
+    const assetId = dynasty.videoSelection;
+    const version = dynasty.videoVersions?.find((item) => item.assetId === assetId);
+    const asset = assetId ? getAsset(assetId) : undefined;
+    const url = asset?.data?.url || asset?.data?.dataUrl || version?.previewUrl || "";
+    const storageKey = asset?.data?.storageKey || version?.storageKey;
+    if (!assetId || !url || !storageKey) throw new Error("请先确认可用的朝代视频");
+    return {
+        id: assetId,
+        name: `${dynasty.name}-video.mp4`,
+        type: asset?.data?.mimeType || "video/mp4",
+        url,
+        storageKey,
+        bytes: asset?.data?.bytes,
+        width: asset?.data?.width,
+        height: asset?.data?.height,
+        durationMs: asset?.data?.durationMs || version?.durationMs,
+    };
 }
