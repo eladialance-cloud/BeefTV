@@ -317,6 +317,7 @@ test("setup stage exposes direct photo uploads and the workspace scrolls vertica
                 bridePhotoNodeId: "",
                 groomPhotoReady: false,
                 bridePhotoReady: false,
+                consentConfirmed: false,
             },
         },
     };
@@ -333,6 +334,12 @@ test("setup stage exposes direct photo uploads and the workspace scrolls vertica
         buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl5X0sAAAAASUVORK5CYII=", "base64"),
     });
     await page.getByText("新郎照片已上传。").waitFor();
+    await page.getByLabel("上传新娘照片").setInputFiles({
+        name: "bride.png",
+        mimeType: "image/png",
+        buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl5X0sAAAAASUVORK5CYII=", "base64"),
+    });
+    await page.getByText("新娘照片已上传。").waitFor();
     const uploadedProject = project as {
         nodes: Array<{ id: string; metadata?: { content?: string; storageKey?: string } }>;
         weddingProduction?: { source?: { groomPhotoNodeId?: string; groomPhotoReady?: boolean } };
@@ -342,6 +349,10 @@ test("setup stage exposes direct photo uploads and the workspace scrolls vertica
         groomPhotoNodeId: "groom",
         groomPhotoReady: true,
     });
+    await page.getByText("照片授权尚未确认").waitFor();
+    await page.getByRole("checkbox", { name: "照片使用授权已确认，仅用于当前订单" }).check();
+    await page.getByText("照片授权尚未确认").waitFor({ state: "hidden" });
+    await page.getByText("当前项目设定可以确认").waitFor();
     await page.screenshot({
         path: "D:/画布/BeefTV/build/wedding-setup-photo-upload-1280.png",
         fullPage: true,

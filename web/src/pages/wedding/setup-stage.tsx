@@ -29,7 +29,10 @@ export function SetupStage({
     const [draft, setDraft] = useState(production.source);
     useEffect(() => setDraft(production.source), [production.source]);
 
-    const blockers = weddingStageBlockers(production, "setup");
+    const blockers = weddingStageBlockers({
+        ...production,
+        source: draft,
+    }, "setup");
     const groomNode = sourcePhotoNodes.find((node) => uploadField(node) === "groomPhoto");
     const brideNode = sourcePhotoNodes.find((node) => uploadField(node) === "bridePhoto");
     const photosReady = Boolean(groomNode?.metadata?.content && brideNode?.metadata?.content);
