@@ -504,14 +504,14 @@ git commit -m "feat(wedding-workbench): 跨时空婚礼电影 - 新增视频导�
 - Consumes all scene/video deliverables.
 - Produces a verified staging point for packaging and final delivery.
 
-- [ ] **Step 1: Run the full scene/video suite**
+- [x] **Step 1: Run the full scene/video suite**
 
 ```powershell
 cd D:\画布\BeefTV\web
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-scene-runtime.test.ts test/wedding-scene-generation.test.ts test/wedding-scene-qc.test.ts test/wedding-scene-stage.test.tsx test/wedding-video-runtime.test.ts test/wedding-video-generation.test.ts test/wedding-video-stage.test.tsx test/wedding-workbench.browser.test.ts
 ```
 
-- [ ] **Step 2: Run build and lint**
+- [x] **Step 2: Run build and lint**
 
 ```powershell
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe run typecheck
@@ -519,11 +519,11 @@ D:\画布\_tools\bun\node_modules\bun\bin\bun.exe run lint
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe run build
 ```
 
-- [ ] **Step 3: Record verified behavior**
+- [x] **Step 3: Record verified behavior**
 
 Document exact verified behaviors and any environment-only failures in the spec. Do not mark packaging or delivery complete.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```powershell
 git add docs/superpowers/specs/2026-10-25-cross-era-wedding-dedicated-production-workbench-design.md docs/superpowers/plans/2026-10-25-cross-era-wedding-dedicated-workbench.md docs/superpowers/plans/2026-10-25-cross-era-wedding-scenes-video.md
