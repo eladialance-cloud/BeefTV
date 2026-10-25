@@ -12,6 +12,11 @@ import { WorkbenchStageRail, weddingStageLabels, weddingStatusLabels } from "@/p
 import { WorkbenchTopBar } from "@/pages/wedding/workbench-top-bar";
 import { buildWeddingProductionFromCanvasNodes } from "@/lib/wedding/template-state";
 import { SetupStage } from "@/pages/wedding/setup-stage";
+import { DynastyStage } from "@/pages/wedding/dynasty-stage";
+import { addWeddingDynastyState, setWeddingDynasties } from "@/lib/wedding/dynasty-state";
+import { approveWeddingStage } from "@/lib/wedding/production-state";
+import { nanoid } from "nanoid";
+import type { CanvasNodeData } from "@/types/canvas";
 
 import "./wedding-workbench.css";
 
@@ -190,6 +195,99 @@ export function WeddingWorkbenchSurface({
         }
     };
 
+    const saveDynastyOrder = async (ids: string[]) => {
+        setStageSaving(true);
+        setStageFeedback("");
+        try {
+            const next = setWeddingDynasties(production, ids, new Date().toISOString());
+            await persistCanvasDocument(project.id, { weddingProduction: next });
+            setStageFeedback("朝代顺序已保存。");
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "朝代顺序保存失败");
+        } finally {
+            setStageSaving(false);
+        }
+    };
+
+    const removeDynasty = async (id: string) => {
+        await saveDynastyOrder(production.dynasties.filter((dynasty) => dynasty.id !== id).map((dynasty) => dynasty.id));
+    };
+
+    const addDynasty = async (dynasty: { id: string; name: string }) => {
+        const templateDynasty = production.dynasties[0];
+        if (!templateDynasty) return;
+        const refs = ["dynastyPortraitMale", "dynastyPortraitFemale", "dynastyScene", "dynastyVideo"] as const;
+        const sourceNodes = refs.map((ref) => project.nodes.find((node) => {
+            const pluginData = node.metadata?.pluginData;
+            return pluginData?.creationTemplateDynamicRef === ref
+                && pluginData?.creationTemplateDynastyId === templateDynasty.id;
+        }));
+        if (sourceNodes.some((node) => !node)) {
+            setStageFeedback("无法补齐新朝代节点：当前画布缺少模板节点。");
+            return;
+        }
+        const maxX = Math.max(0, ...project.nodes.map((node) => node.position.x + node.width));
+        const clones = sourceNodes.map((node, index): CanvasNodeData => {
+            const source = node!;
+            return {
+                ...structuredClone(source),
+                id: `wedding-dynasty-${dynasty.id}-${refs[index]}-${nanoid(8)}`,
+                title: source.title.replace(templateDynasty.name, dynasty.name),
+                position: { x: maxX + 80, y: source.position.y },
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                metadata: {
+                    ...structuredClone(source.metadata),
+                    content: "",
+                    status: "idle" as const,
+                    pluginData: {
+                        ...structuredClone(source.metadata?.pluginData),
+                        creationTemplateDynastyId: dynasty.id,
+                        creationTemplateDynastyName: dynasty.name,
+                    },
+                },
+            };
+        });
+        const next = addWeddingDynastyState(production, {
+            id: dynasty.id,
+            name: dynasty.name,
+            nodeIds: {
+                portraitMaleNodeId: clones[0]!.id,
+                portraitFemaleNodeId: clones[1]!.id,
+                sceneNodeId: clones[2]!.id,
+                videoNodeId: clones[3]!.id,
+            },
+        }, new Date().toISOString());
+        setStageSaving(true);
+        setStageFeedback("");
+        try {
+            await persistCanvasDocument(project.id, { nodes: [...project.nodes, ...clones], weddingProduction: next });
+            setStageFeedback(`已新增${dynasty.name}。`);
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "新增朝代失败");
+        } finally {
+            setStageSaving(false);
+        }
+    };
+
+    const approveDynasties = async () => {
+        setStageSaving(true);
+        setStageFeedback("");
+        try {
+            const next = approveWeddingStage(production, "dynasties", new Date().toISOString());
+            if (next === production) {
+                setStageFeedback("请选择 2–5 个朝代后再确认。");
+                return;
+            }
+            await persistCanvasDocument(project.id, { weddingProduction: next });
+            setStageFeedback("朝代规划已确认。");
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "朝代规划确认失败");
+        } finally {
+            setStageSaving(false);
+        }
+    };
+
     return (
         <main className={`wedding-workbench ${embedded ? "wedding-workbench-embedded" : ""}`}>
             <aside className="wedding-workbench-rail">
@@ -233,6 +331,16 @@ export function WeddingWorkbenchSurface({
                         feedback={stageFeedback}
                         onSave={saveSetup}
                         onApprove={approveSetup}
+                    />
+                ) : resolvedStage === "dynasties" ? (
+                    <DynastyStage
+                        production={production}
+                        saving={stageSaving}
+                        feedback={stageFeedback}
+                        onReorder={saveDynastyOrder}
+                        onAdd={addDynasty}
+                        onRemove={removeDynasty}
+                        onApprove={approveDynasties}
                     />
                 ) : (
                 <div className="wedding-workbench-grid">

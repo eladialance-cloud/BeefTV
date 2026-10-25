@@ -688,6 +688,100 @@
     opacity: .42;
 }
 
+.wedding-dynasty-stage {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(320px, .8fr);
+    gap: 12px;
+}
+
+.wedding-dynasty-list {
+    display: grid;
+    gap: 7px;
+    padding: 13px;
+}
+
+.wedding-dynasty-list article {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    min-height: 58px;
+    padding: 8px 10px;
+    border: 1px solid #252d32;
+    border-radius: 5px;
+    background: #111619;
+}
+
+.wedding-dynasty-index {
+    color: var(--wedding-amber);
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 9px;
+}
+
+.wedding-dynasty-list strong,
+.wedding-dynasty-list small {
+    display: block;
+}
+
+.wedding-dynasty-list strong {
+    font-size: 10px;
+}
+
+.wedding-dynasty-list small {
+    margin-top: 3px;
+    color: var(--wedding-faint);
+    font-size: 8px;
+}
+
+.wedding-dynasty-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.wedding-dynasty-actions button,
+.wedding-dynasty-catalog button {
+    display: inline-flex;
+    height: 30px;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    border: 1px solid var(--wedding-line);
+    border-radius: 4px;
+    background: var(--wedding-panel-raised);
+    color: var(--wedding-muted);
+    font-size: 8px;
+    cursor: pointer;
+}
+
+.wedding-dynasty-actions button {
+    width: 30px;
+    padding: 0;
+}
+
+.wedding-dynasty-actions svg,
+.wedding-dynasty-catalog svg {
+    width: 12px;
+    height: 12px;
+}
+
+.wedding-dynasty-catalog {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    padding: 13px;
+}
+
+.wedding-dynasty-catalog button {
+    min-height: 36px;
+    padding: 0 7px;
+}
+
+.wedding-dynasty-catalog button:disabled,
+.wedding-dynasty-actions button:disabled {
+    cursor: not-allowed;
+    opacity: .4;
+}
+
 .wedding-prompt-inspector {
     display: flex;
     min-width: 0;
@@ -914,6 +1008,10 @@
     }
 
     .wedding-setup-stage {
+        grid-template-columns: 1fr;
+    }
+
+    .wedding-dynasty-stage {
         grid-template-columns: 1fr;
     }
 
