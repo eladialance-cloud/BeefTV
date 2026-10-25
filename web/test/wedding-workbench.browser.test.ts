@@ -210,6 +210,39 @@ test("producer can load, edit, save and restore the dynasty video prompt", async
     await page.close();
 }, 30000);
 
+test("portrait stage renders the real production board without horizontal overflow", async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto(new URL("/wedding/c1", server.url).toString());
+
+    await page.getByRole("navigation", { name: "婚礼制作阶段" })
+        .getByRole("button", { name: /定妆照/ })
+        .click();
+    await page.getByRole("heading", { name: "定妆照", exact: true }).waitFor();
+    await page.getByText("新郎定妆照", { exact: true }).waitFor();
+    await page.getByText("新娘定妆照", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "生成缺失定妆照" }).waitFor();
+    await page.getByRole("button", { name: "确认定妆照阶段" }).waitFor();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({
+        path: "D:/画布/BeefTV/build/wedding-portrait-stage-1440.png",
+        fullPage: true,
+    });
+    await page.getByRole("button", { name: "生成缺失定妆照" }).click();
+    await page.getByText("请先在模型设置中配置可用的图片模型。").waitFor();
+
+    await page.setViewportSize({ width: 390, height: 900 });
+    await page.waitForTimeout(100);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({
+        path: "D:/画布/BeefTV/build/wedding-portrait-stage-390.png",
+        fullPage: true,
+    });
+    expect(errors).toEqual([]);
+    await page.close();
+}, 30000);
+
 test("an existing cross-era canvas backfills production state in the dedicated workbench", async () => {
     const currentProduction = project.weddingProduction as {
         source: Record<string, unknown>;

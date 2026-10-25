@@ -100,7 +100,15 @@ describe("wedding production state", () => {
 
     test("can approve a stage when all blockers are cleared", () => {
         const state = createWeddingProductionState(input);
-        const approved = approveWeddingStage(state, "portraits", "2026-10-25T01:00:00.000Z");
+        const reviewed = {
+            ...state,
+            dynasties: state.dynasties.map((dynasty) => ({
+                ...dynasty,
+                portraitSelection: { male: "male-asset", female: "female-asset" },
+                portraitApproval: { male: true, female: true },
+            })),
+        };
+        const approved = approveWeddingStage(reviewed, "portraits", "2026-10-25T01:00:00.000Z");
 
         expect(approved.stages.portraits).toMatchObject({
             status: "approved",

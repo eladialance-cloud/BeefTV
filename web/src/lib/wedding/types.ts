@@ -55,6 +55,17 @@ export type WeddingQcOverride = {
     acceptedAt: string;
 };
 
+export type WeddingPortraitGender = "male" | "female";
+
+export type WeddingPortraitVersion = {
+    assetId: string;
+    nodeId: string;
+    storageKey?: string;
+    previewUrl?: string;
+    taskId?: string;
+    createdAt: string;
+};
+
 export type WeddingDynastyState = {
     id: string;
     name: string;
@@ -64,6 +75,8 @@ export type WeddingDynastyState = {
     sceneNodeId: string;
     videoNodeId: string;
     portraitSelection: { male?: string; female?: string };
+    portraitApproval?: Partial<Record<WeddingPortraitGender, boolean>>;
+    portraitVersionHistory?: Partial<Record<WeddingPortraitGender, WeddingPortraitVersion[]>>;
     sceneSelection?: string;
     videoSelection?: string;
     promptOverride?: string;

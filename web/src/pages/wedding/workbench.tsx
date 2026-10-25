@@ -15,6 +15,14 @@ import { SetupStage } from "@/pages/wedding/setup-stage";
 import { DynastyStage } from "@/pages/wedding/dynasty-stage";
 import { addWeddingDynastyState, setWeddingDynasties } from "@/lib/wedding/dynasty-state";
 import { approveWeddingStage } from "@/lib/wedding/production-state";
+import { PortraitStage } from "@/pages/wedding/portrait-stage";
+import {
+    confirmWeddingPortrait,
+    selectWeddingPortraitVersion,
+} from "@/lib/wedding/portrait-runtime";
+import { generateWeddingPortraits } from "@/services/wedding-generation";
+import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
+import type { GenerationTask } from "@/services/api/task-center";
 import { nanoid } from "nanoid";
 import type { CanvasNodeData } from "@/types/canvas";
 
@@ -38,6 +46,10 @@ export function WeddingWorkbenchSurface({
     const [promptFeedback, setPromptFeedback] = useState("");
     const [stageSaving, setStageSaving] = useState(false);
     const [stageFeedback, setStageFeedback] = useState("");
+    const [portraitRunning, setPortraitRunning] = useState(false);
+    const [portraitTasks, setPortraitTasks] = useState<Record<string, GenerationTask>>({});
+    const effectiveConfig = useEffectiveConfig();
+    const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const backfillStartedRef = useRef("");
 
     useEffect(() => {
@@ -288,6 +300,107 @@ export function WeddingWorkbenchSurface({
         }
     };
 
+    const generatePortraits = async (nodeIds: string[] = [], force = false) => {
+        const imageModel = effectiveConfig.imageModel || effectiveConfig.model;
+        if (!imageModel || !isAiConfigReady(effectiveConfig, imageModel)) {
+            setStageFeedback("请先在模型设置中配置可用的图片模型。");
+            return;
+        }
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        setPortraitRunning(true);
+        setStageFeedback("");
+        try {
+            const summary = await generateWeddingPortraits({
+                projectId: latestProject.id,
+                production: latestProduction,
+                config: effectiveConfig,
+                onTaskUpdate: (job, task) => {
+                    setPortraitTasks((current) => ({ ...current, [job.nodeId]: task }));
+                },
+            }, nodeIds.length === 1
+                ? latestProduction.dynasties.find((dynasty) => dynasty.portraitMaleNodeId === nodeIds[0] || dynasty.portraitFemaleNodeId === nodeIds[0])?.id
+                : undefined, {
+                force,
+                nodeIds,
+            });
+            if (!summary.attempted) {
+                setStageFeedback("没有需要生成的定妆照。");
+            } else if (summary.failed) {
+                setStageFeedback(`${summary.succeeded} 张已生成并等待审核，${summary.failed} 张失败。失败项可单独重试。`);
+            } else {
+                setStageFeedback(`${summary.succeeded} 张定妆照已生成，请逐张确认。`);
+            }
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "定妆照批量生成失败");
+        } finally {
+            setPortraitRunning(false);
+        }
+    };
+
+    const selectPortraitVersion = async (
+        dynastyId: string,
+        gender: "male" | "female",
+        assetId: string,
+    ) => {
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        const next = selectWeddingPortraitVersion(
+            latestProduction,
+            dynastyId,
+            gender,
+            assetId,
+            new Date().toISOString(),
+        );
+        try {
+            await persistCanvasDocument(project.id, { weddingProduction: next });
+            setStageFeedback("已切换定妆照版本，请确认后继续。");
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "定妆照版本保存失败");
+        }
+    };
+
+    const confirmPortrait = async (
+        dynastyId: string,
+        gender: "male" | "female",
+        assetId: string,
+    ) => {
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        const next = confirmWeddingPortrait(
+            latestProduction,
+            dynastyId,
+            gender,
+            assetId,
+            new Date().toISOString(),
+        );
+        try {
+            await persistCanvasDocument(project.id, { weddingProduction: next });
+            setStageFeedback(`${gender === "male" ? "新郎" : "新娘"}定妆照已确认。`);
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "定妆照确认失败");
+        }
+    };
+
+    const approvePortraits = async () => {
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        const next = approveWeddingStage(latestProduction, "portraits", new Date().toISOString());
+        if (next === latestProduction) {
+            setStageFeedback("请先确认每个朝代的男女定妆照。");
+            return;
+        }
+        setStageSaving(true);
+        try {
+            await persistCanvasDocument(project.id, { weddingProduction: next });
+            setStageFeedback("定妆照阶段已确认，可以进入场景首帧。");
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "定妆照阶段确认失败");
+        } finally {
+            setStageSaving(false);
+        }
+    };
+
     return (
         <main className={`wedding-workbench ${embedded ? "wedding-workbench-embedded" : ""}`}>
             <aside className="wedding-workbench-rail">
@@ -341,6 +454,19 @@ export function WeddingWorkbenchSurface({
                         onAdd={addDynasty}
                         onRemove={removeDynasty}
                         onApprove={approveDynasties}
+                    />
+                ) : resolvedStage === "portraits" ? (
+                    <PortraitStage
+                        production={production}
+                        nodes={project.nodes}
+                        tasks={portraitTasks}
+                        saving={stageSaving || portraitRunning}
+                        feedback={stageFeedback}
+                        onGenerateAll={() => generatePortraits()}
+                        onGenerateJob={(nodeId) => generatePortraits([nodeId], true)}
+                        onSelectVersion={selectPortraitVersion}
+                        onConfirmPortrait={confirmPortrait}
+                        onApprove={approvePortraits}
                     />
                 ) : (
                 <div className="wedding-workbench-grid">

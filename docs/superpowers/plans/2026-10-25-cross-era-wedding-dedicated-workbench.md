@@ -308,11 +308,11 @@ type WeddingGenerationJob = {
 };
 ```
 
-- [ ] **Step 1: Test job mapping**
+- [x] **Step 1: Test job mapping**
 
 Assert two jobs are created per dynasty, with correct male and female node IDs.
 
-- [ ] **Step 2: Implement generation service**
+- [x] **Step 2: Implement generation service**
 
 Use the selected effective image model and call `runBackendGenerationTask` with:
 
@@ -324,15 +324,15 @@ Use the selected effective image model and call `runBackendGenerationTask` with:
 
 Materialize the returned image into the node and persist it with `persistCanvasDocument`.
 
-- [ ] **Step 3: Build portrait board**
+- [x] **Step 3: Build portrait board**
 
 Show male/female pairs per dynasty, status, preview, error and retry. Batch button processes missing/failed portraits with bounded concurrency.
 
-- [ ] **Step 4: Implement selection and approval**
+- [x] **Step 4: Implement selection and approval**
 
 Selecting a result writes the selected asset ID. Confirming the stage requires both genders approved for every selected dynasty.
 
-- [ ] **Step 5: Run tests, typecheck and browser verification**
+- [x] **Step 5: Run tests, typecheck and browser verification**
 
 ```powershell
 cd D:\画布\BeefTV\web

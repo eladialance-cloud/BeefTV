@@ -149,9 +149,12 @@ export function weddingStageBlockers(state: WeddingProductionState, stage: Weddi
         return [];
     }
     if (stage === "portraits") {
-        return state.dynasties.flatMap((dynasty) => READY_ITEM_STATUSES.has(dynasty.statuses.portrait)
-            ? []
-            : [`${dynasty.name}：定妆照尚未准备`]);
+        return state.dynasties.flatMap((dynasty) => {
+            const blockers: string[] = [];
+            if (!dynasty.portraitApproval?.male) blockers.push(`${dynasty.name}：新郎定妆照尚未确认`);
+            if (!dynasty.portraitApproval?.female) blockers.push(`${dynasty.name}：新娘定妆照尚未确认`);
+            return blockers;
+        });
     }
     if (stage === "scenes") {
         return state.dynasties.flatMap((dynasty) => READY_ITEM_STATUSES.has(dynasty.statuses.scene)
