@@ -57,9 +57,6 @@ type CanvasTopBarProps = {
     readOnly?: boolean;
     onDuplicateProject?: () => void | Promise<void>;
     libtvReadonlyChrome?: boolean;
-    weddingWorkbenchEnabled?: boolean;
-    weddingWorkbenchOpen?: boolean;
-    onToggleWeddingWorkbench?: () => void;
 };
 
 export function CanvasTopBar({
@@ -105,9 +102,6 @@ export function CanvasTopBar({
     readOnly = false,
     onDuplicateProject,
     libtvReadonlyChrome = false,
-    weddingWorkbenchEnabled = false,
-    weddingWorkbenchOpen = false,
-    onToggleWeddingWorkbench,
 }: CanvasTopBarProps) {
     const theme = canvasThemes[useCanvasThemeStore((state) => state.theme)];
     const dockStyle = canvasDockStyle(theme, theme.node.text);
@@ -376,21 +370,6 @@ export function CanvasTopBar({
                             </Button>
                         </CanvasTopBarTooltip>
                     ) : null}
-                    {weddingWorkbenchEnabled ? (
-                        <CanvasTopBarTooltip label={weddingWorkbenchOpen ? "返回节点图" : "打开婚礼制作台"}>
-                            <Button
-                                type="text"
-                                className="canvas-topbar-action !h-9 !rounded-xl !px-2.5 !font-medium"
-                                style={{ color: theme.node.text, background: weddingWorkbenchOpen ? theme.toolbar.activeBg : undefined }}
-                                icon={<Clapperboard className="size-4" />}
-                                onClick={onToggleWeddingWorkbench}
-                                aria-label={weddingWorkbenchOpen ? "返回节点图" : "打开婚礼制作台"}
-                                aria-pressed={weddingWorkbenchOpen}
-                            >
-                                制作台
-                            </Button>
-                        </CanvasTopBarTooltip>
-                    ) : null}
                     {!libtvChrome ? <CanvasTopBarTooltip label="版本记录"><Button type="text" className="canvas-topbar-action !h-9 !w-9 !min-w-9 !rounded-xl !p-0" style={{ color: theme.node.text, background: versionsOpen ? theme.toolbar.activeBg : undefined }} icon={<History className="size-4" />} onClick={onToggleVersions} aria-label="版本记录" aria-pressed={versionsOpen} /></CanvasTopBarTooltip> : null}
                     <WalletChip compact className="pointer-events-auto border-white/15 bg-white/10 text-white hover:border-white/30 hover:bg-white/15" />
                 </div>
@@ -453,21 +432,6 @@ export function CanvasTopBar({
                                 aria-pressed={assistantOpen}
                             >
                                 <span className="sr-only">Agent</span>
-                            </Button>
-                        </CanvasTopBarTooltip>
-                    ) : null}
-                    {weddingWorkbenchEnabled ? (
-                        <CanvasTopBarTooltip label={weddingWorkbenchOpen ? "返回节点图" : "打开婚礼制作台"}>
-                            <Button
-                                type="text"
-                                className="canvas-topbar-action !h-10 !rounded-xl !px-2.5 !font-medium"
-                                style={{ color: theme.node.text, background: weddingWorkbenchOpen ? theme.toolbar.activeBg : undefined }}
-                                icon={<Clapperboard className="size-4" />}
-                                onClick={onToggleWeddingWorkbench}
-                                aria-label={weddingWorkbenchOpen ? "返回节点图" : "打开婚礼制作台"}
-                                aria-pressed={weddingWorkbenchOpen}
-                            >
-                                <span className="sr-only">制作台</span>
                             </Button>
                         </CanvasTopBarTooltip>
                     ) : null}

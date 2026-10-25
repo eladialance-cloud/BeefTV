@@ -10,7 +10,7 @@ export function weddingWorkbenchPathForTemplate(
 }
 
 export function weddingWorkbenchCanvasPath(canvasId: string) {
-    return `/canvas/${encodeURIComponent(canvasId)}?canvasView=wedding`;
+    return `/wedding/${encodeURIComponent(canvasId)}`;
 }
 
 export function legacyWeddingWorkbenchPath(canvasId: string) {

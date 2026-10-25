@@ -104,9 +104,6 @@ import { CanvasSyncStatus } from "./canvas-sync-status";
 import { CanvasVersionHistory, useCanvasVersionHistory } from "./canvas-version-history";
 import { CanvasVersionPreview } from "./canvas-version-preview";
 import { CanvasTopBar } from "./canvas-project-top-bar";
-import { WeddingWorkbenchSurface } from "@/pages/wedding/workbench";
-import { isWeddingCanvasView } from "@/lib/wedding/routing";
-import { buildWeddingProductionFromCanvasNodes } from "@/lib/wedding/template-state";
 import { CanvasFocusModeBar } from "@/components/canvas/canvas-focus-mode-bar";
 import { CanvasProjectContextMenu } from "./canvas-project-context-menu";
 import { CanvasProjectEditorDialogs } from "./canvas-project-editor-dialogs";
@@ -119,7 +116,7 @@ import { CanvasRefreshShell } from "./canvas-refresh-shell";
 import type { CanvasImageEmotionPayload } from "@/components/canvas/canvas-node-emotion-panel";
 import { CanvasEmotionWorkspace } from "@/components/canvas/canvas-emotion-workspace";
 import { removeCanvasDrawing } from "@/lib/canvas/canvas-drawing-storage";
-import { persistCanvasDocument, persistCanvasTimeline, refreshLocalCanvasProjectIfChanged } from "@/services/local-workspace-repository";
+import { persistCanvasTimeline, refreshLocalCanvasProjectIfChanged } from "@/services/local-workspace-repository";
 import { CanvasUploadModal } from "@/components/canvas/canvas-upload-modal";
 import { syncLocalCanvasSnapshot } from "@/services/local-workspace-sync";
 import { useCanvasConnectionController } from "./use-canvas-connection-controller";
@@ -201,7 +198,6 @@ function InfiniteCanvasPage() {
     const [searchParams, setSearchParams] = useSearchParams();
     const projectId = params.id || "";
     const readOnly = searchParams.get("readonly") === "1" || searchParams.get("mode") === "readonly";
-    const weddingWorkbenchOpen = isWeddingCanvasView(searchParams);
     const canvasStorageScope = getActiveUserScope();
     const canvasCapturedScope = captureUserScope();
     const containerRef = useRef<HTMLDivElement>(null);
@@ -481,32 +477,6 @@ function InfiniteCanvasPage() {
         cleanupAssetImages,
         cleanupCanvasFiles,
     });
-
-    const legacyWeddingProduction = useMemo(() => {
-        if (currentProject?.weddingProduction) return undefined;
-        try {
-            return buildWeddingProductionFromCanvasNodes(nodes, new Date().toISOString());
-        } catch {
-            return undefined;
-        }
-    }, [currentProject?.weddingProduction, nodes]);
-    const weddingProduction = currentProject?.weddingProduction ?? legacyWeddingProduction;
-    const weddingWorkbenchEnabled = Boolean(weddingProduction);
-    const weddingBackfillStartedRef = useRef("");
-    useEffect(() => {
-        if (!currentProject || !legacyWeddingProduction || weddingBackfillStartedRef.current === projectId) return;
-        weddingBackfillStartedRef.current = projectId;
-        void persistCanvasDocument(projectId, { weddingProduction: legacyWeddingProduction }).catch((error) => {
-            weddingBackfillStartedRef.current = "";
-            console.error("跨时空婚礼制作状态回填失败", { projectId, error });
-        });
-    }, [currentProject, legacyWeddingProduction, projectId]);
-    const toggleWeddingWorkbench = useCallback(() => {
-        const next = new URLSearchParams(searchParams);
-        if (weddingWorkbenchOpen) next.delete("canvasView");
-        else next.set("canvasView", "wedding");
-        setSearchParams(next, { replace: true });
-    }, [searchParams, setSearchParams, weddingWorkbenchOpen]);
 
     const fixtureAppliedRef = useRef<string | null>(null);
     const focusFixtureOnNarrowViewport = useCallback(
@@ -2886,9 +2856,6 @@ function InfiniteCanvasPage() {
                                     localOnly={localOnly}
                                     libtvChrome={searchParams.get("libtvChrome") === "1"}
                                     libtvReadonlyChrome={searchParams.get("fixture") === "libtv-readonly-dense"}
-                                    weddingWorkbenchEnabled={weddingWorkbenchEnabled}
-                                    weddingWorkbenchOpen={weddingWorkbenchOpen}
-                                    onToggleWeddingWorkbench={toggleWeddingWorkbench}
                                     onImportImage={() => handleUploadRequest()}
                                     onImportLibTV={() => setLibTVImportOpen(true)}
                                     onImportTapNow={() => setTapNowImportOpen(true)}
@@ -2918,18 +2885,8 @@ function InfiniteCanvasPage() {
 
                             <div className="relative flex min-h-0 min-w-0 flex-1">
                                 <div className="relative min-w-0 flex-1 overflow-hidden">
-                                    {weddingWorkbenchOpen && weddingWorkbenchEnabled ? (
-                                        <div className="wedding-canvas-overlay" data-canvas-no-zoom data-testid="wedding-canvas-overlay">
-                                            <WeddingWorkbenchSurface
-                                                canvasId={projectId}
-                                                embedded
-                                                productionOverride={weddingProduction}
-                                            />
-                                        </div>
-                                    ) : null}
                                     <InfiniteCanvas
-                                        interactive={!versions.preview && !readOnly && !weddingWorkbenchOpen}
-                                        hidden={weddingWorkbenchOpen}
+                                        interactive={!versions.preview && !readOnly}
                                         containerRef={containerRef}
                                         viewport={viewport}
                                         appearance={canvasAppearance}
@@ -3057,9 +3014,7 @@ function InfiniteCanvasPage() {
                                         </CanvasNodeActionContext.Provider>
                                     </InfiniteCanvas>
 
-                                    {!weddingWorkbenchOpen ? (
-                                        <CanvasActiveTaskPanel tasks={activeTasks} onCancelTask={cancelCanvasTask} topInset={focusMode ? "var(--space-3)" : "var(--canvas-topbar-offset)"} />
-                                    ) : null}
+                                    <CanvasActiveTaskPanel tasks={activeTasks} onCancelTask={cancelCanvasTask} topInset={focusMode ? "var(--space-3)" : "var(--canvas-topbar-offset)"} />
 
                                     {focusMode ? (
                                         <CanvasFocusModeBar
@@ -3078,9 +3033,9 @@ function InfiniteCanvasPage() {
 
                                     <CanvasFileDropOverlay active={fileDropActive} theme={theme} />
 
-                                    {!readOnly && !weddingWorkbenchOpen ? emptyCanvasState : null}
+                                    {!readOnly ? emptyCanvasState : null}
 
-                                    {!readOnly && !weddingWorkbenchOpen && searchParams.get("fixture") !== "libtv-readonly-dense" && (!focusMode || focusDockRevealed) ? (
+                                    {!readOnly && searchParams.get("fixture") !== "libtv-readonly-dense" && (!focusMode || focusDockRevealed) ? (
                                         <CanvasToolbar
                                             selectedCount={selectedNodeIds.size}
                                             libtvChrome={searchParams.get("libtvChrome") === "1"}
@@ -3314,9 +3269,9 @@ function InfiniteCanvasPage() {
                                 onDelete={(node) => deleteNodes(new Set([node.id]))}
                             />
 
-                            {isMiniMapOpen && !focusMode && !weddingWorkbenchOpen ? <Minimap nodes={nodes} viewport={viewport} viewportSize={size} canvasContainerRef={containerRef} onViewportPreviewChange={previewViewport} onViewportChange={handleViewportChange} /> : null}
+                            {isMiniMapOpen && !focusMode ? <Minimap nodes={nodes} viewport={viewport} viewportSize={size} canvasContainerRef={containerRef} onViewportPreviewChange={previewViewport} onViewportChange={handleViewportChange} /> : null}
 
-                            {!focusMode && !weddingWorkbenchOpen ? (
+                            {!focusMode ? (
                                 <CanvasOverlayLayerContainer
                                     overlayId="asset-tray"
                                     fallbackZIndex="var(--z-panel)"

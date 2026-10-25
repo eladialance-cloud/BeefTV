@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes } from "react-router";
 
 import CanvasPage from "@/pages/canvas/project";
+import WeddingWorkbenchPage from "@/pages/wedding/workbench";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 
 useCanvasStore.setState({ projects: [], folders: [], hydrated: true });
@@ -23,6 +24,7 @@ createRoot(document.getElementById("root")!).render(
             <MemoryRouter initialEntries={[initialEntry]}>
                 <Routes>
                     <Route path="/canvas/:id" element={<CanvasPage />} />
+                    <Route path="/wedding/:canvasId" element={<WeddingWorkbenchPage />} />
                     <Route path="/canvas" element={<div data-testid="canvas-library">canvas library</div>} />
                     <Route path="/" element={<div>home</div>} />
                 </Routes>

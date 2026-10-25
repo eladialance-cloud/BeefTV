@@ -7,7 +7,7 @@ describe("wedding workbench routing", () => {
         expect(weddingWorkbenchPathForTemplate(
             { itemKey: "cross-era-wedding-volc" },
             "canvas 1",
-        )).toBe("/canvas/canvas%201?canvasView=wedding");
+        )).toBe("/wedding/canvas%201");
     });
 
     test("other workflows keep the generic canvas route", () => {
@@ -21,11 +21,11 @@ describe("wedding workbench routing", () => {
         expect(weddingWorkbenchPathForTemplate(
             { itemKey: "cross-era-wedding-volc" },
             "a/b",
-        )).toBe("/canvas/a%2Fb?canvasView=wedding");
+        )).toBe("/wedding/a%2Fb");
     });
 
     test("legacy wedding route maps back to the canvas workbench view", () => {
         expect(legacyWeddingWorkbenchPath("a/b"))
-            .toBe("/canvas/a%2Fb?canvasView=wedding");
+            .toBe("/wedding/a%2Fb");
     });
 });

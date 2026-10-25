@@ -1,15 +1,17 @@
 import { LoaderCircle } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { Link, Navigate, useParams } from "react-router";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useParams } from "react-router";
 
 import { openLocalCanvasProjectFromBackend, persistCanvasDocument } from "@/services/local-workspace-repository";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { WEDDING_STAGE_IDS, type WeddingProductionState, type WeddingStageId } from "@/lib/wedding/types";
 import { clearWeddingPromptOverride, setWeddingPromptOverride } from "@/lib/wedding/prompt";
-import { legacyWeddingWorkbenchPath } from "@/lib/wedding/routing";
+import { approveWeddingSetup, updateWeddingSource } from "@/lib/wedding/setup-state";
 import { VideoPromptInspector } from "@/pages/wedding/video-prompt-inspector";
 import { WorkbenchStageRail, weddingStageLabels, weddingStatusLabels } from "@/pages/wedding/workbench-stage-rail";
 import { WorkbenchTopBar } from "@/pages/wedding/workbench-top-bar";
+import { buildWeddingProductionFromCanvasNodes } from "@/lib/wedding/template-state";
+import { SetupStage } from "@/pages/wedding/setup-stage";
 
 import "./wedding-workbench.css";
 
@@ -29,6 +31,9 @@ export function WeddingWorkbenchSurface({
     const [selectedDynastyId, setSelectedDynastyId] = useState("");
     const [promptSaving, setPromptSaving] = useState(false);
     const [promptFeedback, setPromptFeedback] = useState("");
+    const [stageSaving, setStageSaving] = useState(false);
+    const [stageFeedback, setStageFeedback] = useState("");
+    const backfillStartedRef = useRef("");
 
     useEffect(() => {
         if (!canvasId || project) {
@@ -52,7 +57,22 @@ export function WeddingWorkbenchSurface({
         };
     }, [canvasId, project]);
 
-    const production = productionOverride ?? project?.weddingProduction;
+    const legacyProduction = useMemo(() => {
+        if (!project || project.weddingProduction) return undefined;
+        try {
+            return buildWeddingProductionFromCanvasNodes(project.nodes, new Date().toISOString());
+        } catch {
+            return undefined;
+        }
+    }, [project]);
+    const production = productionOverride ?? project?.weddingProduction ?? legacyProduction;
+    useEffect(() => {
+        if (!project || project.weddingProduction || !legacyProduction || backfillStartedRef.current === project.id) return;
+        backfillStartedRef.current = project.id;
+        void persistCanvasDocument(project.id, { weddingProduction: legacyProduction }).catch(() => {
+            backfillStartedRef.current = "";
+        });
+    }, [legacyProduction, project]);
     const resolvedStage = activeStage || production?.activeStage || "setup";
     const resolvedDynastyId = selectedDynastyId || production?.dynasties[0]?.id || "";
     const resolvedDynasty = useMemo(
@@ -137,6 +157,39 @@ export function WeddingWorkbenchSurface({
         }
     };
 
+    const saveSetup = async (patch: Partial<WeddingProductionState["source"]>) => {
+        setStageSaving(true);
+        setStageFeedback("");
+        try {
+            const next = updateWeddingSource(production, patch, new Date().toISOString());
+            await persistCanvasDocument(project.id, { weddingProduction: next });
+            setStageFeedback(next === production ? "项目设定没有变化。" : "项目设定已保存。");
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "项目设定保存失败");
+        } finally {
+            setStageSaving(false);
+        }
+    };
+
+    const approveSetup = async (patch: Partial<WeddingProductionState["source"]>) => {
+        setStageSaving(true);
+        setStageFeedback("");
+        try {
+            const updated = updateWeddingSource(production, patch, new Date().toISOString());
+            const approved = approveWeddingSetup(updated, new Date().toISOString());
+            if (approved === updated) {
+                setStageFeedback("请先补齐照片、称呼和授权信息。");
+                return;
+            }
+            await persistCanvasDocument(project.id, { weddingProduction: approved });
+            setStageFeedback("项目设定已确认，可以进入朝代规划。");
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "项目设定确认失败");
+        } finally {
+            setStageSaving(false);
+        }
+    };
+
     return (
         <main className={`wedding-workbench ${embedded ? "wedding-workbench-embedded" : ""}`}>
             <aside className="wedding-workbench-rail">
@@ -173,6 +226,15 @@ export function WeddingWorkbenchSurface({
                     </span>
                 </div>
 
+                {resolvedStage === "setup" ? (
+                    <SetupStage
+                        production={production}
+                        saving={stageSaving}
+                        feedback={stageFeedback}
+                        onSave={saveSetup}
+                        onApprove={approveSetup}
+                    />
+                ) : (
                 <div className="wedding-workbench-grid">
                     <section className="wedding-workbench-panel">
                         <header>
@@ -229,6 +291,7 @@ export function WeddingWorkbenchSurface({
                         </aside>
                     )}
                 </div>
+                )}
             </section>
         </main>
     );
@@ -236,5 +299,5 @@ export function WeddingWorkbenchSurface({
 
 export default function WeddingWorkbenchPage() {
     const { canvasId = "" } = useParams();
-    return <Navigate to={legacyWeddingWorkbenchPath(canvasId)} replace />;
+    return <WeddingWorkbenchSurface canvasId={canvasId} />;
 }

@@ -137,6 +137,8 @@ export function weddingStageBlockers(state: WeddingProductionState, stage: Weddi
         const blockers: string[] = [];
         if (!state.source.groomPhotoNodeId) blockers.push("新郎照片尚未上传");
         if (!state.source.bridePhotoNodeId) blockers.push("新娘照片尚未上传");
+        if (!state.source.maleName.trim()) blockers.push("新郎称呼尚未填写");
+        if (!state.source.femaleName.trim()) blockers.push("新娘称呼尚未填写");
         if (!state.source.consentConfirmed) blockers.push("照片授权尚未确认");
         return blockers;
     }

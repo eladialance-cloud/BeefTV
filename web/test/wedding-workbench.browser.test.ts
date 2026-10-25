@@ -176,11 +176,8 @@ test("producer can load, edit, save and restore the dynasty video prompt", async
     const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    await page.goto(new URL("/canvas/c1?canvasView=wedding", server.url).toString());
+    await page.goto(new URL("/wedding/c1", server.url).toString());
 
-    await page.getByTestId("wedding-canvas-overlay").waitFor();
-    const closeAgent = page.getByRole("button", { name: "关闭 Agent" });
-    if (await closeAgent.count()) await closeAgent.first().click();
     await page.getByRole("heading", { name: "视频导演", exact: true }).waitFor();
     await page.getByLabel("唐最终英文视频提示词").waitFor();
     expect(await page.getByLabel("唐最终英文视频提示词").inputValue()).toBe("DEFAULT TANG VIDEO PROMPT");
@@ -210,13 +207,10 @@ test("producer can load, edit, save and restore the dynasty video prompt", async
         path: "D:/画布/BeefTV/build/wedding-workbench-390.png",
         fullPage: true,
     });
-    await page.setViewportSize({ width: 1440, height: 960 });
-    await page.getByRole("button", { name: "返回节点图" }).first().click();
-    await page.getByTestId("wedding-canvas-overlay").waitFor({ state: "hidden" });
     await page.close();
 }, 30000);
 
-test("an existing cross-era canvas backfills production state and reveals the workbench toggle", async () => {
+test("an existing cross-era canvas backfills production state in the dedicated workbench", async () => {
     const currentProduction = project.weddingProduction as {
         source: Record<string, unknown>;
         dynasties: Array<{ id: string; name: string }>;
@@ -282,11 +276,9 @@ test("an existing cross-era canvas backfills production state and reveals the wo
 
     const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
     await page.goto(new URL("/canvas/c1", server.url).toString());
-    const openWorkbench = page.getByRole("button", { name: "打开婚礼制作台" }).first();
-    await openWorkbench.waitFor();
-    await openWorkbench.click();
-    await page.getByTestId("wedding-canvas-overlay").waitFor();
+    expect(await page.getByRole("button", { name: "打开婚礼制作台" }).count()).toBe(0);
+
+    await page.goto(new URL("/wedding/c1", server.url).toString());
     await page.getByRole("heading", { name: "项目设定", exact: true }).waitFor();
-    expect(project.weddingProduction).toBeDefined();
     await page.close();
 }, 30000);
