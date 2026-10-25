@@ -21,6 +21,16 @@ import {
     selectWeddingPortraitVersion,
 } from "@/lib/wedding/portrait-runtime";
 import { generateWeddingPortraits } from "@/services/wedding-generation";
+import { SceneStage } from "@/pages/wedding/scene-stage";
+import {
+    confirmWeddingScene,
+    selectWeddingSceneVersion,
+} from "@/lib/wedding/scene-runtime";
+import { overrideWeddingSceneQc } from "@/lib/wedding/scene-qc";
+import {
+    generateWeddingScenes,
+    runWeddingSceneQc,
+} from "@/services/wedding-scene-generation";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import type { GenerationTask } from "@/services/api/task-center";
 import { nanoid } from "nanoid";
@@ -48,6 +58,8 @@ export function WeddingWorkbenchSurface({
     const [stageFeedback, setStageFeedback] = useState("");
     const [portraitRunning, setPortraitRunning] = useState(false);
     const [portraitTasks, setPortraitTasks] = useState<Record<string, GenerationTask>>({});
+    const [sceneRunning, setSceneRunning] = useState(false);
+    const [sceneTasks, setSceneTasks] = useState<Record<string, GenerationTask>>({});
     const effectiveConfig = useEffectiveConfig();
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const backfillStartedRef = useRef("");
@@ -401,6 +413,146 @@ export function WeddingWorkbenchSurface({
         }
     };
 
+    const generateScenes = async (dynastyId?: string) => {
+        const imageModel = effectiveConfig.imageModel || effectiveConfig.model;
+        if (!imageModel || !isAiConfigReady(effectiveConfig, imageModel)) {
+            setStageFeedback("请先在模型设置中配置可用的图片模型。");
+            return;
+        }
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        setSceneRunning(true);
+        setStageFeedback("");
+        try {
+            const summary = await generateWeddingScenes({
+                projectId: latestProject.id,
+                production: latestProduction,
+                config: effectiveConfig,
+                onTaskUpdate: (job, task) => {
+                    setSceneTasks((current) => ({ ...current, [job.nodeId]: task }));
+                },
+            }, dynastyId, {
+                force: Boolean(dynastyId),
+            });
+            if (!summary.attempted) {
+                setStageFeedback("没有需要生成的场景首帧。");
+            } else if (summary.failed) {
+                setStageFeedback(`${summary.succeeded} 个场景已生成，${summary.failed} 个失败。失败朝代可单独重试。`);
+            } else {
+                setStageFeedback(`${summary.succeeded} 个场景已生成，请运行 QC 并逐朝确认。`);
+            }
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "场景批量生成失败");
+        } finally {
+            setSceneRunning(false);
+        }
+    };
+
+    const runSceneQc = async (dynastyId: string) => {
+        const textModel = effectiveConfig.textModel || effectiveConfig.model;
+        if (!textModel || !isAiConfigReady(effectiveConfig, textModel)) {
+            setStageFeedback("请先在模型设置中配置支持参考图检查的文本模型。");
+            return;
+        }
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        setSceneRunning(true);
+        setStageFeedback("");
+        try {
+            const qc = await runWeddingSceneQc({
+                projectId: latestProject.id,
+                production: latestProduction,
+                config: effectiveConfig,
+                onTaskUpdate: (_dynastyId, task) => {
+                    const dynasty = latestProduction.dynasties.find((item) => item.id === dynastyId);
+                    if (!dynasty) return;
+                    setSceneTasks((current) => ({ ...current, [dynasty.sceneNodeId]: task }));
+                },
+            }, dynastyId);
+            setStageFeedback(qc.verdict === "pass"
+                ? "场景 QC 已通过。"
+                : `场景 QC 未通过：${qc.reason || "请查看检查项"}`);
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "场景 QC 执行失败");
+        } finally {
+            setSceneRunning(false);
+        }
+    };
+
+    const selectSceneVersion = async (dynastyId: string, assetId: string) => {
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        const next = selectWeddingSceneVersion(
+            latestProduction,
+            dynastyId,
+            assetId,
+            new Date().toISOString(),
+        );
+        try {
+            await persistCanvasDocument(project.id, { weddingProduction: next });
+            setStageFeedback("已切换场景首帧版本，旧 QC 已失效，请重新检查。");
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "场景版本保存失败");
+        }
+    };
+
+    const confirmScene = async (dynastyId: string, assetId: string) => {
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        const next = confirmWeddingScene(
+            latestProduction,
+            dynastyId,
+            assetId,
+            new Date().toISOString(),
+        );
+        try {
+            await persistCanvasDocument(project.id, { weddingProduction: next });
+            setStageFeedback("当前朝代场景首帧已确认。");
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "场景首帧确认失败");
+        }
+    };
+
+    const overrideSceneQc = async (dynastyId: string, reason: string) => {
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        const next = overrideWeddingSceneQc(
+            latestProduction,
+            dynastyId,
+            reason,
+            new Date().toISOString(),
+        );
+        if (next === latestProduction) {
+            setStageFeedback("请填写具体的人工覆盖原因。");
+            return;
+        }
+        try {
+            await persistCanvasDocument(project.id, { weddingProduction: next });
+            setStageFeedback("已记录人工覆盖原因，可以确认当前场景。");
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "场景 QC 覆盖保存失败");
+        }
+    };
+
+    const approveScenes = async () => {
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        const next = approveWeddingStage(latestProduction, "scenes", new Date().toISOString());
+        if (next === latestProduction) {
+            setStageFeedback("请先确认每个朝代的场景首帧，并完成 QC 或记录覆盖。");
+            return;
+        }
+        setStageSaving(true);
+        try {
+            await persistCanvasDocument(project.id, { weddingProduction: next });
+            setStageFeedback("场景阶段已确认，可以进入视频导演。");
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "场景阶段确认失败");
+        } finally {
+            setStageSaving(false);
+        }
+    };
+
     return (
         <main className={`wedding-workbench ${embedded ? "wedding-workbench-embedded" : ""}`}>
             <aside className="wedding-workbench-rail">
@@ -467,6 +619,21 @@ export function WeddingWorkbenchSurface({
                         onSelectVersion={selectPortraitVersion}
                         onConfirmPortrait={confirmPortrait}
                         onApprove={approvePortraits}
+                    />
+                ) : resolvedStage === "scenes" ? (
+                    <SceneStage
+                        production={production}
+                        nodes={project.nodes}
+                        tasks={sceneTasks}
+                        saving={stageSaving || sceneRunning}
+                        feedback={stageFeedback}
+                        onGenerateAll={() => generateScenes()}
+                        onGenerateDynasty={(dynastyId) => generateScenes(dynastyId)}
+                        onRunQc={runSceneQc}
+                        onSelectVersion={selectSceneVersion}
+                        onConfirm={confirmScene}
+                        onOverrideQc={overrideSceneQc}
+                        onApprove={approveScenes}
                     />
                 ) : (
                 <div className="wedding-workbench-grid">

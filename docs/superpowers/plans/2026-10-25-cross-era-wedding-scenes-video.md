@@ -317,7 +317,7 @@ git commit -m "feat(wedding-workbench): 跨时空婚礼电影 - 新增场景 QC"
 }
 ```
 
-- [ ] **Step 1: Write failing static render test**
+- [x] **Step 1: Write failing static render test**
 
 ```ts
 expect(html).toContain("双人婚礼场景");
@@ -326,7 +326,7 @@ expect(html).toContain("生成缺失场景");
 expect(html).toContain("确认场景阶段");
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```powershell
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-scene-stage.test.tsx
@@ -334,11 +334,11 @@ D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-scene-stage.
 
 Expected: FAIL because `scene-stage.tsx` does not exist.
 
-- [ ] **Step 3: Build scene workspace**
+- [x] **Step 3: Build scene workspace**
 
 Each dynasty shows selected male/female portrait references, the scene preview, generation progress, versions, QC booleans, QC reason/suggestion, and an override textarea. Primary actions call the real scene service from `workbench.tsx`; no local fake result.
 
-- [ ] **Step 4: Verify GREEN and browser layout**
+- [x] **Step 4: Verify GREEN and browser layout**
 
 ```powershell
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-scene-stage.test.tsx test/wedding-workbench.browser.test.ts
@@ -347,7 +347,7 @@ D:\画布\_tools\bun\node_modules\bun\bin\bun.exe run typecheck
 
 The browser test must verify no horizontal overflow at `1440x960` and `390x900`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add web/src/pages/wedding/scene-stage.tsx web/src/pages/wedding/workbench.tsx web/src/pages/wedding/wedding-workbench.css web/test/wedding-scene-stage.test.tsx web/test/wedding-workbench.browser.test.ts

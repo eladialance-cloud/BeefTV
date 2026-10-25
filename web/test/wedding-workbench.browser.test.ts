@@ -243,6 +243,39 @@ test("portrait stage renders the real production board without horizontal overfl
     await page.close();
 }, 30000);
 
+test("scene stage renders references, QC and real generation controls", async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto(new URL("/wedding/c1", server.url).toString());
+
+    await page.getByRole("navigation", { name: "婚礼制作阶段" })
+        .getByRole("button", { name: /场景首帧/ })
+        .click();
+    await page.getByRole("heading", { name: "场景首帧", exact: true }).waitFor();
+    await page.getByText("男女双人场景与 QC", { exact: true }).waitFor();
+    await page.getByText("自动 QC", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "生成缺失场景" }).waitFor();
+    await page.getByRole("button", { name: "确认场景阶段" }).waitFor();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({
+        path: "D:/画布/BeefTV/build/wedding-scene-stage-1440.png",
+        fullPage: true,
+    });
+    await page.getByRole("button", { name: "生成缺失场景" }).click();
+    await page.getByText("请先在模型设置中配置可用的图片模型。").waitFor();
+
+    await page.setViewportSize({ width: 390, height: 900 });
+    await page.waitForTimeout(100);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({
+        path: "D:/画布/BeefTV/build/wedding-scene-stage-390.png",
+        fullPage: true,
+    });
+    expect(errors).toEqual([]);
+    await page.close();
+}, 30000);
+
 test("an existing cross-era canvas backfills production state in the dedicated workbench", async () => {
     const currentProduction = project.weddingProduction as {
         source: Record<string, unknown>;

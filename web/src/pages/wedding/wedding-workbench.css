@@ -1184,6 +1184,590 @@
     line-height: 1.5;
 }
 
+.wedding-scene-stage {
+    display: grid;
+    gap: 12px;
+}
+
+.wedding-scene-overview {
+    display: flex;
+    min-height: 76px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 16px;
+    border: 1px solid var(--wedding-line);
+    border-radius: 7px;
+    background: linear-gradient(110deg, #151b1e, #111618);
+}
+
+.wedding-scene-overview small,
+.wedding-scene-overview strong,
+.wedding-scene-overview span {
+    display: block;
+}
+
+.wedding-scene-overview small {
+    color: var(--wedding-faint);
+    font-size: 8px;
+    letter-spacing: .1em;
+}
+
+.wedding-scene-overview strong {
+    margin-top: 5px;
+    font-size: 12px;
+}
+
+.wedding-scene-overview > div:first-child > span {
+    margin-top: 5px;
+    color: var(--wedding-muted);
+    font-size: 9px;
+}
+
+.wedding-scene-overview > div:last-child {
+    min-width: 94px;
+    text-align: right;
+}
+
+.wedding-scene-overview > div:last-child span {
+    color: var(--wedding-teal);
+    font-family: Georgia, serif;
+    font-size: 22px;
+}
+
+.wedding-scene-overview > div:last-child small {
+    margin-top: 2px;
+    letter-spacing: 0;
+}
+
+.wedding-scene-dynasties {
+    display: grid;
+    gap: 12px;
+}
+
+.wedding-scene-dynasty {
+    overflow: hidden;
+    border: 1px solid var(--wedding-line);
+    border-radius: 7px;
+    background: var(--wedding-panel);
+}
+
+.wedding-scene-dynasty > header {
+    display: flex;
+    min-height: 54px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0 14px;
+    border-bottom: 1px solid #22292e;
+}
+
+.wedding-scene-dynasty > header > div {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.wedding-scene-dynasty > header > div > span {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    place-items: center;
+    border: 1px solid #344046;
+    border-radius: 50%;
+    color: var(--wedding-faint);
+    font-size: 8px;
+}
+
+.wedding-scene-dynasty > header strong,
+.wedding-scene-dynasty > header small {
+    display: block;
+}
+
+.wedding-scene-dynasty > header strong {
+    font-size: 11px;
+}
+
+.wedding-scene-dynasty > header small {
+    margin-top: 3px;
+    color: var(--wedding-faint);
+    font-size: 8px;
+}
+
+.wedding-scene-dynasty > header > span {
+    display: inline-flex;
+    min-height: 24px;
+    align-items: center;
+    gap: 5px;
+    padding: 0 8px;
+    border: 1px solid #30383d;
+    border-radius: 999px;
+    color: var(--wedding-muted);
+    font-size: 8px;
+    white-space: nowrap;
+}
+
+.wedding-scene-dynasty > header > span.is-approved {
+    border-color: rgba(111, 185, 171, .28);
+    background: rgba(111, 185, 171, .07);
+    color: var(--wedding-teal);
+}
+
+.wedding-scene-dynasty > header svg {
+    width: 11px;
+    height: 11px;
+}
+
+.wedding-scene-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(320px, .65fr);
+    gap: 10px;
+    padding: 10px;
+}
+
+.wedding-scene-preview,
+.wedding-scene-qc-panel {
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid #273036;
+    border-radius: 6px;
+    background: #111619;
+}
+
+.wedding-scene-references {
+    display: flex;
+    gap: 8px;
+    padding: 9px;
+    border-bottom: 1px solid #22292e;
+}
+
+.wedding-scene-references > div {
+    position: relative;
+    display: flex;
+    width: 66px;
+    height: 54px;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border: 1px solid #30393f;
+    border-radius: 4px;
+    background: #0c1012;
+}
+
+.wedding-scene-references img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.wedding-scene-references svg {
+    width: 15px;
+    height: 15px;
+    color: var(--wedding-faint);
+}
+
+.wedding-scene-references span {
+    position: absolute;
+    inset: auto 3px 3px;
+    overflow: hidden;
+    padding: 2px 3px;
+    border-radius: 2px;
+    background: rgba(0, 0, 0, .66);
+    color: #fff;
+    font-size: 6px;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.wedding-scene-frame {
+    position: relative;
+    display: grid;
+    aspect-ratio: 16 / 9;
+    place-items: center;
+    overflow: hidden;
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, .025) 25%, transparent 25%) 0 0 / 18px 18px,
+        #0c1012;
+}
+
+.wedding-scene-frame > img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.wedding-scene-frame > div {
+    display: grid;
+    place-items: center;
+    gap: 6px;
+    padding: 20px;
+    color: var(--wedding-faint);
+    text-align: center;
+}
+
+.wedding-scene-frame > div svg {
+    width: 22px;
+    height: 22px;
+}
+
+.wedding-scene-frame > div strong {
+    color: var(--wedding-muted);
+    font-size: 9px;
+}
+
+.wedding-scene-frame > div span {
+    max-width: 300px;
+    font-size: 8px;
+    line-height: 1.5;
+}
+
+.wedding-scene-progress {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    max-width: calc(100% - 16px);
+    overflow: hidden;
+    padding: 5px 7px;
+    border: 1px solid rgba(216, 170, 97, .24);
+    border-radius: 4px;
+    background: rgba(10, 13, 14, .84);
+    color: var(--wedding-amber);
+    font-size: 7px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.wedding-scene-versions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px;
+    border-top: 1px solid #22292e;
+}
+
+.wedding-scene-versions > span {
+    flex: 0 0 auto;
+    color: var(--wedding-faint);
+    font-size: 7px;
+}
+
+.wedding-scene-versions > div {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+}
+
+.wedding-scene-versions button {
+    position: relative;
+    width: 62px;
+    height: 42px;
+    flex: 0 0 62px;
+    overflow: hidden;
+    border: 1px solid #30393f;
+    border-radius: 4px;
+    background: #0c1012;
+    color: var(--wedding-faint);
+    cursor: pointer;
+}
+
+.wedding-scene-versions button.is-selected {
+    border-color: var(--wedding-teal);
+    box-shadow: 0 0 0 1px rgba(111, 185, 171, .18);
+}
+
+.wedding-scene-versions button:disabled {
+    cursor: not-allowed;
+    opacity: .5;
+}
+
+.wedding-scene-versions img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.wedding-scene-versions button svg {
+    width: 14px;
+    height: 14px;
+}
+
+.wedding-scene-versions button span {
+    position: absolute;
+    right: 3px;
+    bottom: 3px;
+    padding: 1px 3px;
+    border-radius: 2px;
+    background: rgba(0, 0, 0, .64);
+    color: #fff;
+    font-size: 6px;
+}
+
+.wedding-scene-qc-panel {
+    display: flex;
+    flex-direction: column;
+}
+
+.wedding-scene-qc-panel > header {
+    display: flex;
+    min-height: 50px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    border-bottom: 1px solid #22292e;
+}
+
+.wedding-scene-qc-panel > header > div {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 7px;
+}
+
+.wedding-scene-qc-panel > header > div > svg {
+    width: 16px;
+    height: 16px;
+    color: var(--wedding-teal);
+}
+
+.wedding-scene-qc-panel > header strong,
+.wedding-scene-qc-panel > header small {
+    display: block;
+}
+
+.wedding-scene-qc-panel > header strong {
+    font-size: 9px;
+}
+
+.wedding-scene-qc-panel > header small {
+    margin-top: 3px;
+    color: var(--wedding-faint);
+    font-size: 7px;
+}
+
+.wedding-scene-qc-panel button {
+    display: inline-flex;
+    min-height: 30px;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 0 8px;
+    border: 1px solid var(--wedding-line);
+    border-radius: 5px;
+    background: var(--wedding-panel-raised);
+    color: var(--wedding-muted);
+    font-size: 8px;
+    cursor: pointer;
+}
+
+.wedding-scene-qc-panel button svg {
+    width: 11px;
+    height: 11px;
+}
+
+.wedding-scene-qc-panel button:disabled {
+    cursor: not-allowed;
+    opacity: .42;
+}
+
+.wedding-scene-qc-empty {
+    display: flex;
+    min-height: 94px;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 14px;
+    color: var(--wedding-faint);
+    font-size: 8px;
+    line-height: 1.5;
+    text-align: center;
+}
+
+.wedding-scene-qc-empty svg {
+    width: 15px;
+    height: 15px;
+    flex: 0 0 auto;
+}
+
+.wedding-scene-qc-result {
+    padding: 10px;
+    border-bottom: 1px solid #22292e;
+}
+
+.wedding-scene-qc-result > div:first-child strong,
+.wedding-scene-qc-result > div:first-child span {
+    display: block;
+}
+
+.wedding-scene-qc-result > div:first-child strong {
+    color: #d99a96;
+    font-size: 9px;
+}
+
+.wedding-scene-qc-result.is-pass > div:first-child strong {
+    color: var(--wedding-teal);
+}
+
+.wedding-scene-qc-result > div:first-child span {
+    margin-top: 4px;
+    color: var(--wedding-muted);
+    font-size: 8px;
+    line-height: 1.5;
+}
+
+.wedding-scene-qc-checks {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+    margin-top: 9px;
+}
+
+.wedding-scene-qc-checks > span {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 4px;
+    color: #d99a96;
+    font-size: 7px;
+}
+
+.wedding-scene-qc-checks > span.is-pass {
+    color: var(--wedding-teal);
+}
+
+.wedding-scene-qc-checks svg {
+    width: 10px;
+    height: 10px;
+    flex: 0 0 auto;
+}
+
+.wedding-scene-qc-result > p {
+    margin: 8px 0 0;
+    color: var(--wedding-faint);
+    font-size: 7px;
+    line-height: 1.5;
+}
+
+.wedding-scene-qc-override-record {
+    display: grid;
+    gap: 3px;
+    padding: 9px 10px;
+    border-bottom: 1px solid rgba(216, 170, 97, .16);
+    background: rgba(216, 170, 97, .05);
+}
+
+.wedding-scene-qc-override-record strong {
+    color: var(--wedding-amber);
+    font-size: 8px;
+}
+
+.wedding-scene-qc-override-record span {
+    color: var(--wedding-muted);
+    font-size: 7px;
+    line-height: 1.5;
+}
+
+.wedding-scene-override {
+    display: grid;
+    gap: 6px;
+    padding: 10px 10px 7px;
+    color: var(--wedding-muted);
+    font-size: 8px;
+}
+
+.wedding-scene-override textarea {
+    width: 100%;
+    min-height: 60px;
+    resize: vertical;
+    padding: 8px 9px;
+    border: 1px solid #30393f;
+    border-radius: 5px;
+    outline: 0;
+    background: #0d1214;
+    color: var(--wedding-text);
+    font-size: 8px;
+    line-height: 1.55;
+}
+
+.wedding-scene-override textarea:focus {
+    border-color: rgba(216, 170, 97, .42);
+}
+
+.wedding-scene-override-button {
+    align-self: flex-end;
+    margin: 0 10px 10px;
+}
+
+.wedding-scene-dynasty > footer {
+    display: flex;
+    min-height: 50px;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 8px 10px;
+    border-top: 1px solid #22292e;
+}
+
+.wedding-scene-dynasty > footer > span {
+    margin-right: auto;
+    color: var(--wedding-faint);
+    font-size: 7px;
+}
+
+.wedding-scene-dynasty > footer button,
+.wedding-scene-actions button {
+    display: inline-flex;
+    min-height: 32px;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 0 10px;
+    border: 1px solid var(--wedding-line);
+    border-radius: 5px;
+    background: var(--wedding-panel-raised);
+    color: var(--wedding-muted);
+    font-size: 8px;
+    cursor: pointer;
+}
+
+.wedding-scene-dynasty > footer button svg,
+.wedding-scene-actions button svg {
+    width: 12px;
+    height: 12px;
+}
+
+.wedding-scene-dynasty > footer button.is-primary,
+.wedding-scene-actions button.is-primary {
+    border-color: #6fb9ab;
+    background: #6fb9ab;
+    color: #0b1715;
+    font-weight: 700;
+}
+
+.wedding-scene-dynasty > footer button:disabled,
+.wedding-scene-actions button:disabled {
+    cursor: not-allowed;
+    opacity: .42;
+}
+
+.wedding-scene-actions > div:first-child {
+    display: grid;
+    gap: 3px;
+}
+
+.wedding-scene-actions > div:first-child > span {
+    color: var(--wedding-teal);
+    font-size: 8px;
+}
+
+.wedding-scene-actions > div:first-child > small {
+    max-width: 620px;
+    color: var(--wedding-faint);
+    font-size: 7px;
+    line-height: 1.5;
+}
+
 .wedding-prompt-inspector {
     display: flex;
     min-width: 0;
@@ -1421,6 +2005,10 @@
         grid-template-columns: 1fr;
     }
 
+    .wedding-scene-body {
+        grid-template-columns: 1fr;
+    }
+
     .wedding-workbench-embedded {
         grid-template-columns: 200px minmax(0, 1fr);
     }
@@ -1481,20 +2069,25 @@
     }
 
     .wedding-portrait-overview,
-    .wedding-portrait-actions {
+    .wedding-portrait-actions,
+    .wedding-scene-overview,
+    .wedding-scene-actions {
         align-items: stretch;
         flex-direction: column;
     }
 
-    .wedding-portrait-overview > div:last-child {
+    .wedding-portrait-overview > div:last-child,
+    .wedding-scene-overview > div:last-child {
         text-align: left;
     }
 
-    .wedding-portrait-actions > div {
+    .wedding-portrait-actions > div,
+    .wedding-scene-actions > div {
         width: 100%;
     }
 
-    .wedding-portrait-actions button {
+    .wedding-portrait-actions button,
+    .wedding-scene-actions button {
         flex: 1 1 0;
     }
 
@@ -1510,6 +2103,21 @@
     .wedding-portrait-slot > footer button {
         padding: 0 6px;
         white-space: nowrap;
+    }
+
+    .wedding-scene-dynasty > footer {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .wedding-scene-dynasty > footer > span {
+        grid-column: 1 / -1;
+        margin: 0;
+        text-align: center;
+    }
+
+    .wedding-scene-qc-checks {
+        grid-template-columns: 1fr;
     }
 }
 
