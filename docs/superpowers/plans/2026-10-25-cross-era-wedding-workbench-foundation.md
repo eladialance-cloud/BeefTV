@@ -2,13 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 交付制作方专用工作台的第一条可用垂直链，包括生产状态、画布持久化、专用路由、七阶段导航，以及由后台真实解析的视频提示词预览和覆盖保存。
+**Goal:** 交付制作方专用工作台的第一条可用垂直链，包括生产状态、画布持久化、画布内模式切换、七阶段导航，以及由后台真实解析的视频提示词预览和覆盖保存。
 
-**Architecture:** 工作台数据挂在现有 `CanvasProject` 顶层 `weddingProduction`，继续使用画布 revision、自动保存和历史。专用页面 `/wedding/:canvasId` 复用画布项目与素材节点，只替换制作体验。视频默认提示词通过新增的制作方预览接口从服务端私有目录解析，制作方覆盖值保存在画布状态并在生成请求中传给现有提示词准入逻辑。
+**Architecture:** 工作台数据挂在现有 `CanvasProject` 顶层 `weddingProduction`，继续使用画布 revision、自动保存和历史。制作台作为 `/canvas/:canvasId?canvasView=wedding` 的画布主区域模式运行，复用现有顶部栏、项目与素材节点。视频默认提示词通过新增的制作方预览接口从服务端私有目录解析，制作方覆盖值保存在画布状态并在生成请求中传给现有提示词准入逻辑。
 
 **Tech Stack:** React 19、TypeScript、React Router、Zustand、TanStack Query、Ant Design、Go 1.25、Gin、GORM、Bun test、Playwright。
 
 **Spec:** `docs/superpowers/specs/2026-10-25-cross-era-wedding-producer-workbench-design.md`
+
+**Implementation Note:** 制作台最终必须嵌入现有画布主区域。旧 `/wedding/:canvasId` 独立页面实现只用于兼容跳转，当前入口为 `/canvas/:canvasId?canvasView=wedding`。
 
 ## Global Constraints
 
@@ -330,7 +332,7 @@ git commit -m "feat(wedding-workbench): 跨时空婚礼电影 - 持久化制作�
 
 ---
 
-### Task 3: 专用路由和首页入口
+### Task 3: 画布内模式和首页入口
 
 **Files:**
 - Create: `web/src/lib/wedding/routing.ts`
@@ -345,8 +347,9 @@ git commit -m "feat(wedding-workbench): 跨时空婚礼电影 - 持久化制作�
 - Consumes: `PublicCreationTemplate` and created canvas ID.
 - Produces:
   - `weddingWorkbenchPathForTemplate(template, canvasId): string`
-  - route `/wedding/:canvasId`
-  - `loadWeddingWorkbenchPage`
+  - `isWeddingCanvasView(search): boolean`
+  - `/canvas/:canvasId?canvasView=wedding`
+  - 旧 `/wedding/:canvasId` 兼容跳转
 
 - [ ] **Step 1: Write the failing route test**
 
@@ -357,7 +360,7 @@ import { weddingWorkbenchPathForTemplate } from "@/lib/wedding/routing";
 describe("wedding workbench routing", () => {
     test("cross-era wedding opens the producer workbench", () => {
         expect(weddingWorkbenchPathForTemplate({ itemKey: "cross-era-wedding-volc" }, "canvas 1"))
-            .toBe("/wedding/canvas%201");
+            .toBe("/canvas/canvas%201?canvasView=wedding");
     });
 
     test("other workflows keep the generic canvas route", () => {
@@ -388,7 +391,7 @@ export function weddingWorkbenchPathForTemplate(
     canvasId: string,
 ) {
     return template.itemKey === "cross-era-wedding-volc"
-        ? `/wedding/${encodeURIComponent(canvasId)}`
+        ? `/canvas/${encodeURIComponent(canvasId)}?canvasView=wedding`
         : `/canvas/${encodeURIComponent(canvasId)}`;
 }
 ```
@@ -399,11 +402,13 @@ The first `workbench.tsx` render reads `canvasId`, finds the project in `useCanv
 
 In `HomePage.submitWorkflow`, replace the fixed `/canvas/${created.id}` navigation with `weddingWorkbenchPathForTemplate(setupTemplate, created.id)`.
 
-Add `wedding: () => import("@/pages/wedding/workbench")` to `workspaceRouteLoaders`, export `loadWeddingWorkbenchPage`, and register:
+Add `wedding: () => import("@/pages/wedding/workbench")` to `workspaceRouteLoaders`, export `loadWeddingWorkbenchPage`, and keep the legacy redirect:
 
 ```tsx
 { path: "/wedding/:canvasId", element: deferred(<WeddingWorkbenchPage />) }
 ```
+
+The legacy component navigates to `legacyWeddingWorkbenchPath(canvasId)`. The actual workbench renders inside `CanvasPage` when `canvasView=wedding`.
 
 - [ ] **Step 5: Add route and render tests**
 
@@ -412,7 +417,7 @@ Extend `wedding-routing.test.ts` with:
 ```ts
 test("encodes canvas ids in the dedicated path", () => {
     expect(weddingWorkbenchPathForTemplate({ itemKey: "cross-era-wedding-volc" }, "a/b"))
-        .toBe("/wedding/a%2Fb");
+        .toBe("/canvas/a%2Fb?canvasView=wedding");
 });
 ```
 
@@ -771,7 +776,7 @@ The inspector:
 
 Create `web/test/wedding-workbench.browser.test.ts` using the existing Chromium harness. Assert:
 
-- Route `/wedding/:id` opens the workbench.
+- Route `/canvas/:id?canvasView=wedding` opens the workbench inside the canvas.
 - Seven stage labels are visible.
 - Prompt preview loads.
 - Editing and saving shows the new effective prompt after reload.
@@ -824,7 +829,7 @@ git commit -m "feat(wedding-workbench): 跨时空婚礼电影 - 新增制作方�
 Check and record in the plan:
 
 - `weddingProduction` persists through the canvas.
-- Home cross-era card opens `/wedding/:canvasId`.
+- Home cross-era card opens `/canvas/:canvasId?canvasView=wedding`.
 - Seven stages render from persisted state.
 - Full video prompt preview loads from the backend.
 - Prompt override saves, survives reload, and restores to default.
@@ -874,7 +879,7 @@ This plan implements the spec sections:
 - 状态模型
 - 提示词控制
 - 画布持久化
-- 专用路由
+- 画布内模式切换
 - 视频提示词预览 API
 - 对应单元、后端和浏览器测试
 

@@ -25,6 +25,30 @@
     color: var(--wedding-muted);
 }
 
+.wedding-canvas-overlay {
+    position: absolute;
+    inset: var(--canvas-topbar-h) 0 0;
+    z-index: calc(var(--z-toolbar) - 1);
+    overflow: auto;
+    background: #0b0e10;
+}
+
+.wedding-workbench-embedded {
+    min-height: 100%;
+    height: 100%;
+    grid-template-columns: 220px minmax(0, 1fr);
+    background: #0b0e10;
+}
+
+.wedding-workbench-embedded.wedding-workbench-centered {
+    min-height: 100%;
+}
+
+.wedding-workbench-embedded .wedding-workbench-rail {
+    top: 0;
+    height: 100%;
+}
+
 .wedding-workbench-centered strong {
     color: var(--wedding-text);
     font-size: 18px;
@@ -626,11 +650,42 @@
     .wedding-workbench-grid {
         grid-template-columns: 1fr;
     }
+
+    .wedding-workbench-embedded {
+        grid-template-columns: 200px minmax(0, 1fr);
+    }
 }
 
 @media (max-width: 760px) {
     .wedding-workbench {
         display: block;
+    }
+
+    .wedding-workbench-embedded {
+        display: block;
+    }
+
+    .wedding-workbench-embedded .wedding-workbench-brand {
+        display: none;
+    }
+
+    .wedding-workbench-embedded .wedding-workbench-rail {
+        height: auto;
+    }
+
+    .wedding-workbench-embedded .wedding-workbench-project {
+        margin-bottom: 10px;
+    }
+
+    .wedding-workbench-embedded .wedding-workbench-steps {
+        display: flex;
+        gap: 6px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+    }
+
+    .wedding-workbench-embedded .wedding-workbench-step {
+        flex: 0 0 152px;
     }
 
     .wedding-workbench-rail {

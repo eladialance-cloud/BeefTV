@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router";
-import { Check, ChevronDown, ChevronUp, Clapperboard, CloudUpload, Columns2, CopyPlus, Focus, FolderKanban, Gauge, History, Home, LayoutGrid, MoreHorizontal, Pencil, Plus, Redo2, Save, Search, Sparkles, Trash2, Undo2, Upload, Workflow, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, ChevronUp, Clapperboard, CloudUpload, Columns2, CopyPlus, Focus, FolderKanban, Gauge, History, Home, LayoutGrid, MoreHorizontal, Pencil, Plus, Redo2, Save, Search, Sparkles, Trash2, Undo2, Upload, Workflow, X } from "lucide-react";
 import { Button, Dropdown, Tooltip } from "antd";
 
 import { BrandLogoFrame } from "@/components/brand/brand-logo";
@@ -9,6 +9,7 @@ import type { CanvasContextSummary } from "@/lib/canvas/canvas-context-summary";
 import type { CanvasShortDramaProgress } from "@/lib/canvas/canvas-short-drama";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useCanvasThemeStore } from "@/stores/canvas/use-canvas-theme-store";
+import { WalletChip } from "@/components/billing/wallet-chip";
 import type { CanvasMediaPerformanceMode } from "@/types/canvas";
 
 type CanvasTopBarProps = {
@@ -48,6 +49,7 @@ type CanvasTopBarProps = {
     onMediaPerformanceModeChange: (mode: CanvasMediaPerformanceMode) => void;
     onOpenSearch: () => void;
     projectContext?: CanvasContextSummary & { projectId: string; projectName: string };
+    backToManjuPath?: string;
     onEnterFocusMode: () => void;
     shortDramaGuide?: { progress: CanvasShortDramaProgress; collapsed: boolean; onToggle: () => void };
     localOnly?: boolean;
@@ -55,6 +57,9 @@ type CanvasTopBarProps = {
     readOnly?: boolean;
     onDuplicateProject?: () => void | Promise<void>;
     libtvReadonlyChrome?: boolean;
+    weddingWorkbenchEnabled?: boolean;
+    weddingWorkbenchOpen?: boolean;
+    onToggleWeddingWorkbench?: () => void;
 };
 
 export function CanvasTopBar({
@@ -92,6 +97,7 @@ export function CanvasTopBar({
     onMediaPerformanceModeChange,
     onOpenSearch,
     projectContext,
+    backToManjuPath,
     onEnterFocusMode,
     shortDramaGuide,
     localOnly = false,
@@ -99,6 +105,9 @@ export function CanvasTopBar({
     readOnly = false,
     onDuplicateProject,
     libtvReadonlyChrome = false,
+    weddingWorkbenchEnabled = false,
+    weddingWorkbenchOpen = false,
+    onToggleWeddingWorkbench,
 }: CanvasTopBarProps) {
     const theme = canvasThemes[useCanvasThemeStore((state) => state.theme)];
     const dockStyle = canvasDockStyle(theme, theme.node.text);
@@ -186,11 +195,22 @@ export function CanvasTopBar({
                                 {libtvChrome ? (
                                     <span className="canvas-topbar-libtv-brand-mark" aria-hidden="true" />
                                 ) : (
-                                    <BrandLogoFrame className="canvas-topbar-brand-mark" logoClassName="canvas-topbar-brand-mark-image" alt="" fallback={<span className="canvas-topbar-brand-mark-fallback" aria-hidden="true">B</span>} />
+                                    <BrandLogoFrame className="canvas-topbar-brand-mark" logoClassName="canvas-topbar-brand-mark-image" alt="" fallback={<span className="canvas-topbar-brand-mark-fallback" aria-hidden="true">V</span>} />
                                 )}
                                 <ChevronDown className="size-2.5 opacity-55" aria-hidden="true" />
                             </button>
                     </Dropdown>
+
+                    {backToManjuPath ? (
+                        <Link
+                            to={backToManjuPath}
+                            className="canvas-topbar-action inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium"
+                            style={{ color: theme.node.text, background: theme.toolbar.panel, border: `1px solid ${theme.toolbar.border}` }}
+                        >
+                            <ArrowLeft className="size-3.5" />
+                            <span className="hidden sm:inline">返回漫剧工作台</span>
+                        </Link>
+                    ) : null}
 
                     <div ref={titleRef} className="canvas-topbar-title-block flex min-w-0 flex-auto flex-col items-start overflow-hidden">
                         {isTitleEditing ? (
@@ -356,7 +376,23 @@ export function CanvasTopBar({
                             </Button>
                         </CanvasTopBarTooltip>
                     ) : null}
+                    {weddingWorkbenchEnabled ? (
+                        <CanvasTopBarTooltip label={weddingWorkbenchOpen ? "返回节点图" : "打开婚礼制作台"}>
+                            <Button
+                                type="text"
+                                className="canvas-topbar-action !h-9 !rounded-xl !px-2.5 !font-medium"
+                                style={{ color: theme.node.text, background: weddingWorkbenchOpen ? theme.toolbar.activeBg : undefined }}
+                                icon={<Clapperboard className="size-4" />}
+                                onClick={onToggleWeddingWorkbench}
+                                aria-label={weddingWorkbenchOpen ? "返回节点图" : "打开婚礼制作台"}
+                                aria-pressed={weddingWorkbenchOpen}
+                            >
+                                制作台
+                            </Button>
+                        </CanvasTopBarTooltip>
+                    ) : null}
                     {!libtvChrome ? <CanvasTopBarTooltip label="版本记录"><Button type="text" className="canvas-topbar-action !h-9 !w-9 !min-w-9 !rounded-xl !p-0" style={{ color: theme.node.text, background: versionsOpen ? theme.toolbar.activeBg : undefined }} icon={<History className="size-4" />} onClick={onToggleVersions} aria-label="版本记录" aria-pressed={versionsOpen} /></CanvasTopBarTooltip> : null}
+                    <WalletChip compact className="pointer-events-auto border-white/15 bg-white/10 text-white hover:border-white/30 hover:bg-white/15" />
                 </div>
 
                 <div className="canvas-topbar-cluster canvas-topbar-tools-cluster pointer-events-auto flex items-center gap-1.5 lg:hidden" style={dockStyle}>
@@ -420,6 +456,21 @@ export function CanvasTopBar({
                             </Button>
                         </CanvasTopBarTooltip>
                     ) : null}
+                    {weddingWorkbenchEnabled ? (
+                        <CanvasTopBarTooltip label={weddingWorkbenchOpen ? "返回节点图" : "打开婚礼制作台"}>
+                            <Button
+                                type="text"
+                                className="canvas-topbar-action !h-10 !rounded-xl !px-2.5 !font-medium"
+                                style={{ color: theme.node.text, background: weddingWorkbenchOpen ? theme.toolbar.activeBg : undefined }}
+                                icon={<Clapperboard className="size-4" />}
+                                onClick={onToggleWeddingWorkbench}
+                                aria-label={weddingWorkbenchOpen ? "返回节点图" : "打开婚礼制作台"}
+                                aria-pressed={weddingWorkbenchOpen}
+                            >
+                                <span className="sr-only">制作台</span>
+                            </Button>
+                        </CanvasTopBarTooltip>
+                    ) : null}
                     <CanvasTopBarTooltip label="版本记录">
                         <Button
                             type="text"
@@ -433,6 +484,7 @@ export function CanvasTopBar({
                             <span className="sr-only">版本</span>
                         </Button>
                     </CanvasTopBarTooltip>
+                    <WalletChip compact className="border-white/15 bg-white/10 text-white hover:border-white/30 hover:bg-white/15" />
                 </div>
             </div>
         </>

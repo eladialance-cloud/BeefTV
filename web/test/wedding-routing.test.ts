@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
-import { weddingWorkbenchPathForTemplate } from "@/lib/wedding/routing";
+import { legacyWeddingWorkbenchPath, weddingWorkbenchPathForTemplate } from "@/lib/wedding/routing";
 
 describe("wedding workbench routing", () => {
     test("cross-era wedding opens the producer workbench", () => {
         expect(weddingWorkbenchPathForTemplate(
             { itemKey: "cross-era-wedding-volc" },
             "canvas 1",
-        )).toBe("/wedding/canvas%201");
+        )).toBe("/canvas/canvas%201?canvasView=wedding");
     });
 
     test("other workflows keep the generic canvas route", () => {
@@ -21,6 +21,11 @@ describe("wedding workbench routing", () => {
         expect(weddingWorkbenchPathForTemplate(
             { itemKey: "cross-era-wedding-volc" },
             "a/b",
-        )).toBe("/wedding/a%2Fb");
+        )).toBe("/canvas/a%2Fb?canvasView=wedding");
+    });
+
+    test("legacy wedding route maps back to the canvas workbench view", () => {
+        expect(legacyWeddingWorkbenchPath("a/b"))
+            .toBe("/canvas/a%2Fb?canvasView=wedding");
     });
 });

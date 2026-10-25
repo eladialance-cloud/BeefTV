@@ -10,6 +10,7 @@ import { canvasWheelIntent } from "@/lib/canvas/canvas-wheel";
 
 type InfiniteCanvasProps = {
     interactive?: boolean;
+    hidden?: boolean;
     containerRef: React.RefObject<HTMLDivElement | null>;
     viewport: ViewportTransform;
     appearance?: CanvasAppearance;
@@ -45,7 +46,7 @@ type PinchState = {
     initialScale: number;
 };
 
-export function InfiniteCanvas({ interactive = true, containerRef, viewport, appearance, backgroundMode = "lines", onViewportChange, onViewportPreviewChange, onCanvasMouseDown, boxSelectEnabled = false, onCanvasDoubleClick, onCanvasDeselect, onContextMenu, onDrop, onFileDragEnter, onFileDragLeave, onFileDragOver, graphicsLayer, children }: InfiniteCanvasProps) {
+export function InfiniteCanvas({ interactive = true, hidden = false, containerRef, viewport, appearance, backgroundMode = "lines", onViewportChange, onViewportPreviewChange, onCanvasMouseDown, boxSelectEnabled = false, onCanvasDoubleClick, onCanvasDeselect, onContextMenu, onDrop, onFileDragEnter, onFileDragLeave, onFileDragOver, graphicsLayer, children }: InfiniteCanvasProps) {
     const colorTheme = useActiveTheme();
     const resolvedAppearance = resolveCanvasAppearance(appearance, colorTheme);
     const panState = useRef({
@@ -432,6 +433,7 @@ export function InfiniteCanvas({ interactive = true, containerRef, viewport, app
             data-canvas-pan-state={isPanning ? "grabbing" : isSpacePressed || !boxSelectEnabled ? "grab" : undefined}
             className={`relative h-full w-full select-none overflow-hidden touch-none ${isPanning ? "cursor-grabbing" : isSpacePressed || !boxSelectEnabled ? "cursor-grab" : "canvas-cursor-select"}`}
             style={{
+                display: hidden ? "none" : undefined,
                 background: resolvedAppearance.background,
                 overscrollBehavior: "none",
                 "--canvas-live-x": `${viewport.x}px`,

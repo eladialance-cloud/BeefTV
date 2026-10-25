@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { chromium, type Browser } from "playwright";
 
 import { createWeddingProductionState } from "@/lib/wedding/production-state";
@@ -23,8 +23,32 @@ beforeAll(async () => {
         plugins: [{
             name: "source",
             setup(builder) {
+                builder.onResolve({ filter: /\?url$/ }, () => ({
+                    path: "virtual-url",
+                    namespace: "test-url",
+                }));
+                builder.onResolve({ filter: /^@\/components\/model-logo$/ }, () => ({
+                    path: "model-logo",
+                    namespace: "test-icons",
+                }));
+                builder.onResolve({ filter: /^@excalidraw\/excalidraw\/index\.css$/ }, () => ({
+                    path: "virtual-css",
+                    namespace: "test-css",
+                }));
                 builder.onResolve({ filter: /^@\// }, (args) => ({
                     path: Bun.resolveSync("../src/" + args.path.slice(2), import.meta.dir),
+                }));
+                builder.onLoad({ filter: /.*/, namespace: "test-url" }, () => ({
+                    contents: 'export default "data:application/octet-stream;base64,";',
+                    loader: "js",
+                }));
+                builder.onLoad({ filter: /.*/, namespace: "test-css" }, () => ({
+                    contents: "export default '';",
+                    loader: "js",
+                }));
+                builder.onLoad({ filter: /.*/, namespace: "test-icons" }, () => ({
+                    contents: "export function ModelLogo() { return null; }",
+                    loader: "js",
                 }));
                 builder.onLoad({ filter: /\.(svg|png|jpe?g|gif|webp|woff2?)$/ }, () => ({
                     contents: "export default ''",
@@ -40,6 +64,13 @@ beforeAll(async () => {
     if (!build.success) throw new Error(build.logs.join("\n"));
     const script = await build.outputs.find((output) => output.path.endsWith(".js"))!.text();
     const css = await build.outputs.find((output) => output.path.endsWith(".css"))?.text() || "";
+    const productionCssDir = `${import.meta.dir}/../dist/static`;
+    const productionCss = existsSync(productionCssDir)
+        ? readdirSync(productionCssDir)
+            .filter((file) => file.endsWith(".css"))
+            .map((file) => readFileSync(`${productionCssDir}/${file}`, "utf8"))
+            .join("\n")
+        : "";
     const production = createWeddingProductionState({
         template: { id: "template-1", key: "cross-era-wedding-volc", version: "1.0.0" },
         source: {
@@ -91,6 +122,9 @@ beforeAll(async () => {
             if (path === "/harness.css") {
                 return new Response(css, { headers: { "Content-Type": "text/css" } });
             }
+            if (path === "/production.css") {
+                return new Response(productionCss, { headers: { "Content-Type": "text/css" } });
+            }
             if (path === "/api/canvas-projects/c1" && request.method === "GET") {
                 return ok({ project });
             }
@@ -120,7 +154,7 @@ beforeAll(async () => {
             }
             if (path.startsWith("/api/")) return ok({});
             return new Response(
-                '<!doctype html><meta name="viewport" content="width=device-width"><link rel="stylesheet" href="/harness.css"><div id="root"></div><script type="module" src="/harness.js"></script>',
+                '<!doctype html><meta name="viewport" content="width=device-width"><style>html,body,#root{min-height:100%;margin:0}body{overflow:hidden}</style><link rel="stylesheet" href="/production.css"><link rel="stylesheet" href="/harness.css"><div id="root"></div><script type="module" src="/harness.js"></script>',
                 { headers: { "Content-Type": "text/html" } },
             );
         },
@@ -144,6 +178,9 @@ test("producer can load, edit, save and restore the dynasty video prompt", async
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(server.url.toString());
 
+    await page.getByTestId("wedding-canvas-overlay").waitFor();
+    const closeAgent = page.getByRole("button", { name: "关闭 Agent" });
+    if (await closeAgent.count()) await closeAgent.first().click();
     await page.getByRole("heading", { name: "视频导演", exact: true }).waitFor();
     await page.getByLabel("唐最终英文视频提示词").waitFor();
     expect(await page.getByLabel("唐最终英文视频提示词").inputValue()).toBe("DEFAULT TANG VIDEO PROMPT");
@@ -173,5 +210,8 @@ test("producer can load, edit, save and restore the dynasty video prompt", async
         path: "D:/画布/BeefTV/build/wedding-workbench-390.png",
         fullPage: true,
     });
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await page.getByRole("button", { name: "返回节点图" }).first().click();
+    await page.getByTestId("wedding-canvas-overlay").waitFor({ state: "hidden" });
     await page.close();
 }, 30000);

@@ -1,19 +1,25 @@
 import { LoaderCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, Navigate, useParams } from "react-router";
 
 import { openLocalCanvasProjectFromBackend, persistCanvasDocument } from "@/services/local-workspace-repository";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { WEDDING_STAGE_IDS, type WeddingStageId } from "@/lib/wedding/types";
 import { clearWeddingPromptOverride, setWeddingPromptOverride } from "@/lib/wedding/prompt";
+import { legacyWeddingWorkbenchPath } from "@/lib/wedding/routing";
 import { VideoPromptInspector } from "@/pages/wedding/video-prompt-inspector";
 import { WorkbenchStageRail, weddingStageLabels, weddingStatusLabels } from "@/pages/wedding/workbench-stage-rail";
 import { WorkbenchTopBar } from "@/pages/wedding/workbench-top-bar";
 
 import "./wedding-workbench.css";
 
-export default function WeddingWorkbenchPage() {
-    const { canvasId = "" } = useParams();
+export function WeddingWorkbenchSurface({
+    canvasId,
+    embedded = false,
+}: {
+    canvasId: string;
+    embedded?: boolean;
+}) {
     const project = useCanvasStore((state) => state.projects.find((item) => item.id === canvasId));
     const [loading, setLoading] = useState(!project);
     const [loadError, setLoadError] = useState("");
@@ -63,7 +69,7 @@ export default function WeddingWorkbenchPage() {
 
     if (loading) {
         return (
-            <main className="wedding-workbench wedding-workbench-centered">
+            <main className={`wedding-workbench wedding-workbench-centered ${embedded ? "wedding-workbench-embedded" : ""}`}>
                 <LoaderCircle className="wedding-spinner" />
                 <span>正在读取婚礼制作项目</span>
             </main>
@@ -72,7 +78,7 @@ export default function WeddingWorkbenchPage() {
 
     if (loadError || !project) {
         return (
-            <main className="wedding-workbench wedding-workbench-centered">
+            <main className={`wedding-workbench wedding-workbench-centered ${embedded ? "wedding-workbench-embedded" : ""}`}>
                 <strong>工作台无法打开</strong>
                 <span>{loadError || "画布项目不存在或无权访问"}</span>
                 <Link to="/">返回首页</Link>
@@ -82,7 +88,7 @@ export default function WeddingWorkbenchPage() {
 
     if (!production) {
         return (
-            <main className="wedding-workbench wedding-workbench-centered">
+            <main className={`wedding-workbench wedding-workbench-centered ${embedded ? "wedding-workbench-embedded" : ""}`}>
                 <strong>该项目没有婚礼制作状态</strong>
                 <span>请从“跨时空婚礼电影”工作流重新创建项目。</span>
                 <Link to={`/canvas/${encodeURIComponent(project.id)}`}>返回画布</Link>
@@ -130,7 +136,7 @@ export default function WeddingWorkbenchPage() {
     };
 
     return (
-        <main className="wedding-workbench">
+        <main className={`wedding-workbench ${embedded ? "wedding-workbench-embedded" : ""}`}>
             <aside className="wedding-workbench-rail">
                 <div className="wedding-workbench-brand">
                     <span className="wedding-workbench-mark">V</span>
@@ -152,7 +158,7 @@ export default function WeddingWorkbenchPage() {
             </aside>
 
             <section className="wedding-workbench-workspace">
-                <WorkbenchTopBar canvasId={project.id} stageLabel={weddingStageLabels[resolvedStage]} />
+                {embedded ? null : <WorkbenchTopBar canvasId={project.id} stageLabel={weddingStageLabels[resolvedStage]} />}
 
                 <div className="wedding-workbench-heading">
                     <div>
@@ -224,4 +230,9 @@ export default function WeddingWorkbenchPage() {
             </section>
         </main>
     );
+}
+
+export default function WeddingWorkbenchPage() {
+    const { canvasId = "" } = useParams();
+    return <Navigate to={legacyWeddingWorkbenchPath(canvasId)} replace />;
 }
