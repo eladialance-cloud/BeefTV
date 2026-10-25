@@ -377,7 +377,7 @@ git commit -m "feat(wedding-workbench): 跨时空婚礼电影 - 新增场景首�
   - `failWeddingVideoGeneration`
   - `generateWeddingVideos(runtime, dynastyId?, options?)`
 
-- [ ] **Step 1: Write failing video mapping and task tests**
+- [x] **Step 1: Write failing video mapping and task tests**
 
 ```ts
 expect(weddingVideoJobs(production)).toEqual([
@@ -403,7 +403,7 @@ expect(submitted).toMatchObject({
 });
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```powershell
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-video-runtime.test.ts test/wedding-video-generation.test.ts
@@ -411,7 +411,7 @@ D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-video-runtim
 
 Expected: FAIL because video runtime and service are missing.
 
-- [ ] **Step 3: Implement state and generation**
+- [x] **Step 3: Implement state and generation**
 
 Video generation requires a confirmed scene and both confirmed portraits. Map selected asset IDs to references, use the target video node's `seconds`, `size`, `vquality`, and `videoEditOperation`, and add:
 
@@ -424,14 +424,14 @@ creationTemplate: {
 
 Use `consumeGenerationTaskNode`, persist the node, and append `WeddingVideoVersion`. A prompt change marks only that dynasty video and final delivery stale.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 ```powershell
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-video-runtime.test.ts test/wedding-video-generation.test.ts test/wedding-production-state.test.ts test/wedding-prompt.test.ts
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe run typecheck
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add web/src/lib/wedding/types.ts web/src/lib/wedding/production-state.ts web/src/lib/wedding/video-runtime.ts web/src/services/wedding-video-generation.ts web/test/wedding-video-runtime.test.ts web/test/wedding-video-generation.test.ts web/test/wedding-production-state.test.ts

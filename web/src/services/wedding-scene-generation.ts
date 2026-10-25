@@ -11,7 +11,10 @@ import type {
     WeddingGenerationAsset,
     WeddingGenerationSummary,
 } from "@/lib/wedding/generation-runtime";
-import { weddingImageReference as makeWeddingImageReference } from "@/lib/wedding/generation-runtime";
+import {
+    weddingPortraitReference,
+    weddingSceneReference,
+} from "@/lib/wedding/generation-runtime";
 import {
     failWeddingSceneGeneration,
     markWeddingSceneGenerating,
@@ -19,11 +22,7 @@ import {
     weddingSceneJobs,
     type WeddingSceneJob,
 } from "@/lib/wedding/scene-runtime";
-import type {
-    WeddingDynastyState,
-    WeddingPortraitGender,
-    WeddingProductionState,
-} from "@/lib/wedding/types";
+import type { WeddingProductionState } from "@/lib/wedding/types";
 import {
     applyWeddingSceneQc,
     errorWeddingSceneQc,
@@ -37,7 +36,6 @@ import type { GenerationTask } from "@/services/api/task-center";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useCanvasStore, type CanvasProject } from "@/stores/canvas/use-canvas-store";
 import type { AiConfig } from "@/stores/use-config-store";
-import type { ReferenceImage } from "@/types/image";
 import type { CanvasNodeData } from "@/types/canvas";
 
 type WeddingSceneProjectSnapshot = Pick<CanvasProject, "nodes" | "weddingProduction">;
@@ -186,9 +184,9 @@ export async function runWeddingSceneQc(
     if (!target) throw new Error("场景首帧节点不存在");
     if (!dynasty.sceneSelection) throw new Error("请先确认场景首帧");
     const referenceImages = [
-        portraitReference(dynasty, "male", dependencies.getAsset),
-        portraitReference(dynasty, "female", dependencies.getAsset),
-        sceneReference(dynasty, dependencies.getAsset),
+        weddingPortraitReference(dynasty, "male", dependencies.getAsset),
+        weddingPortraitReference(dynasty, "female", dependencies.getAsset),
+        weddingSceneReference(dynasty, dependencies.getAsset, { requireQc: false }),
     ];
     const checkedAt = new Date().toISOString();
     try {
@@ -253,8 +251,8 @@ async function generateWeddingSceneJob(
         throw new Error("请先确认男女定妆照");
     }
     const referenceImages = [
-        portraitReference(dynasty, "male", dependencies.getAsset),
-        portraitReference(dynasty, "female", dependencies.getAsset),
+        weddingPortraitReference(dynasty, "male", dependencies.getAsset),
+        weddingPortraitReference(dynasty, "female", dependencies.getAsset),
     ];
     const taskCommits: Promise<void>[] = [];
     let initialTaskPersisted = false;
@@ -372,50 +370,6 @@ async function generateWeddingSceneJob(
             });
         },
     );
-}
-
-function portraitReference(
-    dynasty: WeddingDynastyState,
-    gender: WeddingPortraitGender,
-    getAsset: (assetId: string) => WeddingGenerationAsset | undefined,
-): ReferenceImage {
-    const assetId = dynasty.portraitSelection?.[gender];
-    const version = dynasty.portraitVersionHistory?.[gender]?.find((item) => item.assetId === assetId);
-    const asset = assetId ? getAsset(assetId) : undefined;
-    if (!assetId) {
-        throw new Error(`请先确认${gender === "male" ? "新郎" : "新娘"}定妆照`);
-    }
-    try {
-        return makeWeddingImageReference({
-            assetId,
-            name: `${dynasty.name}-${gender}-portrait.png`,
-            asset,
-            storageKey: version?.storageKey,
-            previewUrl: version?.previewUrl,
-        });
-    } catch {
-        throw new Error(`请先确认${gender === "male" ? "新郎" : "新娘"}定妆照`);
-    }
-}
-
-function sceneReference(
-    dynasty: WeddingDynastyState,
-    getAsset: (assetId: string) => WeddingGenerationAsset | undefined,
-): ReferenceImage {
-    const assetId = dynasty.sceneSelection;
-    const version = dynasty.sceneVersions?.find((item) => item.assetId === assetId);
-    if (!assetId) throw new Error("请先确认场景首帧");
-    try {
-        return makeWeddingImageReference({
-            assetId,
-            name: `${dynasty.name}-scene.png`,
-            asset: getAsset(assetId),
-            storageKey: version?.storageKey,
-            previewUrl: version?.previewUrl,
-        });
-    } catch {
-        throw new Error("场景首帧素材不可用");
-    }
 }
 
 function sceneQcDependenciesWithDefaults(
