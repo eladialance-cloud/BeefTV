@@ -220,7 +220,7 @@ git commit -m "feat(wedding-workbench): 跨时空婚礼电影 - 新增包装制�
   - `renderWeddingDelivery(runtime): Promise<TimelineRenderResult>`
   - `weddingDeliveryManifest(production): string`
 
-- [ ] **Step 1: Write failing delivery tests**
+- [x] **Step 1: Write failing delivery tests**
 
 ```ts
 expect(rendering.delivery?.status).toBe("rendering");
@@ -231,19 +231,19 @@ expect(recordWeddingDeliveryResult(rendering, result, now).delivery).toMatchObje
 expect(confirmWeddingDelivery(unverified, now)).toBe(unverified);
 ```
 
-- [ ] **Step 2: Implement render through existing task**
+- [x] **Step 2: Implement render through existing task**
 
 Use `beginLocalExecutorSession`, `runOwnedTimelineRender`, and the current `project.timeline`. Persist task ID while rendering and result resource ID on completion.
 
-- [ ] **Step 3: Implement playable verification**
+- [x] **Step 3: Implement playable verification**
 
 `verifyWeddingDeliveryPlayable` requires positive `durationMs` and `videoWidth/videoHeight`. Persist `playableVerifiedAt`.
 
-- [ ] **Step 4: Implement manifest**
+- [x] **Step 4: Implement manifest**
 
 Export JSON containing source photo nodes, dynasty video versions, prompt overrides, scene/video QC, title/BGM resources, render task ID and final resource ID.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 ```powershell
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-delivery-runtime.test.ts test/wedding-delivery.test.ts
@@ -266,7 +266,7 @@ git commit -m "feat(wedding-workbench): 跨时空婚礼电影 - 接入成片渲�
 **Interfaces:**
 - Produces `DeliveryStage` with render progress, MP4 player, playable verification, QC summary, download, manifest export and final confirmation.
 
-- [ ] **Step 1: Write failing render test**
+- [x] **Step 1: Write failing render test**
 
 ```ts
 expect(html).toContain("正式成片");
@@ -276,15 +276,15 @@ expect(html).toContain("下载 MP4");
 expect(html).toContain("导出工程清单");
 ```
 
-- [ ] **Step 2: Implement UI**
+- [x] **Step 2: Implement UI**
 
 Use `resourceFileUrl(resourceId)` for preview/download. Require `playableVerifiedAt` before final confirmation. Keep partial timeline and task IDs visible on render failure.
 
-- [ ] **Step 3: Wire workbench**
+- [x] **Step 3: Wire workbench**
 
 Submit render, subscribe task progress, verify video metadata from the rendered resource, persist delivery state, download MP4 and export manifest.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 ```powershell
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-delivery-stage.test.tsx test/wedding-workbench.browser.test.ts
@@ -297,8 +297,8 @@ git commit -m "feat(wedding-workbench): 跨时空婚礼电影 - 新增成片交�
 
 ### Task 6: 全流程验收
 
-- [ ] Run all `wedding-*.test.*` files.
-- [ ] Run `bun run typecheck`, `bun run lint` and `bun run build`.
-- [ ] Run Playwright at `1440x960` and `390x900`; verify all seven stages are reachable and have no horizontal overflow.
-- [ ] Update the spec status from “待实施” to “七阶段完整执行链已完成”.
-- [ ] Commit verification docs.
+- [x] Run all `wedding-*.test.*` files.
+- [x] Run `bun run typecheck`, `bun run lint` and `bun run build`.
+- [x] Run Playwright at `1440x960` and `390x900`; verify all seven stages are reachable and have no horizontal overflow.
+- [x] Update the spec status from “待实施” to “七阶段完整执行链已完成”.
+- [x] Commit verification docs.

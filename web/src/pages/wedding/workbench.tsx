@@ -54,6 +54,16 @@ import {
     uploadWeddingBgm,
 } from "@/services/wedding-packaging-generation";
 import { useAssetStore } from "@/stores/use-asset-store";
+import { DeliveryStage } from "@/pages/wedding/delivery-stage";
+import {
+    confirmWeddingDelivery,
+    verifyWeddingDeliveryPlayable,
+} from "@/lib/wedding/delivery-runtime";
+import {
+    renderWeddingDelivery,
+    weddingDeliveryManifest,
+} from "@/services/wedding-delivery";
+import { resourceFileUrl } from "@/services/api/resources";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import type { GenerationTask } from "@/services/api/task-center";
 import { nanoid } from "nanoid";
@@ -87,6 +97,7 @@ export function WeddingWorkbenchSurface({
     const [videoTasks, setVideoTasks] = useState<Record<string, GenerationTask>>({});
     const [packagingRunning, setPackagingRunning] = useState(false);
     const [bgmTask, setBgmTask] = useState<GenerationTask>();
+    const [deliveryTask, setDeliveryTask] = useState<GenerationTask>();
     const effectiveConfig = useEffectiveConfig();
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const backfillStartedRef = useRef("");
@@ -908,6 +919,100 @@ export function WeddingWorkbenchSurface({
         }
     };
 
+    const renderDelivery = async () => {
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        if (!latestProject.timeline?.clips.length) {
+            setStageFeedback("请先在包装阶段构建并确认时间线。");
+            return;
+        }
+        setStageSaving(true);
+        setStageFeedback("");
+        try {
+            const result = await renderWeddingDelivery({
+                projectId: latestProject.id,
+                production: latestProduction,
+                timeline: latestProject.timeline,
+                clientOperationId: crypto.randomUUID(),
+                onTaskUpdate: setDeliveryTask,
+            });
+            setStageFeedback(`正式成片已渲染：${result.fileName || result.resourceId}`);
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "正式成片渲染失败");
+        } finally {
+            setStageSaving(false);
+        }
+    };
+
+    const verifyDeliveryPlayable = async () => {
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        const resourceId = latestProduction.delivery?.resourceId;
+        if (!resourceId) {
+            setStageFeedback("尚无可验证的成片资源。");
+            return;
+        }
+        setStageSaving(true);
+        setStageFeedback("");
+        try {
+            const metadata = await new Promise<{ durationMs: number; videoWidth: number; videoHeight: number }>((resolve, reject) => {
+                const video = document.createElement("video");
+                video.preload = "metadata";
+                video.onloadedmetadata = () => resolve({
+                    durationMs: Math.round(video.duration * 1000),
+                    videoWidth: video.videoWidth,
+                    videoHeight: video.videoHeight,
+                });
+                video.onerror = () => reject(new Error("成片无法加载或已损坏"));
+                video.src = resourceFileUrl(resourceId);
+            });
+            const next = verifyWeddingDeliveryPlayable(
+                latestProduction,
+                metadata,
+                new Date().toISOString(),
+            );
+            if (next === latestProduction) throw new Error("成片缺少有效时长或画面尺寸");
+            await persistCanvasDocument(project.id, { weddingProduction: next });
+            setStageFeedback(`成片可播放：${Math.round(metadata.durationMs / 1000)} 秒，${metadata.videoWidth}×${metadata.videoHeight}。`);
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "成片可播放验证失败");
+        } finally {
+            setStageSaving(false);
+        }
+    };
+
+    const confirmDelivery = async () => {
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        const next = confirmWeddingDelivery(latestProduction, new Date().toISOString());
+        if (next === latestProduction) {
+            setStageFeedback("成片尚未通过可播放验证，不能完成最终确认。");
+            return;
+        }
+        setStageSaving(true);
+        try {
+            await persistCanvasDocument(project.id, { weddingProduction: next });
+            setStageFeedback("最终成片已确认并完成交付。");
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "最终成片确认失败");
+        } finally {
+            setStageSaving(false);
+        }
+    };
+
+    const exportDeliveryManifest = () => {
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        const blob = new Blob([weddingDeliveryManifest(latestProduction)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = `${latestProject.title || "cross-era-wedding"}-manifest.json`;
+        anchor.click();
+        URL.revokeObjectURL(url);
+        setStageFeedback("工程清单已导出。");
+    };
+
     return (
         <main className={`wedding-workbench ${embedded ? "wedding-workbench-embedded" : ""}`}>
             <aside className="wedding-workbench-rail">
@@ -1034,6 +1139,17 @@ export function WeddingWorkbenchSurface({
                         onUploadBgm={uploadPackagingBgm}
                         onBuildTimeline={buildPackagingTimeline}
                         onApprove={approvePackaging}
+                    />
+                ) : resolvedStage === "delivery" ? (
+                    <DeliveryStage
+                        production={production}
+                        renderTask={deliveryTask}
+                        saving={stageSaving}
+                        feedback={stageFeedback}
+                        onRender={renderDelivery}
+                        onVerify={verifyDeliveryPlayable}
+                        onConfirm={confirmDelivery}
+                        onExportManifest={exportDeliveryManifest}
                     />
                 ) : (
                 <div className="wedding-workbench-grid">

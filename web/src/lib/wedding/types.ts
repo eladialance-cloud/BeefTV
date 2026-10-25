@@ -143,6 +143,32 @@ export type WeddingActivityEvent = {
     createdAt: string;
 };
 
+export type WeddingDeliveryResult = {
+    resourceId: string;
+    fileName?: string;
+    durationMs?: number;
+    size?: number;
+    subtitleSrt?: string;
+};
+
+export type WeddingDeliveryState = {
+    status: "not_started" | "rendering" | "needs_review" | "approved" | "failed" | "stale";
+    taskId?: string;
+    resourceId?: string;
+    fileName?: string;
+    durationMs?: number;
+    size?: number;
+    error?: string;
+    playableVerifiedAt?: string;
+    qc?: {
+        durationMs: number;
+        width: number;
+        height: number;
+        checkedAt: string;
+    };
+    approvedAt?: string;
+};
+
 export type WeddingProductionState = {
     schemaVersion: 1;
     template: { id: string; key: string; version: string };
@@ -160,5 +186,6 @@ export type WeddingProductionState = {
     };
     dynasties: WeddingDynastyState[];
     packaging: WeddingPackagingState;
+    delivery?: WeddingDeliveryState;
     activity: WeddingActivityEvent[];
 };

@@ -316,6 +316,41 @@ test("packaging stage renders titles, BGM and a real timeline preview", async ()
     await page.close();
 }, 30000);
 
+test("delivery stage renders final output controls and all seven stages are reachable", async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto(new URL("/wedding/c1", server.url).toString());
+
+    const navigation = page.getByRole("navigation", { name: "婚礼制作阶段" });
+    await navigation.waitFor();
+    expect(await navigation.getByRole("button").count()).toBe(7);
+    await navigation.getByRole("button", { name: /成片交付/ }).click();
+    await page.getByRole("heading", { name: "成片交付", exact: true }).waitFor();
+    await page.getByText("正式成片", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "渲染成片" }).waitFor();
+    await page.getByRole("button", { name: "验证可播放" }).waitFor();
+    await page.getByText("下载 MP4", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "导出工程清单" }).waitFor();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({
+        path: "D:/画布/BeefTV/build/wedding-delivery-stage-1440.png",
+        fullPage: true,
+    });
+    await page.getByRole("button", { name: "渲染成片" }).click();
+    await page.getByRole("paragraph").filter({ hasText: "请先在包装阶段构建并确认时间线。" }).waitFor();
+
+    await page.setViewportSize({ width: 390, height: 900 });
+    await page.waitForTimeout(100);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({
+        path: "D:/画布/BeefTV/build/wedding-delivery-stage-390.png",
+        fullPage: true,
+    });
+    expect(errors).toEqual([]);
+    await page.close();
+}, 30000);
+
 test("an existing cross-era canvas backfills production state in the dedicated workbench", async () => {
     const currentProduction = project.weddingProduction as {
         source: Record<string, unknown>;
