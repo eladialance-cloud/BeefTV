@@ -127,7 +127,7 @@ D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-routing.test
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe run typecheck
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 cd D:\画布\BeefTV
@@ -361,7 +361,7 @@ git commit -m "feat(wedding-workbench): 跨时空婚礼电影 - 接入定妆照�
 - Consumes: completed dedicated workbench through portrait stage.
 - Produces: implementation plan for scenes, video, packaging and delivery.
 
-- [ ] **Step 1: Verify first-stage coverage**
+- [x] **Step 1: Verify first-stage coverage**
 
 Verify:
 
@@ -371,7 +371,7 @@ Verify:
 - Dynasties can be ordered, added and removed.
 - Portraits call real tasks and materialize assets.
 
-- [ ] **Step 2: Run first-stage suite**
+- [x] **Step 2: Run first-stage suite**
 
 ```powershell
 cd D:\画布\BeefTV\web
@@ -380,7 +380,7 @@ D:\画布\_tools\bun\node_modules\bun\bin\bun.exe run typecheck
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe run lint
 ```
 
-- [ ] **Step 3: Write the scenes/video plan**
+- [x] **Step 3: Write the scenes/video plan**
 
 Create the next plan with explicit tasks for:
 
