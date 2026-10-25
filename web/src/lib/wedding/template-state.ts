@@ -21,6 +21,7 @@ type TemplateVariables = {
     dynasties?: unknown;
     ratio?: unknown;
     resolution?: unknown;
+    duration?: unknown;
     consentConfirmed?: unknown;
 };
 
@@ -131,6 +132,7 @@ function buildWeddingProductionState(input: {
             consentConfirmed: variables.consentConfirmed === true,
             ratio: text(variables.ratio) || "16:9",
             resolution: text(variables.resolution) || "720p",
+            durationSeconds: Number(variables.duration) || 8,
         },
         dynasties,
         now,

@@ -82,6 +82,7 @@ tang.qc.scene = {
 };
 tang.statuses.scene = "approved";
 tang.promptOverride = "PRODUCER EDITED VIDEO PROMPT";
+production.source.durationSeconds = 12;
 
 test("generates video from confirmed portraits and scene with producer prompt override", async () => {
     const nodes: CanvasNodeData[] = [{
@@ -238,6 +239,9 @@ test("generates video from confirmed portraits and scene with producer prompt ov
             { id: "asset-female", storageKey: "resource:female" },
             { id: "asset-scene", storageKey: "resource:scene" },
         ],
+        config: {
+            videoSeconds: "12",
+        },
         metadata: {
             source: "wedding-workbench",
             stage: "videos",

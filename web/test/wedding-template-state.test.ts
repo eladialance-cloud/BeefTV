@@ -34,6 +34,7 @@ test("maps selected dynasty nodes into production state", () => {
             dynasties: ["tang", "ming"],
             ratio: "16:9",
             resolution: "720p",
+            duration: 12,
             consentConfirmed: true,
         },
         [
@@ -67,6 +68,7 @@ test("maps selected dynasty nodes into production state", () => {
         consentConfirmed: true,
         ratio: "16:9",
         resolution: "720p",
+        durationSeconds: 12,
     });
     expect(state.dynasties.map((dynasty) => ({ id: dynasty.id, name: dynasty.name }))).toEqual([
         { id: "tang", name: "唐" },

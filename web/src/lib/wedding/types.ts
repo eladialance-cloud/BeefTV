@@ -192,6 +192,7 @@ export type WeddingProductionState = {
         consentConfirmed: boolean;
         ratio: string;
         resolution: string;
+        durationSeconds?: number;
     };
     dynasties: WeddingDynastyState[];
     models?: WeddingModelSelection;

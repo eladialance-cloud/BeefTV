@@ -18,6 +18,7 @@ import { VideoPromptInspector } from "@/pages/wedding/video-prompt-inspector";
 import { WorkbenchStageRail, weddingStageLabels, weddingStatusLabels } from "@/pages/wedding/workbench-stage-rail";
 import { WorkbenchTopBar } from "@/pages/wedding/workbench-top-bar";
 import { buildWeddingProductionFromCanvasNodes } from "@/lib/wedding/template-state";
+import { syncWeddingVideoDurationNodes } from "@/lib/wedding/duration-state";
 import { SetupStage } from "@/pages/wedding/setup-stage";
 import { DynastyStage } from "@/pages/wedding/dynasty-stage";
 import { addWeddingDynastyState, setWeddingDynasties } from "@/lib/wedding/dynasty-state";
@@ -195,6 +196,7 @@ export function WeddingWorkbenchSurface({
         dynasties: production.dynasties.map((dynasty) => dynasty.id),
         ratio: production.source.ratio,
         resolution: production.source.resolution,
+        duration: production.source.durationSeconds || 8,
         consentConfirmed: production.source.consentConfirmed,
     } : {}, [production]);
     const runtimeConfig = useMemo(
@@ -275,7 +277,13 @@ export function WeddingWorkbenchSurface({
         setStageFeedback("");
         try {
             const next = updateWeddingSource(production, patch, new Date().toISOString());
-            await persistCanvasDocument(project.id, { weddingProduction: next });
+            const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+            const nodes = syncWeddingVideoDurationNodes(
+                latestProject.nodes,
+                next,
+                next.source.durationSeconds || 8,
+            );
+            await persistCanvasDocument(project.id, { nodes, weddingProduction: next });
             setStageFeedback(next === production ? "项目设定没有变化。" : "项目设定已保存。");
         } catch (error) {
             setStageFeedback(error instanceof Error ? error.message : "项目设定保存失败");
@@ -348,7 +356,12 @@ export function WeddingWorkbenchSurface({
                 return;
             }
             const nextStage = activateNextStage(approved, "setup");
-            await persistCanvasDocument(project.id, { weddingProduction: approved });
+            const nodes = syncWeddingVideoDurationNodes(
+                latestProject.nodes,
+                approved,
+                approved.source.durationSeconds || 8,
+            );
+            await persistCanvasDocument(project.id, { nodes, weddingProduction: approved });
             setStageFeedback("项目设定已确认，可以进入朝代规划。");
             if (nextStage) setActiveStage(nextStage);
         } catch (error) {

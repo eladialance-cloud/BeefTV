@@ -61,6 +61,21 @@ test("changing output settings preserves portraits but invalidates scenes and vi
     expect(changed.dynasties[0]?.statuses.video).toBe("stale");
 });
 
+test("changing duration invalidates videos without regenerating scenes", () => {
+    const changed = updateWeddingSource(
+        base,
+        { durationSeconds: 12 },
+        "2026-10-25T01:00:00.000Z",
+    );
+
+    expect(changed.source.durationSeconds).toBe(12);
+    expect(changed.dynasties[0]?.statuses.scene).toBe(base.dynasties[0]?.statuses.scene);
+    expect(changed.dynasties[0]?.statuses.video).toBe("stale");
+    expect(changed.stages.videos.status).toBe("stale");
+    expect(changed.stages.packaging.status).toBe("stale");
+    expect(changed.stages.delivery.status).toBe("stale");
+});
+
 test("unchanged source values keep the original state reference", () => {
     expect(updateWeddingSource(
         base,

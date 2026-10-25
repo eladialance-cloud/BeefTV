@@ -16,6 +16,7 @@ export function updateWeddingSource(
     next.source = { ...next.source, ...patch };
     const photoChanged = changedFields.some(([key]) => key === "groomPhotoNodeId" || key === "bridePhotoNodeId");
     const outputChanged = changedFields.some(([key]) => key === "story" || key === "ratio" || key === "resolution");
+    const durationChanged = changedFields.some(([key]) => key === "durationSeconds");
 
     if (photoChanged) {
         for (const dynasty of next.dynasties) {
@@ -30,6 +31,9 @@ export function updateWeddingSource(
             dynasty.statuses.video = "stale";
         }
         markStagesStale(next, ["scenes", "videos", "packaging", "delivery"]);
+    } else if (durationChanged) {
+        for (const dynasty of next.dynasties) dynasty.statuses.video = "stale";
+        markStagesStale(next, ["videos", "packaging", "delivery"]);
     }
 
     next.activity.push({
@@ -142,6 +146,7 @@ function setupFieldLabel(key: string) {
         consentConfirmed: "照片授权",
         ratio: "画幅",
         resolution: "分辨率",
+        durationSeconds: "每朝代时长",
     };
     return labels[key] || key;
 }

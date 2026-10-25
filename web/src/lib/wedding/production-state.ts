@@ -59,6 +59,7 @@ export function createWeddingProductionState(input: CreateWeddingProductionInput
             ...input.source,
             groomPhotoReady: input.source.groomPhotoReady ?? Boolean(input.source.groomPhotoNodeId),
             bridePhotoReady: input.source.bridePhotoReady ?? Boolean(input.source.bridePhotoNodeId),
+            durationSeconds: normalizeWeddingDuration(input.source.durationSeconds),
         },
         dynasties,
         packaging: {
@@ -277,4 +278,9 @@ function invalidationLabel(from: "portrait" | "scene" | "video" | "prompt") {
     if (from === "scene") return "场景首帧";
     if (from === "prompt") return "视频提示词";
     return "视频版本";
+}
+
+function normalizeWeddingDuration(value: number | undefined) {
+    const duration = Math.round(Number(value));
+    return [4, 5, 6, 8, 10, 12, 15].includes(duration) ? duration : 8;
 }

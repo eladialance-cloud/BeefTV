@@ -349,6 +349,20 @@ test("setup stage exposes direct photo uploads and the workspace scrolls vertica
                 height: 240,
                 metadata: { uploadField: "bridePhoto" },
             },
+            {
+                id: "video",
+                type: "video",
+                title: "唐 · 朝代视频",
+                position: { x: 680, y: 0 },
+                width: 320,
+                height: 240,
+                metadata: {
+                    seconds: "8",
+                    pluginData: {
+                        creationTemplateVariables: { duration: 8 },
+                    },
+                },
+            },
         ],
         weddingProduction: {
             ...current,
@@ -394,8 +408,26 @@ test("setup stage exposes direct photo uploads and the workspace scrolls vertica
     await page.getByRole("checkbox", { name: "照片使用授权已确认，仅用于当前订单" }).check();
     await page.getByText("照片授权尚未确认").waitFor({ state: "hidden" });
     await page.getByText("当前项目设定可以确认").waitFor();
+    await page.getByRole("button", { name: "12 秒", exact: true }).click();
     await page.getByRole("button", { name: "确认项目设定" }).click();
     await page.getByRole("heading", { name: "朝代规划", exact: true }).waitFor();
+    const savedProject = project as {
+        nodes: Array<{
+            id: string;
+            metadata?: {
+                seconds?: string;
+                pluginData?: { creationTemplateVariables?: { duration?: number } };
+            };
+        }>;
+        weddingProduction?: { source?: { durationSeconds?: number } };
+    };
+    expect(savedProject.weddingProduction?.source?.durationSeconds).toBe(12);
+    expect(savedProject.nodes.find((node) => node.id === "video")?.metadata).toMatchObject({
+        seconds: "12",
+        pluginData: {
+            creationTemplateVariables: { duration: 12 },
+        },
+    });
     await page.screenshot({
         path: "D:/画布/BeefTV/build/wedding-setup-photo-upload-1280.png",
         fullPage: true,

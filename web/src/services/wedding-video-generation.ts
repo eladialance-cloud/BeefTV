@@ -259,7 +259,10 @@ async function generateWeddingVideoJob(
     const taskCommits: Promise<void>[] = [];
     let initialTaskPersisted = false;
     let completedTask: GenerationTask | undefined;
-    const config = buildGenerationConfig(runtime.config, target, "video");
+    const config = {
+        ...buildGenerationConfig(runtime.config, target, "video"),
+        videoSeconds: String(project.weddingProduction.source.durationSeconds || 8),
+    };
 
     await dependencies.runTask({
         projectId: runtime.projectId,

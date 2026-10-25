@@ -123,6 +123,21 @@ export function SetupStage({
                         ))}
                     </div>
                 </div>
+                <div className="wedding-setup-choice">
+                    <span>每朝代时长</span>
+                    <div>
+                        {[4, 5, 6, 8, 10, 12, 15].map((value) => (
+                            <button
+                                key={value}
+                                type="button"
+                                className={(draft.durationSeconds || 8) === value ? "is-selected" : ""}
+                                onClick={() => update("durationSeconds", value)}
+                            >
+                                {value} 秒
+                            </button>
+                        ))}
+                    </div>
+                </div>
                 {blockers.length ? (
                     <div className="wedding-stage-blockers">
                         {blockers.map((blocker) => <span key={blocker}>{blocker}</span>)}
