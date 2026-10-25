@@ -121,6 +121,7 @@ export type WeddingPackagingState = {
     bgmNodeId?: string;
     titleCardNodeIds: string[];
     timelineRevision?: number;
+    previewReadyAt?: string;
     outputNodeId?: string;
     approvedAt?: string;
 };
