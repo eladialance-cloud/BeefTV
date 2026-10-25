@@ -4,6 +4,7 @@ import {
     approveWeddingStage,
     createWeddingProductionState,
     invalidateWeddingDynasty,
+    nextWeddingStage,
     weddingStageBlockers,
 } from "@/lib/wedding/production-state";
 
@@ -32,6 +33,16 @@ const input = {
 };
 
 describe("wedding production state", () => {
+    test("maps every production stage to the next stage", () => {
+        expect(nextWeddingStage("setup")).toBe("dynasties");
+        expect(nextWeddingStage("dynasties")).toBe("portraits");
+        expect(nextWeddingStage("portraits")).toBe("scenes");
+        expect(nextWeddingStage("scenes")).toBe("videos");
+        expect(nextWeddingStage("videos")).toBe("packaging");
+        expect(nextWeddingStage("packaging")).toBe("delivery");
+        expect(nextWeddingStage("delivery")).toBeUndefined();
+    });
+
     test("creates seven stages and ordered dynasties", () => {
         const state = createWeddingProductionState(input);
 

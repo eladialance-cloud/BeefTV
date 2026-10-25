@@ -19,6 +19,11 @@ export type CreateWeddingProductionInput = {
 
 const READY_ITEM_STATUSES = new Set<WeddingItemStatus>(["ready", "approved"]);
 
+export function nextWeddingStage(stage: WeddingStageId): WeddingStageId | undefined {
+    const index = WEDDING_STAGE_IDS.indexOf(stage);
+    return index >= 0 ? WEDDING_STAGE_IDS[index + 1] : undefined;
+}
+
 export function createWeddingProductionState(input: CreateWeddingProductionInput): WeddingProductionState {
     const stageTimestamp = input.now;
     const hasDynasties = input.dynasties.length > 0;

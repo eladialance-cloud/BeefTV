@@ -353,6 +353,8 @@ test("setup stage exposes direct photo uploads and the workspace scrolls vertica
     await page.getByRole("checkbox", { name: "照片使用授权已确认，仅用于当前订单" }).check();
     await page.getByText("照片授权尚未确认").waitFor({ state: "hidden" });
     await page.getByText("当前项目设定可以确认").waitFor();
+    await page.getByRole("button", { name: "确认项目设定" }).click();
+    await page.getByRole("heading", { name: "朝代规划", exact: true }).waitFor();
     await page.screenshot({
         path: "D:/画布/BeefTV/build/wedding-setup-photo-upload-1280.png",
         fullPage: true,

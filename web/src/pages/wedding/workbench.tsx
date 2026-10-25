@@ -21,7 +21,10 @@ import { buildWeddingProductionFromCanvasNodes } from "@/lib/wedding/template-st
 import { SetupStage } from "@/pages/wedding/setup-stage";
 import { DynastyStage } from "@/pages/wedding/dynasty-stage";
 import { addWeddingDynastyState, setWeddingDynasties } from "@/lib/wedding/dynasty-state";
-import { approveWeddingStage } from "@/lib/wedding/production-state";
+import {
+    approveWeddingStage,
+    nextWeddingStage,
+} from "@/lib/wedding/production-state";
 import { PortraitStage } from "@/pages/wedding/portrait-stage";
 import {
     confirmWeddingPortrait,
@@ -317,14 +320,18 @@ export function WeddingWorkbenchSurface({
         setStageSaving(true);
         setStageFeedback("");
         try {
-            const updated = updateWeddingSource(production, patch, new Date().toISOString());
+            const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+            const latestProduction = latestProject.weddingProduction || production;
+            const updated = updateWeddingSource(latestProduction, patch, new Date().toISOString());
             const approved = approveWeddingSetup(updated, new Date().toISOString());
             if (approved === updated) {
                 setStageFeedback("请先补齐照片、称呼和授权信息。");
                 return;
             }
+            const nextStage = activateNextStage(approved, "setup");
             await persistCanvasDocument(project.id, { weddingProduction: approved });
             setStageFeedback("项目设定已确认，可以进入朝代规划。");
+            if (nextStage) setActiveStage(nextStage);
         } catch (error) {
             setStageFeedback(error instanceof Error ? error.message : "项目设定确认失败");
         } finally {
@@ -411,13 +418,17 @@ export function WeddingWorkbenchSurface({
         setStageSaving(true);
         setStageFeedback("");
         try {
-            const next = approveWeddingStage(production, "dynasties", new Date().toISOString());
-            if (next === production) {
+            const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+            const latestProduction = latestProject.weddingProduction || production;
+            const next = approveWeddingStage(latestProduction, "dynasties", new Date().toISOString());
+            if (next === latestProduction) {
                 setStageFeedback("请选择 2–5 个朝代后再确认。");
                 return;
             }
+            const nextStage = activateNextStage(next, "dynasties");
             await persistCanvasDocument(project.id, { weddingProduction: next });
             setStageFeedback("朝代规划已确认。");
+            if (nextStage) setActiveStage(nextStage);
         } catch (error) {
             setStageFeedback(error instanceof Error ? error.message : "朝代规划确认失败");
         } finally {
@@ -517,8 +528,10 @@ export function WeddingWorkbenchSurface({
         }
         setStageSaving(true);
         try {
+            const nextStage = activateNextStage(next, "portraits");
             await persistCanvasDocument(project.id, { weddingProduction: next });
             setStageFeedback("定妆照阶段已确认，可以进入场景首帧。");
+            if (nextStage) setActiveStage(nextStage);
         } catch (error) {
             setStageFeedback(error instanceof Error ? error.message : "定妆照阶段确认失败");
         } finally {
@@ -657,8 +670,10 @@ export function WeddingWorkbenchSurface({
         }
         setStageSaving(true);
         try {
+            const nextStage = activateNextStage(next, "scenes");
             await persistCanvasDocument(project.id, { weddingProduction: next });
             setStageFeedback("场景阶段已确认，可以进入视频导演。");
+            if (nextStage) setActiveStage(nextStage);
         } catch (error) {
             setStageFeedback(error instanceof Error ? error.message : "场景阶段确认失败");
         } finally {
@@ -797,8 +812,10 @@ export function WeddingWorkbenchSurface({
         }
         setStageSaving(true);
         try {
+            const nextStage = activateNextStage(next, "videos");
             await persistCanvasDocument(project.id, { weddingProduction: next });
             setStageFeedback("视频阶段已确认，可以进入包装制作。");
+            if (nextStage) setActiveStage(nextStage);
         } catch (error) {
             setStageFeedback(error instanceof Error ? error.message : "视频阶段确认失败");
         } finally {
@@ -985,8 +1002,10 @@ export function WeddingWorkbenchSurface({
         }
         setStageSaving(true);
         try {
+            const nextStage = activateNextStage(next, "packaging");
             await persistCanvasDocument(project.id, { weddingProduction: next });
             setStageFeedback("包装阶段已确认，可以进入成片交付。");
+            if (nextStage) setActiveStage(nextStage);
         } catch (error) {
             setStageFeedback(error instanceof Error ? error.message : "包装阶段确认失败");
         } finally {
@@ -1276,6 +1295,12 @@ export function WeddingWorkbenchSurface({
             </section>
         </main>
     );
+}
+
+function activateNextStage(state: WeddingProductionState, stage: WeddingStageId) {
+    const next = nextWeddingStage(stage);
+    if (next) state.activeStage = next;
+    return next;
 }
 
 export default function WeddingWorkbenchPage() {
