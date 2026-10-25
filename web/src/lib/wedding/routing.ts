@@ -17,6 +17,10 @@ export function legacyWeddingWorkbenchPath(canvasId: string) {
     return weddingWorkbenchCanvasPath(canvasId);
 }
 
+export function weddingModelsPath(canvasId: string) {
+    return `${weddingWorkbenchCanvasPath(canvasId)}/models`;
+}
+
 export function isWeddingCanvasView(search: string | URLSearchParams) {
     const params = typeof search === "string" ? new URLSearchParams(search) : search;
     return params.get("canvasView") === "wedding";

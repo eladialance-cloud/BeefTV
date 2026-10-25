@@ -1,6 +1,6 @@
 import { LoaderCircle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 
 import { openLocalCanvasProjectFromBackend, persistCanvasDocument } from "@/services/local-workspace-repository";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
@@ -74,6 +74,16 @@ import {
     weddingDeliveryManifest,
 } from "@/services/wedding-delivery";
 import { resourceFileUrl } from "@/services/api/resources";
+import {
+    weddingConfigWithModels,
+    weddingModelSelection,
+} from "@/lib/wedding/model-config";
+import type { WeddingModelSelection } from "@/lib/wedding/types";
+import {
+    weddingModelsPath,
+    weddingWorkbenchCanvasPath,
+} from "@/lib/wedding/routing";
+import { WeddingModelSelectionStage } from "@/pages/wedding/model-selection-stage";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import type { GenerationTask } from "@/services/api/task-center";
 import { nanoid } from "nanoid";
@@ -85,10 +95,12 @@ export function WeddingWorkbenchSurface({
     canvasId,
     embedded = false,
     productionOverride,
+    modelsMode = false,
 }: {
     canvasId: string;
     embedded?: boolean;
     productionOverride?: WeddingProductionState;
+    modelsMode?: boolean;
 }) {
     const project = useCanvasStore((state) => state.projects.find((item) => item.id === canvasId));
     const [loading, setLoading] = useState(!project);
@@ -109,7 +121,10 @@ export function WeddingWorkbenchSurface({
     const [bgmTask, setBgmTask] = useState<GenerationTask>();
     const [deliveryTask, setDeliveryTask] = useState<GenerationTask>();
     const [uploadingPhoto, setUploadingPhoto] = useState<"groom" | "bride" | "">("");
+    const [modelSaving, setModelSaving] = useState(false);
+    const [modelFeedback, setModelFeedback] = useState("");
     const effectiveConfig = useEffectiveConfig();
+    const navigate = useNavigate();
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const backfillStartedRef = useRef("");
     const photoRepairStartedRef = useRef("");
@@ -182,6 +197,10 @@ export function WeddingWorkbenchSurface({
         resolution: production.source.resolution,
         consentConfirmed: production.source.consentConfirmed,
     } : {}, [production]);
+    const runtimeConfig = useMemo(
+        () => production ? weddingConfigWithModels(effectiveConfig, production) : effectiveConfig,
+        [effectiveConfig, production],
+    );
 
     if (loading) {
         return (
@@ -437,8 +456,8 @@ export function WeddingWorkbenchSurface({
     };
 
     const generatePortraits = async (nodeIds: string[] = [], force = false) => {
-        const imageModel = effectiveConfig.imageModel || effectiveConfig.model;
-        if (!imageModel || !isAiConfigReady(effectiveConfig, imageModel)) {
+        const imageModel = runtimeConfig.imageModel || runtimeConfig.model;
+        if (!imageModel || !isAiConfigReady(runtimeConfig, imageModel)) {
             setStageFeedback("请先在模型设置中配置可用的图片模型。");
             return;
         }
@@ -450,7 +469,7 @@ export function WeddingWorkbenchSurface({
             const summary = await generateWeddingPortraits({
                 projectId: latestProject.id,
                 production: latestProduction,
-                config: effectiveConfig,
+                config: runtimeConfig,
                 onTaskUpdate: (job, task) => {
                     setPortraitTasks((current) => ({ ...current, [job.nodeId]: task }));
                 },
@@ -540,8 +559,8 @@ export function WeddingWorkbenchSurface({
     };
 
     const generateScenes = async (dynastyId?: string) => {
-        const imageModel = effectiveConfig.imageModel || effectiveConfig.model;
-        if (!imageModel || !isAiConfigReady(effectiveConfig, imageModel)) {
+        const imageModel = runtimeConfig.imageModel || runtimeConfig.model;
+        if (!imageModel || !isAiConfigReady(runtimeConfig, imageModel)) {
             setStageFeedback("请先在模型设置中配置可用的图片模型。");
             return;
         }
@@ -553,7 +572,7 @@ export function WeddingWorkbenchSurface({
             const summary = await generateWeddingScenes({
                 projectId: latestProject.id,
                 production: latestProduction,
-                config: effectiveConfig,
+                config: runtimeConfig,
                 onTaskUpdate: (job, task) => {
                     setSceneTasks((current) => ({ ...current, [job.nodeId]: task }));
                 },
@@ -575,8 +594,8 @@ export function WeddingWorkbenchSurface({
     };
 
     const runSceneQc = async (dynastyId: string) => {
-        const textModel = effectiveConfig.textModel || effectiveConfig.model;
-        if (!textModel || !isAiConfigReady(effectiveConfig, textModel)) {
+        const textModel = runtimeConfig.textModel || runtimeConfig.model;
+        if (!textModel || !isAiConfigReady(runtimeConfig, textModel)) {
             setStageFeedback("请先在模型设置中配置支持参考图检查的文本模型。");
             return;
         }
@@ -588,7 +607,7 @@ export function WeddingWorkbenchSurface({
             const qc = await runWeddingSceneQc({
                 projectId: latestProject.id,
                 production: latestProduction,
-                config: effectiveConfig,
+                config: runtimeConfig,
                 onTaskUpdate: (_dynastyId, task) => {
                     const dynasty = latestProduction.dynasties.find((item) => item.id === dynastyId);
                     if (!dynasty) return;
@@ -682,8 +701,8 @@ export function WeddingWorkbenchSurface({
     };
 
     const generateVideos = async (dynastyId?: string) => {
-        const videoModel = effectiveConfig.videoModel || effectiveConfig.model;
-        if (!videoModel || !isAiConfigReady(effectiveConfig, videoModel)) {
+        const videoModel = runtimeConfig.videoModel || runtimeConfig.model;
+        if (!videoModel || !isAiConfigReady(runtimeConfig, videoModel)) {
             setStageFeedback("请先在模型设置中配置可用的视频模型。");
             return;
         }
@@ -695,7 +714,7 @@ export function WeddingWorkbenchSurface({
             const summary = await generateWeddingVideos({
                 projectId: latestProject.id,
                 production: latestProduction,
-                config: effectiveConfig,
+                config: runtimeConfig,
                 onTaskUpdate: (job, task) => {
                     setVideoTasks((current) => ({ ...current, [job.nodeId]: task }));
                 },
@@ -717,8 +736,8 @@ export function WeddingWorkbenchSurface({
     };
 
     const runVideoQc = async (dynastyId: string) => {
-        const textModel = effectiveConfig.textModel || effectiveConfig.model;
-        if (!textModel || !isAiConfigReady(effectiveConfig, textModel)) {
+        const textModel = runtimeConfig.textModel || runtimeConfig.model;
+        if (!textModel || !isAiConfigReady(runtimeConfig, textModel)) {
             setStageFeedback("请先在模型设置中配置支持视频参考检查的文本模型。");
             return;
         }
@@ -730,7 +749,7 @@ export function WeddingWorkbenchSurface({
             const qc = await runWeddingVideoQc({
                 projectId: latestProject.id,
                 production: latestProduction,
-                config: effectiveConfig,
+                config: runtimeConfig,
                 onTaskUpdate: (_dynastyId, task) => {
                     const dynasty = latestProduction.dynasties.find((item) => item.id === dynastyId);
                     if (!dynasty) return;
@@ -847,7 +866,7 @@ export function WeddingWorkbenchSurface({
             await generateWeddingTitleCards({
                 projectId: latestProject.id,
                 production: latestProduction,
-                config: effectiveConfig,
+                config: runtimeConfig,
             });
             setStageFeedback("片头和片尾标题卡已生成并保存为图片资源。");
         } catch (error) {
@@ -858,8 +877,8 @@ export function WeddingWorkbenchSurface({
     };
 
     const generatePackagingBgm = async () => {
-        const audioModel = effectiveConfig.audioModel || effectiveConfig.model;
-        if (!audioModel || !isAiConfigReady(effectiveConfig, audioModel)) {
+        const audioModel = runtimeConfig.audioModel || runtimeConfig.model;
+        if (!audioModel || !isAiConfigReady(runtimeConfig, audioModel)) {
             setStageFeedback("请先在模型设置中配置可用的音频模型。");
             return;
         }
@@ -871,7 +890,7 @@ export function WeddingWorkbenchSurface({
             await generateWeddingBgm({
                 projectId: latestProject.id,
                 production: latestProduction,
-                config: effectiveConfig,
+                config: runtimeConfig,
                 onTaskUpdate: (_kind, task) => setBgmTask(task),
             });
             setStageFeedback("主题 BGM 已生成并写入时间线素材。");
@@ -891,7 +910,7 @@ export function WeddingWorkbenchSurface({
             await uploadWeddingBgm({
                 projectId: latestProject.id,
                 production: latestProduction,
-                config: effectiveConfig,
+                config: runtimeConfig,
             }, file);
             setStageFeedback("上传 BGM 已保存到画布音频节点。");
         } catch (error) {
@@ -1107,6 +1126,60 @@ export function WeddingWorkbenchSurface({
         setStageFeedback("工程清单已导出。");
     };
 
+    const saveWeddingModels = async (models: WeddingModelSelection) => {
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        setModelSaving(true);
+        setModelFeedback("");
+        try {
+            const next = {
+                ...structuredClone(latestProduction),
+                models,
+            };
+            await persistCanvasDocument(project.id, { weddingProduction: next });
+            setModelFeedback("模型选择已保存到当前婚礼项目。");
+            navigate(weddingWorkbenchCanvasPath(project.id));
+        } catch (error) {
+            setModelFeedback(error instanceof Error ? error.message : "模型选择保存失败");
+        } finally {
+            setModelSaving(false);
+        }
+    };
+
+    if (modelsMode) {
+        return (
+            <main className="wedding-workbench wedding-model-page">
+                <aside className="wedding-workbench-rail">
+                    <div className="wedding-workbench-brand">
+                        <span className="wedding-workbench-mark">V</span>
+                        <div>
+                            <strong>VisiDeep 制作台</strong>
+                            <small>跨时空婚礼电影</small>
+                        </div>
+                    </div>
+                    <div className="wedding-workbench-project">
+                        <small>当前项目</small>
+                        <strong>{project.title}</strong>
+                        <span>{production.source.maleName} × {production.source.femaleName}</span>
+                    </div>
+                    <Link className="wedding-model-back-link" to={weddingWorkbenchCanvasPath(project.id)}>
+                        返回七阶段制作
+                    </Link>
+                </aside>
+                <section className="wedding-workbench-workspace">
+                    <WeddingModelSelectionStage
+                        production={production}
+                        config={effectiveConfig}
+                        saving={modelSaving}
+                        feedback={modelFeedback}
+                        onSave={saveWeddingModels}
+                        onBack={() => navigate(weddingWorkbenchCanvasPath(project.id))}
+                    />
+                </section>
+            </main>
+        );
+    }
+
     return (
         <main className={`wedding-workbench ${embedded ? "wedding-workbench-embedded" : ""}`}>
             <aside className="wedding-workbench-rail">
@@ -1130,7 +1203,13 @@ export function WeddingWorkbenchSurface({
             </aside>
 
             <section className="wedding-workbench-workspace">
-                {embedded ? null : <WorkbenchTopBar canvasId={project.id} stageLabel={weddingStageLabels[resolvedStage]} />}
+                {embedded ? null : (
+                    <WorkbenchTopBar
+                        canvasId={project.id}
+                        stageLabel={weddingStageLabels[resolvedStage]}
+                        modelsHref={weddingModelsPath(project.id)}
+                    />
+                )}
 
                 <div className="wedding-workbench-heading">
                     <div>
@@ -1305,5 +1384,6 @@ function activateNextStage(state: WeddingProductionState, stage: WeddingStageId)
 
 export default function WeddingWorkbenchPage() {
     const { canvasId = "" } = useParams();
-    return <WeddingWorkbenchSurface canvasId={canvasId} />;
+    const { pathname } = useLocation();
+    return <WeddingWorkbenchSurface canvasId={canvasId} modelsMode={pathname.endsWith("/models")} />;
 }

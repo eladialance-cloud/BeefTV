@@ -137,6 +137,7 @@ export const router = createWorkspaceRouter([
             { path: "/canvas", element: deferred(<CanvasPage />) },
             { path: "/canvas/:id", element: <CanvasProjectPage /> },
             { path: "/wedding/:canvasId", element: deferred(<WeddingWorkbenchPage />) },
+              { path: "/wedding/:canvasId/models", element: deferred(<WeddingWorkbenchPage />) },
         ],
     },
     { path: "*", element: fullScreenDeferred(<NotFound />) },

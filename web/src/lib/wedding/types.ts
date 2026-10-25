@@ -169,6 +169,13 @@ export type WeddingDeliveryState = {
     approvedAt?: string;
 };
 
+export type WeddingModelSelection = {
+    imageModel: string;
+    videoModel: string;
+    textModel: string;
+    audioModel: string;
+};
+
 export type WeddingProductionState = {
     schemaVersion: 1;
     template: { id: string; key: string; version: string };
@@ -187,6 +194,7 @@ export type WeddingProductionState = {
         resolution: string;
     };
     dynasties: WeddingDynastyState[];
+    models?: WeddingModelSelection;
     packaging: WeddingPackagingState;
     delivery?: WeddingDeliveryState;
     activity: WeddingActivityEvent[];

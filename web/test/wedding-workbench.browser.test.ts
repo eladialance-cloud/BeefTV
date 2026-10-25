@@ -281,6 +281,47 @@ test("portrait stage renders the real production board without horizontal overfl
     await page.close();
 }, 30000);
 
+test("producer can select project models and return to the current stage", async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+    await page.goto(new URL("/wedding/c1", server.url).toString());
+    await page.getByRole("link", { name: "模型选择" }).waitFor();
+
+    await page.goto(new URL("/wedding/c1/models", server.url).toString());
+    await page.getByRole("heading", { name: "模型选择", exact: true }).waitFor();
+    await page.getByText("图片生成模型", { exact: true }).waitFor();
+    await page.getByText("视频生成模型", { exact: true }).waitFor();
+    await page.getByText("视觉质检模型", { exact: true }).waitFor();
+    await page.getByText("BGM 音频模型", { exact: true }).waitFor();
+    await page.getByText("推荐模型表", { exact: true }).waitFor();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({
+        path: "D:/画布/BeefTV/build/wedding-model-selection-1440.png",
+        fullPage: true,
+    });
+
+    await page.getByRole("button", { name: "保存模型并返回" }).click();
+    await page.getByRole("heading", { name: "视频导演", exact: true }).waitFor();
+    const saved = project.weddingProduction as {
+        models?: Record<string, string>;
+    };
+    expect(saved.models).toEqual({
+        imageModel: "beefapi::doubao-seedream-5-0",
+        videoModel: "beefapi::seedance-2.5",
+        textModel: "beefapi::gemini-3.8-flash",
+        audioModel: "beefapi::music-generation",
+    });
+
+    await page.setViewportSize({ width: 390, height: 900 });
+    await page.goto(new URL("/wedding/c1/models", server.url).toString());
+    await page.getByRole("heading", { name: "模型选择", exact: true }).waitFor();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({
+        path: "D:/画布/BeefTV/build/wedding-model-selection-390.png",
+        fullPage: true,
+    });
+    await page.close();
+}, 30000);
+
 test("setup stage exposes direct photo uploads and the workspace scrolls vertically", async () => {
     const current = project.weddingProduction as {
         source: Record<string, unknown>;

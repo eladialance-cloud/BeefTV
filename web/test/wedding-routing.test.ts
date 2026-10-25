@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
     legacyWeddingWorkbenchPath,
+    weddingModelsPath,
     weddingTemplateInitialVariables,
     weddingWorkbenchPathForTemplate,
 } from "@/lib/wedding/routing";
@@ -31,6 +32,10 @@ describe("wedding workbench routing", () => {
     test("legacy wedding route maps back to the canvas workbench view", () => {
         expect(legacyWeddingWorkbenchPath("a/b"))
             .toBe("/wedding/a%2Fb");
+    });
+
+    test("opens the dedicated wedding model selection page", () => {
+        expect(weddingModelsPath("a/b")).toBe("/wedding/a%2Fb/models");
     });
 
     test("cross-era wedding creation starts with template defaults and no entry form", () => {
