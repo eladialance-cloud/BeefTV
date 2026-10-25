@@ -225,7 +225,7 @@ git commit -m "feat(wedding-workbench): 跨时空婚礼电影 - 接入场景生�
   - `applyWeddingSceneQc(state, dynastyId, qc, now)`
   - `overrideWeddingSceneQc(state, dynastyId, reason, now)`
 
-- [ ] **Step 1: Write failing parser and override tests**
+- [x] **Step 1: Write failing parser and override tests**
 
 ```ts
 test("parses a strict scene QC payload", () => {
@@ -248,7 +248,7 @@ test("scene override requires a concrete reason", () => {
 });
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```powershell
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-scene-qc.test.ts
@@ -256,7 +256,7 @@ D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-scene-qc.tes
 
 Expected: FAIL because the module is missing.
 
-- [ ] **Step 3: Implement QC**
+- [x] **Step 3: Implement QC**
 
 Build a JSON-only prompt containing the dynastic scene, selected portraits, and required boolean fields. Run a `mode: "text"` backend task with all three reference images and metadata:
 
@@ -271,14 +271,14 @@ Build a JSON-only prompt containing the dynastic scene, selected portraits, and 
 
 Persist `qc.scene` with `applyWeddingSceneQc`. The UI must show parser/model errors as `verdict: "error"` and require an explicit override reason; never translate an error into pass.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 ```powershell
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-scene-qc.test.ts test/wedding-scene-generation.test.ts
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe run typecheck
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add web/src/lib/wedding/scene-qc.ts web/src/services/wedding-scene-generation.ts web/test/wedding-scene-qc.test.ts

@@ -11,6 +11,7 @@ import type {
     WeddingGenerationAsset,
     WeddingGenerationSummary,
 } from "@/lib/wedding/generation-runtime";
+import { weddingImageReference as makeWeddingImageReference } from "@/lib/wedding/generation-runtime";
 import {
     failWeddingSceneGeneration,
     markWeddingSceneGenerating,
@@ -23,6 +24,12 @@ import type {
     WeddingPortraitGender,
     WeddingProductionState,
 } from "@/lib/wedding/types";
+import {
+    applyWeddingSceneQc,
+    errorWeddingSceneQc,
+    parseWeddingSceneQc,
+    sceneQcPrompt,
+} from "@/lib/wedding/scene-qc";
 import { persistCanvasDocument } from "@/services/local-workspace-repository";
 import { consumeGenerationTaskNode } from "@/services/project-asset-sync";
 import { runBackendGenerationTask, type BackendGenerationResult } from "@/services/api/generation-task";
@@ -71,6 +78,23 @@ export type WeddingSceneGenerationDependencies = {
     ) => Promise<GenerationTask>;
     getAsset?: (assetId: string) => WeddingGenerationAsset | undefined;
 };
+
+export type WeddingSceneQcRuntime = {
+    projectId: string;
+    production: WeddingProductionState;
+    config: AiConfig;
+    signal?: AbortSignal;
+    onTaskUpdate?: (dynastyId: string, task: GenerationTask) => void;
+};
+
+export type WeddingSceneQcOptions = {
+    dependencies?: WeddingSceneQcDependencies;
+};
+
+export type WeddingSceneQcDependencies = Pick<
+    WeddingSceneGenerationDependencies,
+    "getProject" | "persist" | "runTask" | "getAsset"
+>;
 
 export async function generateWeddingScenes(
     runtime: WeddingSceneGenerationRuntime,
@@ -146,6 +170,67 @@ export async function generateWeddingScenes(
     await Promise.all(Array.from({ length: Math.min(2, jobs.length) }, () => worker()));
     await commitTail;
     return { attempted: jobs.length, succeeded, failed: errors.length, errors };
+}
+
+export async function runWeddingSceneQc(
+    runtime: WeddingSceneQcRuntime,
+    dynastyId: string,
+    options: WeddingSceneQcOptions = {},
+) {
+    const dependencies = sceneQcDependenciesWithDefaults(options.dependencies);
+    const project = dependencies.getProject(runtime.projectId);
+    if (!project?.weddingProduction) throw new Error("婚礼制作状态不存在");
+    const dynasty = project.weddingProduction.dynasties.find((item) => item.id === dynastyId);
+    const target = dynasty ? project.nodes.find((node) => node.id === dynasty.sceneNodeId) : undefined;
+    if (!dynasty) throw new Error("朝代状态不存在");
+    if (!target) throw new Error("场景首帧节点不存在");
+    if (!dynasty.sceneSelection) throw new Error("请先确认场景首帧");
+    const referenceImages = [
+        portraitReference(dynasty, "male", dependencies.getAsset),
+        portraitReference(dynasty, "female", dependencies.getAsset),
+        sceneReference(dynasty, dependencies.getAsset),
+    ];
+    const checkedAt = new Date().toISOString();
+    try {
+        const result = await dependencies.runTask({
+            projectId: runtime.projectId,
+            mode: "text",
+            prompt: sceneQcPrompt(dynasty.name),
+            config: buildGenerationConfig(runtime.config, target, "text"),
+            referenceImages,
+            signal: runtime.signal,
+            metadata: {
+                source: "wedding-workbench",
+                stage: "scene-qc",
+                dynastyId,
+            },
+            onTaskUpdate: (task) => runtime.onTaskUpdate?.(dynastyId, task),
+        });
+        if (!result.text?.trim()) throw new Error("场景 QC 没有返回文本结果");
+        const qc = parseWeddingSceneQc(result.text, checkedAt);
+        const latest = dependencies.getProject(runtime.projectId);
+        if (!latest?.weddingProduction) throw new Error("婚礼制作状态不存在");
+        await dependencies.persist(runtime.projectId, {
+            nodes: latest.nodes,
+            weddingProduction: applyWeddingSceneQc(latest.weddingProduction, dynastyId, qc, checkedAt),
+        });
+        return qc;
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "场景 QC 执行失败";
+        const latest = dependencies.getProject(runtime.projectId);
+        if (latest?.weddingProduction) {
+            await dependencies.persist(runtime.projectId, {
+                nodes: latest.nodes,
+                weddingProduction: errorWeddingSceneQc(
+                    latest.weddingProduction,
+                    dynastyId,
+                    message,
+                    checkedAt,
+                ),
+            });
+        }
+        throw error;
+    }
 }
 
 async function generateWeddingSceneJob(
@@ -297,21 +382,53 @@ function portraitReference(
     const assetId = dynasty.portraitSelection?.[gender];
     const version = dynasty.portraitVersionHistory?.[gender]?.find((item) => item.assetId === assetId);
     const asset = assetId ? getAsset(assetId) : undefined;
-    const dataUrl = asset?.data?.dataUrl || asset?.data?.url || asset?.coverUrl || version?.previewUrl || "";
-    const storageKey = asset?.data?.storageKey || version?.storageKey;
-    if (!assetId || !dataUrl || !storageKey) {
+    if (!assetId) {
         throw new Error(`请先确认${gender === "male" ? "新郎" : "新娘"}定妆照`);
     }
-    return {
-        id: assetId,
-        name: `${dynasty.name}-${gender}-portrait.png`,
-        type: asset?.data?.mimeType || "image/png",
-        dataUrl,
-        url: /^https?:\/\//i.test(dataUrl) ? dataUrl : undefined,
-        storageKey,
-    };
+    try {
+        return makeWeddingImageReference({
+            assetId,
+            name: `${dynasty.name}-${gender}-portrait.png`,
+            asset,
+            storageKey: version?.storageKey,
+            previewUrl: version?.previewUrl,
+        });
+    } catch {
+        throw new Error(`请先确认${gender === "male" ? "新郎" : "新娘"}定妆照`);
+    }
 }
 
+function sceneReference(
+    dynasty: WeddingDynastyState,
+    getAsset: (assetId: string) => WeddingGenerationAsset | undefined,
+): ReferenceImage {
+    const assetId = dynasty.sceneSelection;
+    const version = dynasty.sceneVersions?.find((item) => item.assetId === assetId);
+    if (!assetId) throw new Error("请先确认场景首帧");
+    try {
+        return makeWeddingImageReference({
+            assetId,
+            name: `${dynasty.name}-scene.png`,
+            asset: getAsset(assetId),
+            storageKey: version?.storageKey,
+            previewUrl: version?.previewUrl,
+        });
+    } catch {
+        throw new Error("场景首帧素材不可用");
+    }
+}
+
+function sceneQcDependenciesWithDefaults(
+    overrides: WeddingSceneQcDependencies = {},
+): Required<WeddingSceneQcDependencies> {
+    const defaults = dependenciesWithDefaults();
+    return {
+        getProject: overrides.getProject || defaults.getProject,
+        persist: overrides.persist || defaults.persist,
+        runTask: overrides.runTask || defaults.runTask,
+        getAsset: overrides.getAsset || defaults.getAsset,
+    };
+}
 function weddingSceneNeedsGeneration(
     nodes: CanvasNodeData[],
     production: WeddingProductionState,
