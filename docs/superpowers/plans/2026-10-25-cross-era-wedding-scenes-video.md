@@ -72,7 +72,7 @@ web/test/
   - `confirmWeddingScene(state, dynastyId, assetId, now)`
   - `failWeddingSceneGeneration(state, job, reason, now)`
 
-- [ ] **Step 1: Write failing scene runtime tests**
+- [x] **Step 1: Write failing scene runtime tests**
 
 ```ts
 test("maps one scene job per dynasty", () => {
@@ -89,7 +89,7 @@ test("confirming a scene clears only that dynasty scene blocker", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run:
 
@@ -100,7 +100,7 @@ D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-scene-runtim
 
 Expected: FAIL because `scene-runtime.ts` does not exist.
 
-- [ ] **Step 3: Add scene state**
+- [x] **Step 3: Add scene state**
 
 Add to `WeddingDynastyState`:
 
@@ -119,14 +119,14 @@ if (!dynasty.sceneSelection) blockers.push(`${dynasty.name}：场景首帧尚未
 if (!qcReady) blockers.push(`${dynasty.name}：场景 QC 未通过且没有覆盖记录`);
 ```
 
-- [ ] **Step 4: Run tests and typecheck**
+- [x] **Step 4: Run tests and typecheck**
 
 ```powershell
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-scene-runtime.test.ts test/wedding-production-state.test.ts
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe run typecheck
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 cd D:\画布\BeefTV

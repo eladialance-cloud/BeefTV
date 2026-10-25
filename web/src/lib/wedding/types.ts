@@ -66,6 +66,15 @@ export type WeddingPortraitVersion = {
     createdAt: string;
 };
 
+export type WeddingSceneVersion = {
+    assetId: string;
+    nodeId: string;
+    storageKey?: string;
+    previewUrl?: string;
+    taskId?: string;
+    createdAt: string;
+};
+
 export type WeddingDynastyState = {
     id: string;
     name: string;
@@ -78,6 +87,7 @@ export type WeddingDynastyState = {
     portraitApproval?: Partial<Record<WeddingPortraitGender, boolean>>;
     portraitVersionHistory?: Partial<Record<WeddingPortraitGender, WeddingPortraitVersion[]>>;
     sceneSelection?: string;
+    sceneVersions?: WeddingSceneVersion[];
     videoSelection?: string;
     promptOverride?: string;
     promptOverrideUpdatedAt?: string;
