@@ -75,6 +75,17 @@ export type WeddingSceneVersion = {
     createdAt: string;
 };
 
+export type WeddingVideoVersion = {
+    assetId: string;
+    nodeId: string;
+    storageKey?: string;
+    previewUrl?: string;
+    posterUrl?: string;
+    taskId?: string;
+    durationMs?: number;
+    createdAt: string;
+};
+
 export type WeddingDynastyState = {
     id: string;
     name: string;
@@ -89,6 +100,7 @@ export type WeddingDynastyState = {
     sceneSelection?: string;
     sceneVersions?: WeddingSceneVersion[];
     videoSelection?: string;
+    videoVersions?: WeddingVideoVersion[];
     promptOverride?: string;
     promptOverrideUpdatedAt?: string;
     statuses: Record<"portrait" | "scene" | "video", WeddingItemStatus>;

@@ -167,9 +167,14 @@ export function weddingStageBlockers(state: WeddingProductionState, stage: Weddi
         });
     }
     if (stage === "videos") {
-        return state.dynasties.flatMap((dynasty) => READY_ITEM_STATUSES.has(dynasty.statuses.video)
-            ? []
-            : [`${dynasty.name}：视频尚未准备`]);
+        return state.dynasties.flatMap((dynasty) => {
+            const blockers: string[] = [];
+            if (!dynasty.videoSelection) blockers.push(`${dynasty.name}：视频尚未确认`);
+            const qcReady = dynasty.qc.video?.verdict === "pass"
+                || Boolean(dynasty.qc.overrides.video?.reason.trim());
+            if (!qcReady) blockers.push(`${dynasty.name}：视频 QC 未通过且没有覆盖记录`);
+            return blockers;
+        });
     }
     if (stage === "packaging") {
         return state.packaging.status === "ready" || state.packaging.status === "approved"
@@ -207,6 +212,9 @@ function cloneState(state: WeddingProductionState): WeddingProductionState {
             portraitSelection: { ...dynasty.portraitSelection },
             ...(dynasty.sceneVersions
                 ? { sceneVersions: dynasty.sceneVersions.map((version) => ({ ...version })) }
+                : {}),
+            ...(dynasty.videoVersions
+                ? { videoVersions: dynasty.videoVersions.map((version) => ({ ...version })) }
                 : {}),
             statuses: { ...dynasty.statuses },
             qc: {
