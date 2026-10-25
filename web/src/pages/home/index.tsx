@@ -12,7 +12,10 @@ import { listWorkspaceCanvasProjectsPage, type CanvasLibrarySummary } from "@/se
 import { createWorkspaceCanvasFromTemplate } from "@/services/workflow-template-canvas";
 import { isLocalWorkspaceMode } from "@/services/workspace-mode";
 import { listCanvasWorkspaceProjectRoots, previewNodesForWorkspaceProject } from "@/lib/canvas/canvas-workspace-project";
-import { weddingWorkbenchPathForTemplate } from "@/lib/wedding/routing";
+import {
+    weddingTemplateInitialVariables,
+    weddingWorkbenchPathForTemplate,
+} from "@/lib/wedding/routing";
 import { HomeDashboard } from "./home-dashboard";
 import "./home-dashboard.css";
 
@@ -47,18 +50,28 @@ export default function HomePage() {
         enabled: !localMode && Boolean(userId) && sessionHydrated,
         staleTime: 60_000,
     });
-    const submitWorkflow = async (variables: Record<string, unknown>) => {
-        if (!setupTemplate) return;
+    const createWorkflow = async (template: PublicCreationTemplate, variables: Record<string, unknown>) => {
         setCreatingWorkflow(true);
         try {
-            const created = await createWorkspaceCanvasFromTemplate(setupTemplate, variables);
+            const created = await createWorkspaceCanvasFromTemplate(template, variables);
             setSetupTemplate(null);
-            navigate(weddingWorkbenchPathForTemplate(setupTemplate, created.id));
+            navigate(weddingWorkbenchPathForTemplate(template, created.id));
         } catch (error) {
             message.error(error instanceof Error ? error.message : "工作流画布创建失败，请重试");
         } finally {
             setCreatingWorkflow(false);
         }
+    };
+    const submitWorkflow = async (variables: Record<string, unknown>) => {
+        if (!setupTemplate) return;
+        await createWorkflow(setupTemplate, variables);
+    };
+    const selectWorkflow = (template: PublicCreationTemplate) => {
+        if (template.itemKey === "cross-era-wedding-volc") {
+            void createWorkflow(template, weddingTemplateInitialVariables(template));
+            return;
+        }
+        setSetupTemplate(template);
     };
 
     return (
@@ -72,7 +85,7 @@ export default function HomePage() {
                 workflowsLoading={!localMode && Boolean(userId) && workflowsQuery.isPending}
                 workflowsError={!localMode && workflowsQuery.isError}
                 onRetryWorkflows={() => void workflowsQuery.refetch()}
-                onSelectWorkflow={setSetupTemplate}
+                onSelectWorkflow={selectWorkflow}
             />
             <CanvasWorkflowSetupModal
                 open={Boolean(setupTemplate)}

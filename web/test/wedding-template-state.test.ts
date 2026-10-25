@@ -37,8 +37,8 @@ test("maps selected dynasty nodes into production state", () => {
             consentConfirmed: true,
         },
         [
-            { id: "groom", metadata: { uploadField: "groomPhoto" } },
-            { id: "bride", metadata: { uploadField: "bridePhoto" } },
+            { id: "groom", content: "https://example.com/groom.jpg", storageKey: "resource:groom", metadata: { uploadField: "groomPhoto" } },
+            { id: "bride", content: "https://example.com/bride.jpg", storageKey: "resource:bride", metadata: { uploadField: "bridePhoto" } },
             { id: "male-tang", metadata: { pluginData: { creationTemplateDynamicRef: "dynastyPortraitMale", creationTemplateDynastyId: "tang", creationTemplateDynastyName: "唐" } } },
             { id: "female-tang", metadata: { pluginData: { creationTemplateDynamicRef: "dynastyPortraitFemale", creationTemplateDynastyId: "tang", creationTemplateDynastyName: "唐" } } },
             { id: "scene-tang", metadata: { pluginData: { creationTemplateDynamicRef: "dynastyScene", creationTemplateDynastyId: "tang", creationTemplateDynastyName: "唐" } } },
@@ -59,6 +59,8 @@ test("maps selected dynasty nodes into production state", () => {
     expect(state.source).toEqual({
         groomPhotoNodeId: "groom",
         bridePhotoNodeId: "bride",
+        groomPhotoReady: true,
+        bridePhotoReady: true,
         maleName: "林屿",
         femaleName: "周棠",
         story: "杭州西湖相识",
@@ -114,6 +116,8 @@ test("backfills production state from an existing cross-era canvas", () => {
         [
             {
                 id: "groom",
+                content: "https://example.com/groom.jpg",
+                storageKey: "resource:groom",
                 metadata: {
                     uploadField: "groomPhoto",
                     pluginData: {
@@ -134,6 +138,8 @@ test("backfills production state from an existing cross-era canvas", () => {
             },
             {
                 id: "bride",
+                content: "https://example.com/bride.jpg",
+                storageKey: "resource:bride",
                 metadata: {
                     uploadField: "bridePhoto",
                     pluginData: {
@@ -154,6 +160,8 @@ test("backfills production state from an existing cross-era canvas", () => {
         source: {
             groomPhotoNodeId: "groom",
             bridePhotoNodeId: "bride",
+            groomPhotoReady: true,
+            bridePhotoReady: true,
             maleName: "林屿",
             femaleName: "周棠",
         },

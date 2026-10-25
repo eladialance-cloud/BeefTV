@@ -42,5 +42,8 @@ test("setup stage renders editable project fields and stage actions", () => {
     expect(html).toContain("新郎称呼");
     expect(html).toContain("爱情故事");
     expect(html).toContain("照片使用授权");
+    expect(html).toContain("上传新郎照片");
+    expect(html).toContain("上传新娘照片");
+    expect(html).toContain('type="file"');
     expect(html).toContain("确认项目设定");
 });

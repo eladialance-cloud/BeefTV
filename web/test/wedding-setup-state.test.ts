@@ -1,7 +1,12 @@
 import { expect, test } from "bun:test";
 
 import { createWeddingProductionState } from "@/lib/wedding/production-state";
-import { approveWeddingSetup, updateWeddingSource } from "@/lib/wedding/setup-state";
+import {
+    approveWeddingSetup,
+    reconcileWeddingSourcePhotoReadiness,
+    replaceWeddingSourcePhoto,
+    updateWeddingSource,
+} from "@/lib/wedding/setup-state";
 
 const base = createWeddingProductionState({
     template: { id: "template-1", key: "cross-era-wedding-volc", version: "1" },
@@ -72,4 +77,62 @@ test("setup cannot be approved without photos and consent", () => {
     );
     expect(approveWeddingSetup(incomplete, "2026-10-25T02:00:00.000Z")).toBe(incomplete);
     expect(approveWeddingSetup(base, "2026-10-25T02:00:00.000Z").stages.setup.status).toBe("approved");
+});
+
+test("registered source node ids without uploaded photo content remain blocked", () => {
+    const noContent = {
+        ...base,
+        source: {
+            ...base.source,
+            groomPhotoReady: false,
+            bridePhotoReady: false,
+        },
+    };
+
+    expect(approveWeddingSetup(noContent, "2026-10-25T02:00:00.000Z")).toBe(noContent);
+});
+
+test("replacing a source photo invalidates existing portrait versions even when the node id is unchanged", () => {
+    const withPortrait = {
+        ...base,
+        dynasties: base.dynasties.map((dynasty) => ({
+            ...dynasty,
+            portraitSelection: { male: "male-asset", female: "female-asset" },
+            portraitApproval: { male: true, female: true },
+            portraitVersionHistory: {
+                male: [{ assetId: "male-asset", nodeId: dynasty.portraitMaleNodeId, createdAt: base.activity[0]!.createdAt }],
+                female: [{ assetId: "female-asset", nodeId: dynasty.portraitFemaleNodeId, createdAt: base.activity[0]!.createdAt }],
+            },
+        })),
+    };
+    const replaced = replaceWeddingSourcePhoto(
+        withPortrait,
+        "groom",
+        withPortrait.source.groomPhotoNodeId,
+        "2026-10-25T03:00:00.000Z",
+    );
+
+    expect(replaced.source.groomPhotoReady).toBe(true);
+    expect(replaced.dynasties[0]?.portraitSelection).toEqual({});
+    expect(replaced.dynasties[0]?.portraitVersionHistory).toEqual({});
+    expect(replaced.dynasties[0]?.statuses).toEqual({
+        portrait: "stale",
+        scene: "stale",
+        video: "stale",
+    });
+    expect(replaced.stages.delivery.status).toBe("stale");
+});
+
+test("reconciles legacy photo ids against actual canvas node content", () => {
+    const reconciled = reconcileWeddingSourcePhotoReadiness(base, [
+        { id: "groom-node", metadata: { uploadField: "groomPhoto" } },
+        { id: "bride-node", metadata: { uploadField: "bridePhoto", content: "https://example.com/bride.jpg", storageKey: "resource:bride" } },
+    ]);
+
+    expect(reconciled.source).toMatchObject({
+        groomPhotoNodeId: "",
+        groomPhotoReady: false,
+        bridePhotoNodeId: "bride-node",
+        bridePhotoReady: true,
+    });
 });

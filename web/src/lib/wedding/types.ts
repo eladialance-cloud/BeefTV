@@ -179,6 +179,8 @@ export type WeddingProductionState = {
         bridePhotoNodeId: string;
         maleName: string;
         femaleName: string;
+        groomPhotoReady?: boolean;
+        bridePhotoReady?: boolean;
         story: string;
         consentConfirmed: boolean;
         ratio: string;

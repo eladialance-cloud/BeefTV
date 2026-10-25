@@ -50,7 +50,11 @@ export function createWeddingProductionState(input: CreateWeddingProductionInput
         template: input.template,
         activeStage: "setup",
         stages,
-        source: input.source,
+        source: {
+            ...input.source,
+            groomPhotoReady: input.source.groomPhotoReady ?? Boolean(input.source.groomPhotoNodeId),
+            bridePhotoReady: input.source.bridePhotoReady ?? Boolean(input.source.bridePhotoNodeId),
+        },
         dynasties,
         packaging: {
             status: "not_started",
@@ -135,8 +139,8 @@ export function invalidateWeddingDynasty(
 export function weddingStageBlockers(state: WeddingProductionState, stage: WeddingStageId): string[] {
     if (stage === "setup") {
         const blockers: string[] = [];
-        if (!state.source.groomPhotoNodeId) blockers.push("新郎照片尚未上传");
-        if (!state.source.bridePhotoNodeId) blockers.push("新娘照片尚未上传");
+        if (!state.source.groomPhotoNodeId || state.source.groomPhotoReady === false) blockers.push("新郎照片尚未上传");
+        if (!state.source.bridePhotoNodeId || state.source.bridePhotoReady === false) blockers.push("新娘照片尚未上传");
         if (!state.source.maleName.trim()) blockers.push("新郎称呼尚未填写");
         if (!state.source.femaleName.trim()) blockers.push("新娘称呼尚未填写");
         if (!state.source.consentConfirmed) blockers.push("照片授权尚未确认");

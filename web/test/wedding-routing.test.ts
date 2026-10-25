@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { legacyWeddingWorkbenchPath, weddingWorkbenchPathForTemplate } from "@/lib/wedding/routing";
+import {
+    legacyWeddingWorkbenchPath,
+    weddingTemplateInitialVariables,
+    weddingWorkbenchPathForTemplate,
+} from "@/lib/wedding/routing";
 
 describe("wedding workbench routing", () => {
     test("cross-era wedding opens the producer workbench", () => {
@@ -27,5 +31,32 @@ describe("wedding workbench routing", () => {
     test("legacy wedding route maps back to the canvas workbench view", () => {
         expect(legacyWeddingWorkbenchPath("a/b"))
             .toBe("/wedding/a%2Fb");
+    });
+
+    test("cross-era wedding creation starts with template defaults and no entry form", () => {
+        const variables = weddingTemplateInitialVariables({
+            payloadJson: JSON.stringify({
+                variables: {
+                    maleName: "新郎",
+                    femaleName: "新娘",
+                    customDesc: "",
+                    dynasties: ["tang", "ming", "modern"],
+                    ratio: "16:9",
+                    duration: 8,
+                    resolution: "720p",
+                },
+            }),
+        });
+
+        expect(variables).toEqual({
+            maleName: "新郎",
+            femaleName: "新娘",
+            customDesc: "",
+            dynasties: ["tang", "ming", "modern"],
+            ratio: "16:9",
+            duration: 8,
+            resolution: "720p",
+            consentConfirmed: false,
+        });
     });
 });

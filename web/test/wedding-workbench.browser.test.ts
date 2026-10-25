@@ -136,6 +136,39 @@ beforeAll(async () => {
                     settings: { duration: 8, ratio: "16:9", resolution: "720p" },
                 });
             }
+            if (path === "/api/resources" && request.method === "POST") {
+                const form = await request.formData();
+                const file = form.get("file");
+                const mimeType = file instanceof File ? file.type : "image/png";
+                const suffix = globalThis.crypto.randomUUID();
+                return ok({
+                    resource: {
+                        id: `resource-${suffix}`,
+                        userId: "test-user",
+                        kind: "image",
+                        status: "ready",
+                        provider: "local",
+                        endpoint: "local",
+                        bucket: "test",
+                        objectKey: `test/${suffix}.png`,
+                        publicUrl: `/api/resources/resource-${suffix}/file`,
+                        mimeType,
+                        size: file instanceof File ? file.size : 0,
+                        width: 1,
+                        height: 1,
+                        createdAt: "2026-10-25T00:00:00.000Z",
+                        updatedAt: "2026-10-25T00:00:00.000Z",
+                    },
+                });
+            }
+            if (/^\/api\/resources\/[^/]+\/file$/.test(path) && request.method === "GET") {
+                return new Response(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl5X0sAAAAASUVORK5CYII=", "base64"), {
+                    headers: { "Content-Type": "image/png" },
+                });
+            }
+            if (/^\/api\/assets\/[^/]+$/.test(path) && request.method === "PUT") {
+                return ok({ asset: { id: decodeURIComponent(path.split("/").at(-1) || "") } });
+            }
             if (path === "/api/ops/canvas.document.commit" && request.method === "POST") {
                 const body = await request.json() as {
                     params: { expectedRevision: number; document: Record<string, unknown> };
@@ -245,6 +278,89 @@ test("portrait stage renders the real production board without horizontal overfl
         fullPage: true,
     });
     expect(errors).toEqual([]);
+    await page.close();
+}, 30000);
+
+test("setup stage exposes direct photo uploads and the workspace scrolls vertically", async () => {
+    const current = project.weddingProduction as {
+        source: Record<string, unknown>;
+        dynasties: Array<{ id: string; name: string }>;
+    };
+    project = {
+        ...project,
+        revision: Number(project.revision || 1) + 1,
+        nodes: [
+            {
+                id: "groom",
+                type: "image",
+                title: "新郎原始照片",
+                position: { x: 0, y: 0 },
+                width: 320,
+                height: 240,
+                metadata: { uploadField: "groomPhoto" },
+            },
+            {
+                id: "bride",
+                type: "image",
+                title: "新娘原始照片",
+                position: { x: 340, y: 0 },
+                width: 320,
+                height: 240,
+                metadata: { uploadField: "bridePhoto" },
+            },
+        ],
+        weddingProduction: {
+            ...current,
+            source: {
+                ...current.source,
+                groomPhotoNodeId: "",
+                bridePhotoNodeId: "",
+                groomPhotoReady: false,
+                bridePhotoReady: false,
+            },
+        },
+    };
+    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    await page.goto(new URL("/wedding/c1", server.url).toString());
+    await page.getByRole("navigation", { name: "婚礼制作阶段" })
+        .getByRole("button", { name: /项目设定/ })
+        .click();
+    await page.getByLabel("上传新郎照片").waitFor();
+    await page.getByLabel("上传新娘照片").waitFor();
+    await page.getByLabel("上传新郎照片").setInputFiles({
+        name: "groom.png",
+        mimeType: "image/png",
+        buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl5X0sAAAAASUVORK5CYII=", "base64"),
+    });
+    await page.getByText("新郎照片已上传。").waitFor();
+    const uploadedProject = project as {
+        nodes: Array<{ id: string; metadata?: { content?: string; storageKey?: string } }>;
+        weddingProduction?: { source?: { groomPhotoNodeId?: string; groomPhotoReady?: boolean } };
+    };
+    expect(uploadedProject.nodes.find((node) => node.id === "groom")?.metadata?.content).toBeTruthy();
+    expect(uploadedProject.weddingProduction?.source).toMatchObject({
+        groomPhotoNodeId: "groom",
+        groomPhotoReady: true,
+    });
+    await page.screenshot({
+        path: "D:/画布/BeefTV/build/wedding-setup-photo-upload-1280.png",
+        fullPage: true,
+    });
+
+    const workspace = page.locator(".wedding-workbench-workspace");
+    expect(await workspace.evaluate((element) => getComputedStyle(element).overflowY)).toBe("auto");
+    await page.getByRole("navigation", { name: "婚礼制作阶段" })
+        .getByRole("button", { name: /包装制作/ })
+        .click();
+    const metrics = await workspace.evaluate((element) => ({
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+    }));
+    expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight);
+    await workspace.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+    });
+    expect(await workspace.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
     await page.close();
 }, 30000);
 

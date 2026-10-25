@@ -60,6 +60,72 @@ export function approveWeddingSetup(
     return next;
 }
 
+export function replaceWeddingSourcePhoto(
+    state: WeddingProductionState,
+    kind: "groom" | "bride",
+    nodeId: string,
+    now: string,
+): WeddingProductionState {
+    const next = structuredClone(state);
+    if (kind === "groom") {
+        next.source.groomPhotoNodeId = nodeId;
+        next.source.groomPhotoReady = true;
+    } else {
+        next.source.bridePhotoNodeId = nodeId;
+        next.source.bridePhotoReady = true;
+    }
+    for (const dynasty of next.dynasties) {
+        dynasty.portraitSelection = {};
+        dynasty.portraitVersionHistory = {};
+        dynasty.portraitApproval = {};
+        dynasty.statuses.portrait = "stale";
+        dynasty.statuses.scene = "stale";
+        dynasty.statuses.video = "stale";
+    }
+    markStagesStale(next, ["portraits", "scenes", "videos", "packaging", "delivery"]);
+    next.activity.push({
+        id: `wedding-setup-photo-${Date.parse(now)}-${next.activity.length}`,
+        type: "asset_staled",
+        stage: "portraits",
+        message: `${kind === "groom" ? "新郎" : "新娘"}原始照片已更新，全部下游资产失效`,
+        createdAt: now,
+    });
+    return next;
+}
+
+export function reconcileWeddingSourcePhotoReadiness(
+    state: WeddingProductionState,
+    nodes: Array<{
+        id: string;
+        metadata?: {
+            uploadField?: string;
+            content?: string;
+            storageKey?: string;
+        };
+    }>,
+): WeddingProductionState {
+    const groom = nodes.find((node) => node.metadata?.uploadField === "groomPhoto");
+    const bride = nodes.find((node) => node.metadata?.uploadField === "bridePhoto");
+    const groomReady = Boolean(groom?.metadata?.content || groom?.metadata?.storageKey);
+    const brideReady = Boolean(bride?.metadata?.content || bride?.metadata?.storageKey);
+    const groomNodeId = groomReady ? groom?.id || "" : "";
+    const brideNodeId = brideReady ? bride?.id || "" : "";
+    if (state.source.groomPhotoNodeId === groomNodeId
+        && state.source.bridePhotoNodeId === brideNodeId
+        && state.source.groomPhotoReady === groomReady
+        && state.source.bridePhotoReady === brideReady) return state;
+    return {
+        ...state,
+        source: {
+            ...state.source,
+            groomPhotoNodeId: groomNodeId,
+            groomPhotoReady: groomReady,
+            bridePhotoNodeId: brideNodeId,
+            bridePhotoReady: brideReady,
+        },
+    };
+}
+
 function markStagesStale(state: WeddingProductionState, stages: WeddingStageId[]) {
     for (const stage of stages) {
         state.stages[stage] = { ...state.stages[stage], status: "stale" };

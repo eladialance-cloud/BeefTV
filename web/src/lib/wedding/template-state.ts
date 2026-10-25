@@ -4,8 +4,12 @@ import type { WeddingProductionState } from "@/lib/wedding/types";
 
 type TemplateNode = {
     id: string;
+    content?: string;
+    storageKey?: string;
     metadata?: {
         uploadField?: string;
+        content?: string;
+        storageKey?: string;
         pluginData?: Record<string, unknown>;
     };
 };
@@ -117,8 +121,10 @@ function buildWeddingProductionState(input: {
     return createWeddingProductionState({
         template,
         source: {
-            groomPhotoNodeId: groomPhoto.id,
-            bridePhotoNodeId: bridePhoto.id,
+            groomPhotoNodeId: hasPhoto(groomPhoto) ? groomPhoto.id : "",
+            bridePhotoNodeId: hasPhoto(bridePhoto) ? bridePhoto.id : "",
+            groomPhotoReady: hasPhoto(groomPhoto),
+            bridePhotoReady: hasPhoto(bridePhoto),
             maleName: text(variables.maleName) || "新郎",
             femaleName: text(variables.femaleName) || "新娘",
             story: text(variables.customDesc),
@@ -129,6 +135,10 @@ function buildWeddingProductionState(input: {
         dynasties,
         now,
     });
+}
+
+function hasPhoto(node: TemplateNode) {
+    return Boolean(node.content || node.storageKey || node.metadata?.content || node.metadata?.storageKey);
 }
 
 function dynastyName(nodes: TemplateNode[]) {

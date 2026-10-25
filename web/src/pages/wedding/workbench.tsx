@@ -6,7 +6,14 @@ import { openLocalCanvasProjectFromBackend, persistCanvasDocument } from "@/serv
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { WEDDING_STAGE_IDS, type WeddingProductionState, type WeddingStageId } from "@/lib/wedding/types";
 import { clearWeddingPromptOverride, setWeddingPromptOverride } from "@/lib/wedding/prompt";
-import { approveWeddingSetup, updateWeddingSource } from "@/lib/wedding/setup-state";
+import {
+    approveWeddingSetup,
+    reconcileWeddingSourcePhotoReadiness,
+    replaceWeddingSourcePhoto,
+    updateWeddingSource,
+} from "@/lib/wedding/setup-state";
+import { imageMetadata } from "@/lib/canvas/canvas-generation-task-sync";
+import { uploadWeddingSourcePhoto } from "@/services/wedding-source-photo";
 import { VideoPromptInspector } from "@/pages/wedding/video-prompt-inspector";
 import { WorkbenchStageRail, weddingStageLabels, weddingStatusLabels } from "@/pages/wedding/workbench-stage-rail";
 import { WorkbenchTopBar } from "@/pages/wedding/workbench-top-bar";
@@ -98,9 +105,11 @@ export function WeddingWorkbenchSurface({
     const [packagingRunning, setPackagingRunning] = useState(false);
     const [bgmTask, setBgmTask] = useState<GenerationTask>();
     const [deliveryTask, setDeliveryTask] = useState<GenerationTask>();
+    const [uploadingPhoto, setUploadingPhoto] = useState<"groom" | "bride" | "">("");
     const effectiveConfig = useEffectiveConfig();
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const backfillStartedRef = useRef("");
+    const photoRepairStartedRef = useRef("");
 
     useEffect(() => {
         if (!canvasId || project) {
@@ -132,7 +141,13 @@ export function WeddingWorkbenchSurface({
             return undefined;
         }
     }, [project]);
-    const production = productionOverride ?? project?.weddingProduction ?? legacyProduction;
+    const rawProduction = productionOverride ?? project?.weddingProduction ?? legacyProduction;
+    const production = useMemo(
+        () => rawProduction && project
+            ? reconcileWeddingSourcePhotoReadiness(rawProduction, project.nodes)
+            : rawProduction,
+        [project?.nodes, rawProduction],
+    );
     useEffect(() => {
         if (!project || project.weddingProduction || !legacyProduction || backfillStartedRef.current === project.id) return;
         backfillStartedRef.current = project.id;
@@ -140,6 +155,15 @@ export function WeddingWorkbenchSurface({
             backfillStartedRef.current = "";
         });
     }, [legacyProduction, project]);
+    useEffect(() => {
+        if (!project || !production || !rawProduction || production === rawProduction) return;
+        const guard = `${project.id}:${project.revision || 0}`;
+        if (photoRepairStartedRef.current === guard) return;
+        photoRepairStartedRef.current = guard;
+        void persistCanvasDocument(project.id, { weddingProduction: production }).catch(() => {
+            if (photoRepairStartedRef.current === guard) photoRepairStartedRef.current = "";
+        });
+    }, [production, project, rawProduction]);
     const resolvedStage = activeStage || production?.activeStage || "setup";
     const resolvedDynastyId = selectedDynastyId || production?.dynasties[0]?.id || "";
     const resolvedDynasty = useMemo(
@@ -235,6 +259,57 @@ export function WeddingWorkbenchSurface({
             setStageFeedback(error instanceof Error ? error.message : "项目设定保存失败");
         } finally {
             setStageSaving(false);
+        }
+    };
+
+    const uploadSetupPhoto = async (kind: "groom" | "bride", file: File) => {
+        const latestProject = useCanvasStore.getState().projects.find((item) => item.id === project.id) || project;
+        const latestProduction = latestProject.weddingProduction || production;
+        const fieldKey = kind === "groom" ? "groomPhoto" : "bridePhoto";
+        const sourceNode = latestProject.nodes.find((node) => {
+            const metadata = node.metadata && typeof node.metadata === "object"
+                ? node.metadata as Record<string, unknown>
+                : undefined;
+            return metadata?.uploadField === fieldKey;
+        });
+        if (!sourceNode) {
+            setStageFeedback(`画布中缺少${kind === "groom" ? "新郎" : "新娘"}原始照片节点。`);
+            return;
+        }
+        setUploadingPhoto(kind);
+        setStageFeedback("");
+        try {
+            const uploaded = await uploadWeddingSourcePhoto(
+                file,
+                kind === "groom" ? "新郎照片" : "新娘照片",
+                fieldKey,
+            );
+            const nodes = latestProject.nodes.map((node) => node.id === sourceNode.id
+                ? {
+                    ...node,
+                    updatedAt: new Date().toISOString(),
+                    metadata: {
+                        ...node.metadata,
+                        ...imageMetadata(uploaded),
+                        resultOrigin: "upload" as const,
+                    },
+                }
+                : node);
+            const nextProduction = replaceWeddingSourcePhoto(
+                latestProduction,
+                kind,
+                sourceNode.id,
+                new Date().toISOString(),
+            );
+            await persistCanvasDocument(latestProject.id, {
+                nodes,
+                weddingProduction: nextProduction,
+            });
+            setStageFeedback(`${kind === "groom" ? "新郎" : "新娘"}照片已上传。`);
+        } catch (error) {
+            setStageFeedback(error instanceof Error ? error.message : "照片上传失败");
+        } finally {
+            setUploadingPhoto("");
         }
     };
 
@@ -1052,10 +1127,13 @@ export function WeddingWorkbenchSurface({
                 {resolvedStage === "setup" ? (
                     <SetupStage
                         production={production}
+                        sourcePhotoNodes={project.nodes}
+                        uploadingPhoto={uploadingPhoto}
                         saving={stageSaving}
                         feedback={stageFeedback}
                         onSave={saveSetup}
                         onApprove={approveSetup}
+                        onUploadPhoto={uploadSetupPhoto}
                     />
                 ) : resolvedStage === "dynasties" ? (
                     <DynastyStage
