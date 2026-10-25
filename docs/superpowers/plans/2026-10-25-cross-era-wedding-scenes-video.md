@@ -152,7 +152,7 @@ git commit -m "feat(wedding-workbench): 跨时空婚礼电影 - 新增场景状�
   - `generateWeddingScenes(runtime, dynastyId?, options?): Promise<WeddingGenerationSummary>`
   - `WeddingSceneGenerationRuntime = { projectId; production; config: AiConfig; signal?; onTaskUpdate? }`
 
-- [ ] **Step 1: Write failing task-boundary test**
+- [x] **Step 1: Write failing task-boundary test**
 
 ```ts
 expect(submitted).toMatchObject({
@@ -175,7 +175,7 @@ expect(submitted).toMatchObject({
 });
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```powershell
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-scene-generation.test.ts
@@ -183,7 +183,7 @@ D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-scene-genera
 
 Expected: FAIL because `wedding-scene-generation.ts` does not exist.
 
-- [ ] **Step 3: Implement generation**
+- [x] **Step 3: Implement generation**
 
 Map selected portrait asset IDs to `ReferenceImage` values. Reject generation when either portrait is missing:
 
@@ -195,14 +195,14 @@ Run one `canvas_image` task per dynasty with bounded concurrency `2`. Use `consu
 
 Move the existing `WeddingPortraitGenerationSummary` shape into `web/src/lib/wedding/generation-runtime.ts` as `WeddingGenerationSummary`; keep a portrait alias so existing portrait callers continue to compile.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 ```powershell
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe test test/wedding-scene-runtime.test.ts test/wedding-scene-generation.test.ts
 D:\画布\_tools\bun\node_modules\bun\bin\bun.exe run typecheck
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add web/src/lib/wedding/generation-runtime.ts web/src/services/wedding-scene-generation.ts web/src/services/wedding-generation.ts web/src/lib/wedding/scene-runtime.ts web/test/wedding-scene-generation.test.ts

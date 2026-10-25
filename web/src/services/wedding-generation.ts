@@ -15,6 +15,10 @@ import {
     weddingPortraitJobs,
     type WeddingGenerationJob,
 } from "@/lib/wedding/portrait-runtime";
+import type {
+    WeddingGenerationAsset,
+    WeddingGenerationSummary,
+} from "@/lib/wedding/generation-runtime";
 import type { WeddingProductionState } from "@/lib/wedding/types";
 import { persistCanvasDocument } from "@/services/local-workspace-repository";
 import { consumeGenerationTaskNode } from "@/services/project-asset-sync";
@@ -33,21 +37,6 @@ type WeddingPortraitPersistPatch = {
     nodes: CanvasNodeData[];
     weddingProduction: WeddingProductionState;
 };
-type WeddingPortraitAsset = {
-    id: string;
-    kind: string;
-    coverUrl?: string;
-    data?: {
-        dataUrl?: string;
-        url?: string;
-        storageKey?: string;
-        width?: number;
-        height?: number;
-        bytes?: number;
-        mimeType?: string;
-    };
-};
-
 export type WeddingPortraitGenerationRuntime = {
     projectId: string;
     production: WeddingProductionState;
@@ -78,20 +67,10 @@ export type WeddingPortraitGenerationDependencies = {
             effectKey: string;
         }) => Promise<void>,
     ) => Promise<GenerationTask>;
-    getAsset?: (assetId: string) => WeddingPortraitAsset | undefined;
+    getAsset?: (assetId: string) => WeddingGenerationAsset | undefined;
 };
 
-export type WeddingPortraitGenerationSummary = {
-    attempted: number;
-    succeeded: number;
-    failed: number;
-    errors: Array<{
-        nodeId: string;
-        dynastyId: string;
-        gender: "male" | "female";
-        message: string;
-    }>;
-};
+export type WeddingPortraitGenerationSummary = WeddingGenerationSummary;
 
 export async function generateWeddingPortraits(
     runtime: WeddingPortraitGenerationRuntime,
