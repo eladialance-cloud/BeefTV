@@ -176,7 +176,7 @@ test("producer can load, edit, save and restore the dynasty video prompt", async
     const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    await page.goto(server.url.toString());
+    await page.goto(new URL("/canvas/c1?canvasView=wedding", server.url).toString());
 
     await page.getByTestId("wedding-canvas-overlay").waitFor();
     const closeAgent = page.getByRole("button", { name: "关闭 Agent" });
@@ -213,5 +213,80 @@ test("producer can load, edit, save and restore the dynasty video prompt", async
     await page.setViewportSize({ width: 1440, height: 960 });
     await page.getByRole("button", { name: "返回节点图" }).first().click();
     await page.getByTestId("wedding-canvas-overlay").waitFor({ state: "hidden" });
+    await page.close();
+}, 30000);
+
+test("an existing cross-era canvas backfills production state and reveals the workbench toggle", async () => {
+    const currentProduction = project.weddingProduction as {
+        source: Record<string, unknown>;
+        dynasties: Array<{ id: string; name: string }>;
+    };
+    const pluginBase = {
+        creationTemplateId: "template-1",
+        creationTemplateKey: "cross-era-wedding-volc",
+        creationTemplateVersion: "1.0.0",
+        creationTemplateVariables: {
+            maleName: currentProduction.source.maleName,
+            femaleName: currentProduction.source.femaleName,
+            customDesc: currentProduction.source.story,
+            dynasties: currentProduction.dynasties.map((dynasty) => dynasty.id),
+            ratio: currentProduction.source.ratio,
+            resolution: currentProduction.source.resolution,
+            consentConfirmed: currentProduction.source.consentConfirmed,
+        },
+    };
+    const node = (
+        id: string,
+        type: string,
+        title: string,
+        metadata: Record<string, unknown>,
+        x: number,
+    ) => ({
+        id,
+        type,
+        title,
+        position: { x, y: 0 },
+        width: 320,
+        height: 220,
+        metadata,
+    });
+    const dynasty = currentProduction.dynasties[0]!;
+    const nextProject = {
+        ...project,
+        revision: Number(project.revision || 1) + 1,
+        nodes: [
+            node("groom", "image", "新郎原始照片", {
+                uploadField: "groomPhoto",
+                pluginData: pluginBase,
+            }, 0),
+            node("bride", "image", "新娘原始照片", {
+                uploadField: "bridePhoto",
+                pluginData: pluginBase,
+            }, 340),
+            node("male-tang", "image", `${dynasty.name} · 新郎肖像`, {
+                pluginData: { creationTemplateDynamicRef: "dynastyPortraitMale", creationTemplateDynastyId: dynasty.id, creationTemplateDynastyName: dynasty.name },
+            }, 680),
+            node("female-tang", "image", `${dynasty.name} · 新娘肖像`, {
+                pluginData: { creationTemplateDynamicRef: "dynastyPortraitFemale", creationTemplateDynastyId: dynasty.id, creationTemplateDynastyName: dynasty.name },
+            }, 1020),
+            node("scene-tang", "image", `${dynasty.name} · 双人婚礼场景`, {
+                pluginData: { creationTemplateDynamicRef: "dynastyScene", creationTemplateDynastyId: dynasty.id, creationTemplateDynastyName: dynasty.name },
+            }, 1360),
+            node("video-tang", "video", `${dynasty.name} · 朝代视频`, {
+                pluginData: { creationTemplateDynamicRef: "dynastyVideo", creationTemplateDynastyId: dynasty.id, creationTemplateDynastyName: dynasty.name },
+            }, 1700),
+        ],
+        weddingProduction: undefined,
+    };
+    project = nextProject;
+
+    const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+    await page.goto(new URL("/canvas/c1", server.url).toString());
+    const openWorkbench = page.getByRole("button", { name: "打开婚礼制作台" }).first();
+    await openWorkbench.waitFor();
+    await openWorkbench.click();
+    await page.getByTestId("wedding-canvas-overlay").waitFor();
+    await page.getByRole("heading", { name: "项目设定", exact: true }).waitFor();
+    expect(project.weddingProduction).toBeDefined();
     await page.close();
 }, 30000);

@@ -15,10 +15,12 @@ const queryClient = new QueryClient({
     },
 });
 
+const initialEntry = `${window.location.pathname}${window.location.search}`;
+
 createRoot(document.getElementById("root")!).render(
     <AntApp>
         <QueryClientProvider client={queryClient}>
-            <MemoryRouter initialEntries={["/canvas/c1?canvasView=wedding"]}>
+            <MemoryRouter initialEntries={[initialEntry]}>
                 <Routes>
                     <Route path="/canvas/:id" element={<CanvasPage />} />
                     <Route path="/canvas" element={<div data-testid="canvas-library">canvas library</div>} />

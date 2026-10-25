@@ -106,6 +106,7 @@ import { CanvasVersionPreview } from "./canvas-version-preview";
 import { CanvasTopBar } from "./canvas-project-top-bar";
 import { WeddingWorkbenchSurface } from "@/pages/wedding/workbench";
 import { isWeddingCanvasView } from "@/lib/wedding/routing";
+import { buildWeddingProductionFromCanvasNodes } from "@/lib/wedding/template-state";
 import { CanvasFocusModeBar } from "@/components/canvas/canvas-focus-mode-bar";
 import { CanvasProjectContextMenu } from "./canvas-project-context-menu";
 import { CanvasProjectEditorDialogs } from "./canvas-project-editor-dialogs";
@@ -118,7 +119,7 @@ import { CanvasRefreshShell } from "./canvas-refresh-shell";
 import type { CanvasImageEmotionPayload } from "@/components/canvas/canvas-node-emotion-panel";
 import { CanvasEmotionWorkspace } from "@/components/canvas/canvas-emotion-workspace";
 import { removeCanvasDrawing } from "@/lib/canvas/canvas-drawing-storage";
-import { persistCanvasTimeline, refreshLocalCanvasProjectIfChanged } from "@/services/local-workspace-repository";
+import { persistCanvasDocument, persistCanvasTimeline, refreshLocalCanvasProjectIfChanged } from "@/services/local-workspace-repository";
 import { CanvasUploadModal } from "@/components/canvas/canvas-upload-modal";
 import { syncLocalCanvasSnapshot } from "@/services/local-workspace-sync";
 import { useCanvasConnectionController } from "./use-canvas-connection-controller";
@@ -481,7 +482,25 @@ function InfiniteCanvasPage() {
         cleanupCanvasFiles,
     });
 
-    const weddingWorkbenchEnabled = Boolean(currentProject?.weddingProduction);
+    const legacyWeddingProduction = useMemo(() => {
+        if (currentProject?.weddingProduction) return undefined;
+        try {
+            return buildWeddingProductionFromCanvasNodes(nodes, new Date().toISOString());
+        } catch {
+            return undefined;
+        }
+    }, [currentProject?.weddingProduction, nodes]);
+    const weddingProduction = currentProject?.weddingProduction ?? legacyWeddingProduction;
+    const weddingWorkbenchEnabled = Boolean(weddingProduction);
+    const weddingBackfillStartedRef = useRef("");
+    useEffect(() => {
+        if (!currentProject || !legacyWeddingProduction || weddingBackfillStartedRef.current === projectId) return;
+        weddingBackfillStartedRef.current = projectId;
+        void persistCanvasDocument(projectId, { weddingProduction: legacyWeddingProduction }).catch((error) => {
+            weddingBackfillStartedRef.current = "";
+            console.error("跨时空婚礼制作状态回填失败", { projectId, error });
+        });
+    }, [currentProject, legacyWeddingProduction, projectId]);
     const toggleWeddingWorkbench = useCallback(() => {
         const next = new URLSearchParams(searchParams);
         if (weddingWorkbenchOpen) next.delete("canvasView");
@@ -2901,7 +2920,11 @@ function InfiniteCanvasPage() {
                                 <div className="relative min-w-0 flex-1 overflow-hidden">
                                     {weddingWorkbenchOpen && weddingWorkbenchEnabled ? (
                                         <div className="wedding-canvas-overlay" data-canvas-no-zoom data-testid="wedding-canvas-overlay">
-                                            <WeddingWorkbenchSurface canvasId={projectId} embedded />
+                                            <WeddingWorkbenchSurface
+                                                canvasId={projectId}
+                                                embedded
+                                                productionOverride={weddingProduction}
+                                            />
                                         </div>
                                     ) : null}
                                     <InfiniteCanvas

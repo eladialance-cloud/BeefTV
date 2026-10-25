@@ -4,7 +4,7 @@ import { Link, Navigate, useParams } from "react-router";
 
 import { openLocalCanvasProjectFromBackend, persistCanvasDocument } from "@/services/local-workspace-repository";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
-import { WEDDING_STAGE_IDS, type WeddingStageId } from "@/lib/wedding/types";
+import { WEDDING_STAGE_IDS, type WeddingProductionState, type WeddingStageId } from "@/lib/wedding/types";
 import { clearWeddingPromptOverride, setWeddingPromptOverride } from "@/lib/wedding/prompt";
 import { legacyWeddingWorkbenchPath } from "@/lib/wedding/routing";
 import { VideoPromptInspector } from "@/pages/wedding/video-prompt-inspector";
@@ -16,9 +16,11 @@ import "./wedding-workbench.css";
 export function WeddingWorkbenchSurface({
     canvasId,
     embedded = false,
+    productionOverride,
 }: {
     canvasId: string;
     embedded?: boolean;
+    productionOverride?: WeddingProductionState;
 }) {
     const project = useCanvasStore((state) => state.projects.find((item) => item.id === canvasId));
     const [loading, setLoading] = useState(!project);
@@ -50,7 +52,7 @@ export function WeddingWorkbenchSurface({
         };
     }, [canvasId, project]);
 
-    const production = project?.weddingProduction;
+    const production = productionOverride ?? project?.weddingProduction;
     const resolvedStage = activeStage || production?.activeStage || "setup";
     const resolvedDynastyId = selectedDynastyId || production?.dynasties[0]?.id || "";
     const resolvedDynasty = useMemo(

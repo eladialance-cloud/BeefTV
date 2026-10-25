@@ -26,6 +26,53 @@ export function buildWeddingProductionFromTemplate(
     nodes: TemplateNode[],
     now: string,
 ): WeddingProductionState {
+    return buildWeddingProductionState({
+        template: {
+            id: template.id,
+            key: template.itemKey,
+            version: templateVersion(template.payloadJson),
+        },
+        variables,
+        nodes,
+        now,
+        dynastyNames: dynastyNamesFromPayload(template.payloadJson),
+    });
+}
+
+export function buildWeddingProductionFromCanvasNodes(
+    nodes: TemplateNode[],
+    now: string,
+): WeddingProductionState | undefined {
+    const templateNode = nodes.find((node) => {
+        const pluginData = asRecord(node.metadata?.pluginData);
+        return text(pluginData?.creationTemplateKey) === "cross-era-wedding-volc";
+    });
+    if (!templateNode) return undefined;
+
+    const pluginData = asRecord(templateNode.metadata?.pluginData);
+    const templateID = text(pluginData?.creationTemplateId) || "cross-era-wedding-volc";
+    const variables = asRecord(pluginData?.creationTemplateVariables) || {};
+    return buildWeddingProductionState({
+        template: {
+            id: templateID,
+            key: "cross-era-wedding-volc",
+            version: text(pluginData?.creationTemplateVersion) || "1.0.0",
+        },
+        variables,
+        nodes,
+        now,
+        dynastyNames: new Map(),
+    });
+}
+
+function buildWeddingProductionState(input: {
+    template: WeddingProductionState["template"];
+    variables: TemplateVariables;
+    nodes: TemplateNode[];
+    now: string;
+    dynastyNames: Map<string, string>;
+}): WeddingProductionState {
+    const { template, variables, nodes, now, dynastyNames } = input;
     const groomPhoto = nodes.find((node) => node.metadata?.uploadField === "groomPhoto");
     const bridePhoto = nodes.find((node) => node.metadata?.uploadField === "bridePhoto");
     if (!groomPhoto) throw new Error("缺少新郎原始照片节点");
@@ -34,7 +81,6 @@ export function buildWeddingProductionFromTemplate(
     const selectedDynasties = Array.isArray(variables.dynasties)
         ? variables.dynasties.map((value) => text(value)).filter(Boolean)
         : [];
-    const payloadNames = dynastyNamesFromPayload(template.payloadJson);
     const dynamicNodes = nodes.filter((node) => {
         const pluginData = asRecord(node.metadata?.pluginData);
         return text(pluginData?.creationTemplateDynamicRef) && text(pluginData?.creationTemplateDynastyId);
@@ -50,7 +96,7 @@ export function buildWeddingProductionFromTemplate(
                 return text(pluginData?.creationTemplateDynamicRef) === ref;
             });
             if (node) return node;
-            const name = dynastyName(dynastyNodes) || payloadNames.get(dynastyId) || dynastyId;
+            const name = dynastyName(dynastyNodes) || dynastyNames.get(dynastyId) || dynastyId;
             throw new Error(`${name}：缺少${field}节点`);
         };
         const portraitMale = findNode("dynastyPortraitMale", "新郎定妆照");
@@ -59,7 +105,7 @@ export function buildWeddingProductionFromTemplate(
         const video = findNode("dynastyVideo", "视频");
         return [{
             id: dynastyId,
-            name: dynastyName(dynastyNodes) || payloadNames.get(dynastyId) || dynastyId,
+            name: dynastyName(dynastyNodes) || dynastyNames.get(dynastyId) || dynastyId,
             order: index,
             portraitMaleNodeId: portraitMale.id,
             portraitFemaleNodeId: portraitFemale.id,
@@ -69,11 +115,7 @@ export function buildWeddingProductionFromTemplate(
     });
 
     return createWeddingProductionState({
-        template: {
-            id: template.id,
-            key: template.itemKey,
-            version: templateVersion(template.payloadJson),
-        },
+        template,
         source: {
             groomPhotoNodeId: groomPhoto.id,
             bridePhotoNodeId: bridePhoto.id,
