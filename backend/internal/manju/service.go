@@ -84,11 +84,20 @@ var (
 		VideoModelSeedance20: 15,
 		VideoModelMiniMaxH3:  15,
 	}
-	aspectValues     = valueSet(Aspect16x9, Aspect9x16, Aspect21x9)
-	deliveryValues   = valueSet(DeliveryBoard, DeliveryMarkdown, DeliveryBoth)
-	seamValues       = valueSet(SeamTailFrameFreeze, SeamHardCut, SeamInsertShot, SeamCreative)
-	styleBaseValues  = valueSet(StyleBaseLiveAction, StyleBase2DAnimation, StyleBase3DCG, StyleBaseInk2D)
-	assetModeValues  = valueSet(AssetModeM0, AssetModeM1, AssetModeM2)
+	aspectValues    = valueSet(Aspect16x9, Aspect9x16, Aspect21x9)
+	deliveryValues  = valueSet(DeliveryBoard, DeliveryMarkdown, DeliveryBoth)
+	seamValues      = valueSet(SeamTailFrameFreeze, SeamHardCut, SeamInsertShot, SeamCreative)
+	styleBaseValues = valueSet(StyleBaseLiveAction, StyleBase2DAnimation, StyleBase3DCG, StyleBaseInk2D)
+	assetModeValues = valueSet(AssetModeM0, AssetModeM1, AssetModeM2)
+	lockKeyValues   = valueSet(
+		LockTrack,
+		LockSource,
+		LockVideoModel,
+		LockAspectRatio,
+		LockDeliveryMode,
+		LockStyleCard,
+		LockSeamMode,
+	)
 	memberRoleValues = valueSet(
 		model.ManjuMemberRoleProducer,
 		model.ManjuMemberRoleWriter,
@@ -730,6 +739,11 @@ func normalizeLock(input LockInput) (LockSnapshot, error) {
 }
 
 func validateConfirmedLocks(input LockInput, segmentCount int) error {
+	for _, key := range input.ConfirmedLocks {
+		if !lockKeyValues[key] {
+			return fmt.Errorf("%w: unknown confirmation key %q", ErrInvalidLock, key)
+		}
+	}
 	required := []string{
 		LockTrack, LockSource, LockVideoModel,
 		LockAspectRatio, LockDeliveryMode, LockStyleCard,

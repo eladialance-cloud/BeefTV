@@ -71,19 +71,23 @@ async function chooseStyleCard(page: Page, name: string) {
     await page.locator("button.manju-style-card").filter({ hasText: name }).click();
 }
 
+async function confirmSingleSegmentHardLocks(page: Page) {
+    await chooseLock(page, "赛道", "国内剧");
+    await chooseLock(page, "素材来源", "改编");
+    await chooseLock(page, "视频模型", "Seedance 2.5");
+    await chooseLock(page, "画幅", "9:16");
+    await chooseLock(page, "交付形态", "Markdown");
+    await chooseStyleCard(page, "徐克");
+    await page.getByRole("spinbutton").fill("15");
+}
+
 test("P0 cannot be saved until every hard lock is explicitly confirmed", async () => {
     const page = await renderP0Harness();
     try {
         const lockButton = page.getByRole("button", { name: "锁定 P0", exact: true });
         expect(await lockButton.isDisabled()).toBe(true);
 
-        await chooseLock(page, "赛道", "国内剧");
-        await chooseLock(page, "素材来源", "改编");
-        await chooseLock(page, "视频模型", "Seedance 2.5");
-        await chooseLock(page, "画幅", "9:16");
-        await chooseLock(page, "交付形态", "Markdown");
-        await chooseStyleCard(page, "徐克");
-        await page.getByRole("spinbutton").fill("15");
+        await confirmSingleSegmentHardLocks(page);
 
         expect(await lockButton.isEnabled()).toBe(true);
         await lockButton.click();
@@ -99,6 +103,26 @@ test("P0 cannot be saved until every hard lock is explicitly confirmed", async (
             "track",
             "videoModel",
         ]);
+    } finally {
+        await page.close();
+    }
+}, 30_000);
+
+test("changing style family clears the style card confirmation", async () => {
+    const page = await renderP0Harness();
+    try {
+        const lockButton = page.getByRole("button", { name: "锁定 P0", exact: true });
+        await confirmSingleSegmentHardLocks(page);
+        expect(await lockButton.isEnabled()).toBe(true);
+
+        await page.locator(".manju-style-family-row .ant-select").click();
+        await page
+            .locator(".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option-content")
+            .filter({ hasText: "T2" })
+            .click();
+
+        expect(await page.locator("button.manju-style-card.is-selected").count()).toBe(0);
+        expect(await lockButton.isDisabled()).toBe(true);
     } finally {
         await page.close();
     }

@@ -940,10 +940,7 @@ export function P0LockPanel({ detail, onSaved }: { detail: ManjuProjectDetail; o
         confirmLock(lockKey);
     };
 
-    const changeStyleBase = (styleBase: ManjuStyleBaseID) => {
-        setNotice(null);
-        setShowAllStyles(false);
-        setStyleFamilyId("");
+    const clearStyleCardSelection = () => {
         setConfirmedLocks((current) => {
             if (!current.has("styleCard")) return current;
             const next = new Set(current);
@@ -952,12 +949,22 @@ export function P0LockPanel({ detail, onSaved }: { detail: ManjuProjectDetail; o
         });
         setForm((current) => ({
             ...current,
-            styleBase,
             styleCardId: "",
             styleCustomDescription: "",
             styleVisualPrompt: "",
             styleMotionParameters: "",
             styleForbiddenItems: [],
+        }));
+    };
+
+    const changeStyleBase = (styleBase: ManjuStyleBaseID) => {
+        setNotice(null);
+        setShowAllStyles(false);
+        setStyleFamilyId("");
+        clearStyleCardSelection();
+        setForm((current) => ({
+            ...current,
+            styleBase,
         }));
     };
 
@@ -1237,16 +1244,10 @@ export function P0LockPanel({ detail, onSaved }: { detail: ManjuProjectDetail; o
                                                 label: `${index < 3 ? "推荐 · " : ""}${family.id} ${family.name}`,
                                             }))}
                                             onChange={(value) => {
-                                                setStyleFamilyId(String(value));
-                                                if (selectedCard?.family !== value || form.styleCardId === "custom") {
-                                                    setForm((current) => ({
-                                                        ...current,
-                                                        styleCardId: "",
-                                                        styleCustomDescription: "",
-                                                        styleVisualPrompt: "",
-                                                        styleMotionParameters: "",
-                                                        styleForbiddenItems: [],
-                                                    }));
+                                                const nextFamily = String(value);
+                                                setStyleFamilyId(nextFamily);
+                                                if (selectedCard?.family !== nextFamily || form.styleCardId === "custom") {
+                                                    clearStyleCardSelection();
                                                 }
                                             }}
                                         />

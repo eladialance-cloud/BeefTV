@@ -124,6 +124,17 @@ func TestSaveLockRejectsImplicitHardLockValues(t *testing.T) {
 	}
 }
 
+func TestSaveLockRejectsUnknownExplicitLockKey(t *testing.T) {
+	f := newFixture(t)
+	input := validLock()
+	input.ConfirmedLocks = append(input.ConfirmedLocks, "styleBase")
+
+	_, err := f.service.SaveLock(f.ownerID, f.projectID, input)
+	if !errors.Is(err, manju.ErrInvalidLock) {
+		t.Fatalf("unknown explicit lock keys must be rejected, got %v", err)
+	}
+}
+
 func TestSaveLockPersistsExplicitSelectionProofInPayloadAndHash(t *testing.T) {
 	f := newFixture(t)
 	input := validLock()
