@@ -537,6 +537,33 @@ func TestManjuProjectModelsRejectInvalidCapability(t *testing.T) {
 	}
 }
 
+func TestManjuProjectModelsRejectPresentInvalidSlots(t *testing.T) {
+	testCases := []struct {
+		name  string
+		image any
+	}{
+		{name: "empty object", image: map[string]any{}},
+		{name: "null", image: nil},
+		{name: "blank selection", image: map[string]any{"channelId": " ", "modelKey": ""}},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			engine, _ := newManjuHTTPEnv(t)
+			body := map[string]any{
+				"text":  map[string]string{"channelId": "channel-main", "modelKey": "text-pro"},
+				"image": testCase.image,
+			}
+
+			recorder := manjuRequest(t, engine, http.MethodPut, "/api/manju/projects/project-secret/models", body, "owner")
+
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("present invalid model slot must return 400, got %d: %s", recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}
+
 func TestManjuWriterCannotChangeProjectModels(t *testing.T) {
 	engine, service := newManjuHTTPEnv(t)
 	if _, err := service.InviteMember(testManjuOwnerID, "project-secret", manjusvc.MemberInput{
@@ -1233,6 +1260,7 @@ func TestManjuProductionConfirmAcceptsOptionalBody(t *testing.T) {
 		{name: "omitted body", omitBody: true, wantCode: http.StatusOK},
 		{name: "empty body", body: "", wantCode: http.StatusOK},
 		{name: "whitespace-only body", body: " \n\t", wantCode: http.StatusOK},
+		{name: "null body", body: "null", wantCode: http.StatusBadRequest},
 		{name: "malformed JSON", body: `{"note":`, wantCode: http.StatusBadRequest},
 	}
 

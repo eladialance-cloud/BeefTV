@@ -38,10 +38,58 @@ func bindOptionalJSON(c *gin.Context, target any) error {
 	if err != nil {
 		return err
 	}
-	if len(bytes.TrimSpace(body)) == 0 {
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 {
 		return nil
 	}
+	if body[0] != '{' {
+		return errors.New("JSON body must be an object")
+	}
 	return json.Unmarshal(body, target)
+}
+
+func bindModelBindingInput(c *gin.Context) (manju.ModelBindingInput, error) {
+	var payload struct {
+		Text  json.RawMessage `json:"text"`
+		Image json.RawMessage `json:"image"`
+		Video json.RawMessage `json:"video"`
+	}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		return manju.ModelBindingInput{}, err
+	}
+
+	parseSelection := func(raw json.RawMessage) (manju.ModelSelection, error) {
+		if len(raw) == 0 {
+			return manju.ModelSelection{}, nil
+		}
+		raw = bytes.TrimSpace(raw)
+		if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+			return manju.ModelSelection{}, errors.New("model slot must be an object")
+		}
+		var selection manju.ModelSelection
+		if err := json.Unmarshal(raw, &selection); err != nil {
+			return manju.ModelSelection{}, err
+		}
+		selection.ChannelID = strings.TrimSpace(selection.ChannelID)
+		selection.ModelKey = strings.TrimSpace(selection.ModelKey)
+		if selection.ChannelID == "" || selection.ModelKey == "" {
+			return manju.ModelSelection{}, errors.New("model slot values must be nonblank")
+		}
+		return selection, nil
+	}
+
+	var input manju.ModelBindingInput
+	var err error
+	if input.Text, err = parseSelection(payload.Text); err != nil {
+		return manju.ModelBindingInput{}, err
+	}
+	if input.Image, err = parseSelection(payload.Image); err != nil {
+		return manju.ModelBindingInput{}, err
+	}
+	if input.Video, err = parseSelection(payload.Video); err != nil {
+		return manju.ModelBindingInput{}, err
+	}
+	return input, nil
 }
 
 // ManjuService is the hosted project surface used by the manju studio. Session
@@ -246,8 +294,8 @@ func RegisterManjuRoutes(r *gin.RouterGroup, svc ManjuService, resolve ActorReso
 		if !ok {
 			return
 		}
-		var input manju.ModelBindingInput
-		if err := c.ShouldBindJSON(&input); err != nil {
+		input, err := bindModelBindingInput(c)
+		if err != nil {
 			writeError(c, kernel.BadAuthRequest("模型绑定参数格式错误"))
 			return
 		}
