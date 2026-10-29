@@ -442,6 +442,8 @@ func writeManjuError(c *gin.Context, err error) {
 		writeError(c, kernel.NotFound("剧本任务不存在"))
 	case errors.Is(err, manju.ErrScriptStageNotFound):
 		writeError(c, kernel.NotFound("剧本阶段不存在"))
+	case errors.Is(err, manju.ErrTrendResolutionRequired):
+		writeError(c, kernel.BadAuthRequest("热点速成项目必须先选择按原创或对标执行"))
 	case errors.Is(err, manju.ErrInvalidScriptRun):
 		writeError(c, kernel.BadAuthRequest("剧本任务参数无效"))
 	case errors.Is(err, manju.ErrScriptUnitInProgress):

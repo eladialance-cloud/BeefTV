@@ -176,17 +176,24 @@ describe("manju studio hosted integration", () => {
         expect(page).not.toContain("P1-P5 尚未接入真实执行器");
     });
 
-    test("four P1 branches expose distinct input forms", () => {
+    test("four P0 sources route polish and trend through explicit inputs", () => {
         const page = source("src/pages/manju/index.tsx");
+        const api = source("src/services/api/manju.ts");
+        const sourcePanel = source("src/pages/manju/source-library-steps-panel.tsx");
 
-        expect(page).toContain("小说改编");
-        expect(page).toContain("原创故事");
-        expect(page).toContain("对标改编");
-        expect(page).toContain("外来剧本润色");
-        expect(page).toContain("原著正文");
-        expect(page).toContain("故事种子");
-        expect(page).toContain("对标情报卡");
-        expect(page).toContain("外来剧本正文");
+        expect(api).toContain('export type ManjuSource = "original" | "adaptation" | "benchmark" | "trend";');
+        expect(api).toContain("inputKind");
+        expect(api).toContain("trendResolution");
+        expect(page).toContain("const INPUT_KIND_OPTIONS");
+        expect(page).toContain('{ value: "novel", label: "小说 / 网文" }');
+        expect(page).toContain('{ value: "outline", label: "大纲 / 梗概" }');
+        expect(page).toContain('{ value: "finished_script", label: "成型外部剧本" }');
+        expect(page).toContain("const TREND_RESOLUTION_OPTIONS");
+        expect(page).toContain('{ value: "original", label: "选定方向后按原创执行" }');
+        expect(page).toContain('{ value: "benchmark", label: "选定方向后按对标执行" }');
+        expect(page).toContain("inputKind");
+        expect(page).toContain("trendResolution");
+        expect(sourcePanel).toContain("inputKind");
     });
 
     test("P2 asset workspace is a real gated flow with no M0/M1 image upload", () => {

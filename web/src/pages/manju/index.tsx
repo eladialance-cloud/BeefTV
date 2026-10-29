@@ -58,6 +58,7 @@ import {
     saveManjuModels,
     type ManjuScriptArtifact,
     type ManjuScriptBranch,
+    type ManjuScriptInputKind,
     type ManjuScriptMode,
     type ManjuScriptRun,
     type ManjuScriptRunDetail,
@@ -73,6 +74,7 @@ import {
     type ManjuRuleLibraryStatus,
     type ManjuStyleBaseID,
     type ManjuStyleCard,
+    type ManjuTrendResolution,
 } from "@/services/api/manju";
 import {
     confirmManjuAssetManifest,
@@ -226,7 +228,17 @@ const SOURCE_OPTIONS = [
     { value: "adaptation", label: "小说/外部素材改编" },
     { value: "benchmark", label: "对标改编" },
     { value: "trend", label: "趋势热点改编" },
-    { value: "polish", label: "外来剧本润色" },
+];
+
+const INPUT_KIND_OPTIONS: Array<{ value: ManjuScriptInputKind; label: string }> = [
+    { value: "novel", label: "小说 / 网文" },
+    { value: "outline", label: "大纲 / 梗概" },
+    { value: "finished_script", label: "成型外部剧本" },
+];
+
+const TREND_RESOLUTION_OPTIONS: Array<{ value: Exclude<ManjuTrendResolution, "">; label: string }> = [
+    { value: "original", label: "选定方向后按原创执行" },
+    { value: "benchmark", label: "选定方向后按对标执行" },
 ];
 
 const MODEL_OPTIONS = [
@@ -1454,6 +1466,14 @@ const SCRIPT_BRANCH_LABELS: Record<ManjuScriptBranch, string> = {
     polish: "外来剧本润色",
 };
 
+function scriptInputKindLabel(value?: "" | ManjuScriptInputKind) {
+    return INPUT_KIND_OPTIONS.find((item) => item.value === value)?.label || "";
+}
+
+function trendResolutionLabel(value?: ManjuTrendResolution) {
+    return TREND_RESOLUTION_OPTIONS.find((item) => item.value === value)?.label || "";
+}
+
 const SCRIPT_STATUS_LABELS: Record<ManjuScriptStageStatus, string> = {
     NOT_STARTED: "等待上游",
     IN_PROGRESS: "任务执行中",
@@ -1570,10 +1590,13 @@ function PipelineWorkspace({ detail, activeStage, onStageChange, onChanged }: { 
 function ScriptPipeline({ detail, onChanged }: { detail: ManjuProjectDetail; onChanged: () => void }) {
     const queryClient = useQueryClient();
     const [mode, setMode] = useState<ManjuScriptMode>("STEPWISE");
+    const [inputKind, setInputKind] = useState<ManjuScriptInputKind>("novel");
+    const [trendResolution, setTrendResolution] = useState<ManjuTrendResolution>("");
     const [selectedRunId, setSelectedRunId] = useState("");
     const [showSourceLibrary, setShowSourceLibrary] = useState(false);
     const [notice, setNotice] = useState<{ tone: "info" | "error" | "success"; text: string } | null>(null);
     const canEdit = ["owner", "producer", "writer"].includes(detail.accessRole);
+    const source = detail.lock?.snapshot.source || "";
     const runsQuery = useQuery({
         queryKey: ["manju", "script-runs", detail.project.id],
         queryFn: () => listManjuScriptRuns(detail.project.id),
@@ -1599,7 +1622,11 @@ function ScriptPipeline({ detail, onChanged }: { detail: ManjuProjectDetail; onC
         onChanged();
     };
     const createMutation = useMutation({
-        mutationFn: () => createManjuScriptRun(detail.project.id, { mode }),
+        mutationFn: () => createManjuScriptRun(detail.project.id, {
+            mode,
+            inputKind: source === "adaptation" ? inputKind : undefined,
+            trendResolution: source === "trend" ? trendResolution : undefined,
+        }),
         onSuccess: ({ item }) => {
             applyRun(item);
             setSelectedRunId(item.run.id);
@@ -1621,6 +1648,9 @@ function ScriptPipeline({ detail, onChanged }: { detail: ManjuProjectDetail; onC
         if (selectedRun) setMode(selectedRun.mode);
     }, [selectedRun?.id]);
     useEffect(() => {
+        if (source !== "trend") setTrendResolution("");
+    }, [source]);
+    useEffect(() => {
         if (!currentRuns.length) {
             setSelectedRunId("");
             setShowSourceLibrary(true);
@@ -1640,20 +1670,37 @@ function ScriptPipeline({ detail, onChanged }: { detail: ManjuProjectDetail; onC
             </div>
         );
     }
-    const adaptationBranch = detail.lock.snapshot.source === "adaptation";
+    const adaptationBranch = source === "adaptation";
     const completedRuns = currentRuns.filter((run) => run.status === "COMPLETED");
+    const runRouteLabel = runDetail
+        ? [
+            SCRIPT_BRANCH_LABELS[runDetail.run.branch],
+            scriptInputKindLabel(runDetail.run.inputKind),
+            runDetail.run.trendResolution ? `趋势落点：${trendResolutionLabel(runDetail.run.trendResolution)}` : "",
+        ].filter(Boolean).join(" · ")
+        : "";
 
     return (
         <div className="manju-script-workspace">
             {adaptationBranch ? (
                 <section className="manju-script-library-bar">
                     <div>
-                        <span className="manju-kicker">第一步 · 原著与章节</span>
-                        <strong>当前项目原著库</strong>
-                        <small>{currentRuns.length ? "需要制作新章节时再展开；已有改编单元不会被覆盖。" : "先登记原著，再选择本章节创建改编单元。"}</small>
+                        <span className="manju-kicker">第一步 · 来源与范围</span>
+                        <strong>当前项目来源库</strong>
+                        <small>{currentRuns.length ? "需要制作新范围时再展开；已有任务版不会被覆盖。" : "先登记来源，再选择本次范围创建剧本任务版。"}</small>
+                        <label>
+                            <span>输入形态</span>
+                            <Select
+                                aria-label="改编输入形态"
+                                value={inputKind}
+                                options={INPUT_KIND_OPTIONS}
+                                disabled={!canEdit || currentRuns.some((run) => run.status === "ACTIVE")}
+                                onChange={setInputKind}
+                            />
+                        </label>
                     </div>
                     <Button icon={<BookOpenText />} onClick={() => setShowSourceLibrary((value) => !value)}>
-                        {showSourceLibrary ? "收起原著库" : currentRuns.length ? "新建下一章" : "打开原著库"}
+                        {showSourceLibrary ? "收起来源库" : currentRuns.length ? "新建任务版" : "打开来源库"}
                     </Button>
                 </section>
             ) : null}
@@ -1661,6 +1708,7 @@ function ScriptPipeline({ detail, onChanged }: { detail: ManjuProjectDetail; onC
                 <SourceLibraryStepsPanel
                     projectId={detail.project.id}
                     canEdit={canEdit}
+                    inputKind={inputKind}
                     completedRuns={completedRuns}
                     runsLoading={p1Loading}
                     hasActiveRun={currentRuns.some((run) => run.status === "ACTIVE" && Boolean(run.sourceId || run.sourceDocumentId))}
@@ -1675,7 +1723,7 @@ function ScriptPipeline({ detail, onChanged }: { detail: ManjuProjectDetail; onC
                 <div>
                     <span className="manju-kicker">VisiDeep AI · V7.4.26 · P1 剧本</span>
                     <h2>{runDetail ? runDetail.run.unitTitle || SCRIPT_BRANCH_LABELS[runDetail.run.branch] : "建立剧本任务版"}</h2>
-                    <p>{runDetail ? `${SCRIPT_BRANCH_LABELS[runDetail.run.branch]} · ${runDetail.run.sourceRangeLabel || "未登记章节范围"} · P0 revision ${runDetail.run.lockRevision}` : "支线由 P0 素材来源自动推导，四支线不会共用同一个输入表单。"}</p>
+                    <p>{runDetail ? `${runRouteLabel} · ${runDetail.run.sourceRangeLabel || "未登记来源范围"} · P0 revision ${runDetail.run.lockRevision}` : "支线由 P0 素材来源、输入形态与趋势落点共同决定。"}</p>
                 </div>
                 <div className="manju-script-run-actions">
                     {currentRuns.length ? (
@@ -1693,6 +1741,19 @@ function ScriptPipeline({ detail, onChanged }: { detail: ManjuProjectDetail; onC
                     ) : null}
                     {!adaptationBranch ? (
                         <>
+                            {source === "trend" ? (
+                                <label>
+                                    <span>趋势落点</span>
+                                    <Select
+                                        aria-label="趋势落点"
+                                        value={trendResolution || undefined}
+                                        disabled={!canEdit || selectedRun?.status === "ACTIVE"}
+                                        placeholder="必须选择执行方向"
+                                        onChange={setTrendResolution}
+                                        options={TREND_RESOLUTION_OPTIONS}
+                                    />
+                                </label>
+                            ) : null}
                             <label>
                                 <span>制作方式</span>
                                 <Select
@@ -1705,7 +1766,7 @@ function ScriptPipeline({ detail, onChanged }: { detail: ManjuProjectDetail; onC
                                     ]}
                                 />
                             </label>
-                            <Button type="primary" icon={<Play />} disabled={!canEdit || selectedRun?.status === "ACTIVE"} loading={createMutation.isPending} onClick={() => createMutation.mutate()}>
+                            <Button type="primary" icon={<Play />} disabled={!canEdit || selectedRun?.status === "ACTIVE" || (source === "trend" && !trendResolution)} loading={createMutation.isPending} onClick={() => createMutation.mutate()}>
                                 {selectedRun?.status === "ACTIVE" ? "当前任务版进行中" : selectedRun ? "创建新任务版" : "开始 P1"}
                             </Button>
                         </>

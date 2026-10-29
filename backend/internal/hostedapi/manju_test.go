@@ -154,6 +154,17 @@ func TestManjuRoutesRequireSession(t *testing.T) {
 	}
 }
 
+func TestManjuTrendResolutionErrorIsBadRequest(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+
+	writeManjuError(context, fmt.Errorf("create run: %w", manjusvc.ErrTrendResolutionRequired))
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("missing trend resolution must be a bad request, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestManjuScriptArtifactRegenerationRouteRequiresSession(t *testing.T) {
 	engine, _ := newManjuHTTPEnv(t)
 

@@ -5,7 +5,7 @@ export type ManjuMemberRole = "owner" | "producer" | "writer" | "director" | "re
 export type ManjuStyleBaseID = "live-action" | "2d-animation" | "3d-cg" | "ink-2d";
 export type ManjuLockKey = "track" | "source" | "videoModel" | "aspectRatio" | "deliveryMode" | "styleCard" | "seamMode";
 export type ManjuTrack = "domestic" | "overseas" | "explainer" | "other";
-export type ManjuSource = "original" | "adaptation" | "benchmark" | "trend" | "polish";
+export type ManjuSource = "original" | "adaptation" | "benchmark" | "trend";
 export type ManjuVideoModel = "seedance-2.5" | "seedance-2.0" | "minimax-h3";
 export type ManjuAspectRatio = "16:9" | "9:16" | "21:9";
 export type ManjuDeliveryMode = "board" | "markdown" | "both";
@@ -194,6 +194,8 @@ export type ManjuUserDeliverable = {
 
 export type ManjuScriptMode = "STEPWISE" | "FULL_SCRIPT_PIPELINE";
 export type ManjuScriptBranch = "original" | "adaptation" | "benchmark" | "polish";
+export type ManjuScriptInputKind = "novel" | "outline" | "finished_script";
+export type ManjuTrendResolution = "" | "original" | "benchmark";
 export type ManjuScriptStageStatus = "NOT_STARTED" | "IN_PROGRESS" | "AWAITING_CONFIRMATION" | "AWAITING_USER_DECISION" | "LOCKED" | "STALE" | "BLOCKED";
 
 export type ManjuScriptRun = {
@@ -201,6 +203,8 @@ export type ManjuScriptRun = {
     projectId: string;
     branch: ManjuScriptBranch;
     mode: ManjuScriptMode;
+    inputKind?: "" | ManjuScriptInputKind;
+    trendResolution?: ManjuTrendResolution;
     status: "ACTIVE" | "COMPLETED" | "ABANDONED";
     currentStage: string;
     lockRevision: number;
@@ -324,6 +328,17 @@ export type ManjuScriptSourceInput = {
     rangeLabel: string;
     content: string;
     metadata?: Record<string, string>;
+};
+
+export type ManjuScriptRunInput = {
+    mode: ManjuScriptMode;
+    inputKind?: ManjuScriptInputKind;
+    trendResolution?: ManjuTrendResolution;
+    title?: string;
+    sourceDocumentId?: string;
+    chapterIds?: string[];
+    baseRunId?: string;
+    reuseGlobalStages?: boolean;
 };
 
 export type ManjuAssetMode = "M0" | "M1" | "M2";
@@ -673,14 +688,7 @@ export function createManjuSourceDocument(projectId: string, input: { title: str
 
 export function createManjuScriptRun(
     projectId: string,
-    input: {
-        mode: ManjuScriptMode;
-        title?: string;
-        sourceDocumentId?: string;
-        chapterIds?: string[];
-        baseRunId?: string;
-        reuseGlobalStages?: boolean;
-    },
+    input: ManjuScriptRunInput,
 ) {
     return http.post<{ item: ManjuScriptRunDetail }>(`/manju/projects/${encodeURIComponent(projectId)}/script-runs`, input);
 }

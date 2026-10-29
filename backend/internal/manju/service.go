@@ -47,7 +47,6 @@ const (
 	SourceAdaptation = "adaptation"
 	SourceBenchmark  = "benchmark"
 	SourceTrend      = "trend"
-	SourcePolish     = "polish"
 
 	VideoModelSeedance25 = "seedance-2.5"
 	VideoModelSeedance20 = "seedance-2.0"
@@ -78,7 +77,7 @@ const (
 
 var (
 	trackValues  = valueSet(TrackDomestic, TrackOverseas, TrackExplainer, TrackOther)
-	sourceValues = valueSet(SourceOriginal, SourceAdaptation, SourceBenchmark, SourceTrend, SourcePolish)
+	sourceValues = valueSet(SourceOriginal, SourceAdaptation, SourceBenchmark, SourceTrend)
 	modelLimits  = map[string]int{
 		VideoModelSeedance25: 30,
 		VideoModelSeedance20: 15,
