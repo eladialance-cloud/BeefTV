@@ -37,7 +37,7 @@ func newFixture(t *testing.T) fixture {
 	if sqlDB, dbErr := db.DB(); dbErr == nil {
 		t.Cleanup(func() { _ = sqlDB.Close() })
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.Project{}, &model.CanvasProject{}, &model.ManjuProjectMember{}, &model.ManjuLockReceipt{}, &model.ManjuProjectModelBinding{}, &model.ManjuRuleSnapshot{}, &model.ManjuRuleReadReceipt{}, &model.ManjuModelExchange{}, &model.ManjuArtifactLedger{}, &model.ManjuSourceDocument{}, &model.ManjuSourceChapter{}, &model.ManjuScriptRun{}, &model.ManjuScriptStage{}, &model.ManjuScriptSource{}, &model.ManjuScriptArtifact{}, &model.ManjuRoundtableDecision{}, &model.ManjuAssetRun{}, &model.ManjuAssetStage{}, &model.ManjuAssetArtifact{}, &model.ManjuAssetReference{}, &model.ManjuProductionRun{}, &model.ManjuProductionStage{}, &model.ManjuProductionArtifact{}, &model.ManjuProductionPrevis{}, &model.ManjuProductionImage{}, &model.ManjuProductionVideo{}, &model.ManjuStageDraft{}, &model.ManjuArtifactCorrection{}, &model.ManjuCanvasImport{}, &model.Result{}, &model.Resource{}, &model.ModelChannel{}, &model.ChannelModel{}, &model.Task{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Project{}, &model.CanvasProject{}, &model.ManjuProjectMember{}, &model.ManjuLockReceipt{}, &model.ManjuProjectModelBinding{}, &model.ManjuRuleSnapshot{}, &model.ManjuRuleReadReceipt{}, &model.ManjuModelExchange{}, &model.ManjuArtifactLedger{}, &model.ManjuSourceDocument{}, &model.ManjuSourceChapter{}, &model.ManjuScriptRun{}, &model.ManjuScriptStage{}, &model.ManjuScriptSource{}, &model.ManjuScriptArtifact{}, &model.ManjuRoundtableDecision{}, &model.ManjuAssetRun{}, &model.ManjuAssetStage{}, &model.ManjuAssetArtifact{}, &model.ManjuAssetReference{}, &model.ManjuProductionRun{}, &model.ManjuProductionStage{}, &model.ManjuProductionArtifact{}, &model.ManjuDeliverable{}, &model.ManjuProductionPrevis{}, &model.ManjuProductionImage{}, &model.ManjuProductionVideo{}, &model.ManjuStageDraft{}, &model.ManjuArtifactCorrection{}, &model.ManjuCanvasImport{}, &model.Result{}, &model.Resource{}, &model.ModelChannel{}, &model.ChannelModel{}, &model.Task{}); err != nil {
 		t.Fatalf("迁移测试表失败: %v", err)
 	}
 	if err := db.AutoMigrate(&model.ManjuProjectStateSnapshot{}); err != nil {
@@ -716,6 +716,7 @@ func seedManjuDeleteRecords(t *testing.T, f fixture) {
 		&model.ManjuProductionRun{ID: "delete-production-run", ProjectID: f.projectID, AssetRunID: "delete-asset-run", Status: model.ManjuProductionRunStatusActive, CreatedBy: f.ownerID},
 		&model.ManjuProductionStage{ID: "delete-production-stage", RunID: "delete-production-run", Key: model.ManjuProductionStageStoryboard, Title: "导演故事板", Status: model.ManjuProductionStageStatusNotStarted},
 		&model.ManjuProductionArtifact{ID: "delete-production-artifact", ProjectID: f.projectID, RunID: "delete-production-run", StageID: "delete-production-stage", Kind: "DIRECTOR_STORYBOARD.md", Content: "x", ContentHash: "hash", CreatedBy: f.ownerID},
+		&model.ManjuDeliverable{ID: "delete-deliverable", ProjectID: f.projectID, LockRevision: 1, ProductionRunID: "delete-production-run", Kind: model.ManjuDeliverableKindMarkdown, FileName: "交付.md", MimeType: "text/markdown", Content: "x", ContentHash: "hash"},
 		&model.ManjuProductionImage{ID: "delete-production-image", ProjectID: f.projectID, RunID: "delete-production-run", StageID: "delete-production-stage", Position: 1, SegmentCode: "S01", Prompt: "x", Status: model.ManjuProductionImageStatusReady, CreatedBy: f.ownerID},
 		&model.ManjuProductionVideo{ID: "delete-production-video", ProjectID: f.projectID, RunID: "delete-production-run", StageID: "delete-production-stage", Position: 1, SegmentCode: "S01", Prompt: "x", Status: model.ManjuProductionVideoStatusReady, CreatedBy: f.ownerID},
 		&model.Task{ID: "task-completed-delete", UserID: f.ownerID, ProjectID: f.projectID, Type: "canvas_text", Status: model.TaskStatusSucceeded},
@@ -750,6 +751,7 @@ func assertNoManjuProjectRecords(t *testing.T, db *gorm.DB, projectID string) {
 		{name: "production run", model: &model.ManjuProductionRun{}, where: "project_id = ?", value: projectID},
 		{name: "production stage", model: &model.ManjuProductionStage{}, where: "run_id = ?", value: "delete-production-run"},
 		{name: "production artifact", model: &model.ManjuProductionArtifact{}, where: "project_id = ?", value: projectID},
+		{name: "deliverable", model: &model.ManjuDeliverable{}, where: "project_id = ?", value: projectID},
 		{name: "production image", model: &model.ManjuProductionImage{}, where: "project_id = ?", value: projectID},
 		{name: "production video", model: &model.ManjuProductionVideo{}, where: "project_id = ?", value: projectID},
 	}

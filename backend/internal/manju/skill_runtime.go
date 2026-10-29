@@ -795,6 +795,41 @@ func (r *ManjuSkillRuntime) AuditContract(content string, director string) (Manj
 	return result, nil
 }
 
+func (r *ManjuSkillRuntime) BuildBoard(markdown string) (string, error) {
+	if strings.TrimSpace(markdown) == "" {
+		return "", errors.New("官方 build_board_lite.py 拒绝空 Markdown 源稿")
+	}
+	dir, err := os.MkdirTemp("", "manju-board-*")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(dir)
+	markdownPath := filepath.Join(dir, "canonical.md")
+	boardPath := filepath.Join(dir, "board.html")
+	if err := os.WriteFile(markdownPath, []byte(markdown), 0o600); err != nil {
+		return "", err
+	}
+	output, code, runErr := r.runPython(
+		filepath.Join("short-drama-director", "scripts", "build_board_lite.py"),
+		[]string{markdownPath, "--out", boardPath},
+		90*time.Second,
+	)
+	if runErr != nil {
+		return "", fmt.Errorf("官方 build_board_lite.py 执行失败: %w: %s", runErr, strings.TrimSpace(output))
+	}
+	if code != 0 {
+		return "", fmt.Errorf("官方 build_board_lite.py 退出码 %d: %s", code, strings.TrimSpace(output))
+	}
+	board, err := os.ReadFile(boardPath)
+	if err != nil {
+		return "", fmt.Errorf("读取官方 build_board_lite.py 输出失败: %w", err)
+	}
+	if strings.TrimSpace(string(board)) == "" {
+		return "", errors.New("官方 build_board_lite.py 输出为空")
+	}
+	return string(board), nil
+}
+
 func (r *ManjuSkillRuntime) SelfTest() error {
 	checks := [][]string{
 		{filepath.Join("short-drama-director", "scripts", "sd_core.py"), "--self-test"},

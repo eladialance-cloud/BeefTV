@@ -145,6 +145,7 @@ func RegisterManjuRoutes(r *gin.RouterGroup, svc ManjuService, resolve ActorReso
 			writeManjuError(c, err)
 			return
 		}
+		c.Header("Cache-Control", "no-store")
 		writeOK(c, gin.H{"items": items})
 	})
 

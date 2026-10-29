@@ -183,10 +183,13 @@ export type ManjuRuleLibraryStatus = {
 };
 
 export type ManjuUserDeliverable = {
-    artifactId: string;
-    phase: "P2" | "P3" | "P4";
-    kind: string;
-    version: number;
+    id: string;
+    projectId: string;
+    lockRevision: number;
+    productionRunId: string;
+    kind: "markdown" | "board" | "manifest";
+    fileName: string;
+    mimeType: string;
     content: string;
     contentHash: string;
     createdAt: string;

@@ -57,6 +57,21 @@ test("P4.5 is an independent P4 gate backed by check_p45.py", () => {
     expect(page).toContain("PREVIS_STORYBOARD.md");
 });
 
+test("P5 deliverables render only persisted backend rows", () => {
+    expect(api).toContain("productionRunId: string");
+    expect(api).toContain("fileName: string");
+    expect(api).toContain("mimeType: string");
+    expect(page).toContain("getManjuUserDeliverables");
+    expect(page).toContain('deliverable.kind === "markdown"');
+    expect(page).toContain('deliverable.kind === "board"');
+    expect(page).toContain('deliverable.kind === "manifest"');
+    expect(page).toContain("Markdown 源稿");
+    expect(page).toContain("离线 HTML 看板");
+    expect(page).toContain("交付清单");
+    expect(page).toContain("item.productionRunId === detail.run.id");
+    expect(page).toContain("downloadManjuDeliverable(deliverable)");
+});
+
 test("M2 compile explains the missing reference gate instead of silently hiding the button", () => {
     expect(page).toContain("const compileBlocked");
     expect(page).toContain("M2 资产交付编译被参考图门禁暂停");

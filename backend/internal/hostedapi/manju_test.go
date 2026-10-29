@@ -154,6 +154,60 @@ func TestManjuRoutesRequireSession(t *testing.T) {
 	}
 }
 
+func TestManjuDeliverablesRouteReturnsPersistedDownloadMetadata(t *testing.T) {
+	engine, _, db := newManjuHTTPEnvWithDB(t)
+	now := time.Now().UTC()
+	rows := []model.ManjuDeliverable{
+		{
+			ID: "delivery-markdown", ProjectID: "project-secret", LockRevision: 3,
+			ProductionRunID: "production-run-delivery", Kind: model.ManjuDeliverableKindMarkdown,
+			FileName: "不可泄露的项目-P5最终交付.md", MimeType: "text/markdown; charset=utf-8",
+			Content: "# 最终交付\n", ContentHash: strings.Repeat("a", 64), CreatedAt: now,
+		},
+		{
+			ID: "delivery-manifest", ProjectID: "project-secret", LockRevision: 3,
+			ProductionRunID: "production-run-delivery", Kind: model.ManjuDeliverableKindManifest,
+			FileName: "不可泄露的项目-P5交付清单.json", MimeType: "application/json; charset=utf-8",
+			Content: `{"version":"V7.4.26"}`, ContentHash: strings.Repeat("b", 64), CreatedAt: now,
+		},
+	}
+	if err := db.Create(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := manjuRequest(t, engine, http.MethodGet, "/api/manju/projects/project-secret/deliverables", nil, "owner")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("读取交付物应 200，得到 %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if recorder.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("交付物接口必须禁止缓存，得到 %q", recorder.Header().Get("Cache-Control"))
+	}
+	var payload struct {
+		Data struct {
+			Items []manjusvc.UserDeliverableView `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Data.Items) != 2 {
+		t.Fatalf("deliverables = %d, want persisted markdown+manifest only: %+v", len(payload.Data.Items), payload.Data.Items)
+	}
+	if payload.Data.Items[0].Kind != model.ManjuDeliverableKindMarkdown ||
+		payload.Data.Items[1].Kind != model.ManjuDeliverableKindManifest {
+		t.Fatalf("unexpected persisted deliverable order: %+v", payload.Data.Items)
+	}
+	first := payload.Data.Items[0]
+	if first.ProductionRunID != "production-run-delivery" ||
+		first.FileName == "" ||
+		first.MimeType != "text/markdown; charset=utf-8" ||
+		first.ContentHash != strings.Repeat("a", 64) ||
+		first.LockRevision != 3 ||
+		!strings.Contains(first.Content, "最终交付") {
+		t.Fatalf("deliverable download metadata is incomplete: %+v", first)
+	}
+}
+
 func TestManjuTrendResolutionErrorIsBadRequest(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)

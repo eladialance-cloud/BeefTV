@@ -93,6 +93,7 @@ import {
     createManjuProductionRun,
     generateManjuProductionPrevis,
     getManjuProductionRun,
+    getManjuUserDeliverables,
     listManjuProductionRuns,
     manualCorrectManjuProductionArtifact,
     previewManjuProductionStoryboardCompile,
@@ -119,6 +120,7 @@ import {
     type ManjuProductionStage,
     type ManjuProductionStageStatus,
     type ManjuCompilePreview,
+    type ManjuUserDeliverable,
 } from "@/services/api/manju";
 import { useUserStore } from "@/stores/use-user-store";
 import { createManjuCanvasPackage, manjuAssetNameFromCode, manjuCanvasViewportForNodes, mergeManjuCanvasPackage, nextManjuCanvasCenter, normalizeManjuCanvasLayout, type ManjuCanvasReference } from "@/lib/canvas/canvas-manju";
@@ -1498,6 +1500,23 @@ function productionStageOrder(stageKey: string) {
     if (stageKey === "feed_package") return 4;
     if (stageKey === "qc_handoff") return 5;
     return 0;
+}
+
+function manjuDeliverableKindLabel(deliverable: ManjuUserDeliverable) {
+    if (deliverable.kind === "markdown") return "Markdown 源稿";
+    if (deliverable.kind === "board") return "离线 HTML 看板（仅 board/both）";
+    if (deliverable.kind === "manifest") return "交付清单";
+    return deliverable.kind;
+}
+
+function downloadManjuDeliverable(deliverable: ManjuUserDeliverable) {
+    const url = URL.createObjectURL(new Blob([deliverable.content], { type: deliverable.mimeType }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = deliverable.fileName;
+    link.rel = "noopener";
+    link.click();
+    URL.revokeObjectURL(url);
 }
 
 function PipelineWorkspace({ detail, activeStage, onStageChange, onChanged }: { detail: ManjuProjectDetail; activeStage: PipelineStageId; onStageChange: (stage: PipelineStageId) => void; onChanged: () => void }) {
@@ -3365,6 +3384,12 @@ function ProductionStageCard({
         queryFn: () => listManjuCanvasImports(projectId),
         enabled: stage.key === "qc_handoff",
     });
+    const deliverablesQuery = useQuery({
+        queryKey: ["manju", "deliverables", projectId],
+        queryFn: () => getManjuUserDeliverables(projectId),
+        enabled: stage.key === "qc_handoff" && detail.run.status === "COMPLETED",
+    });
+    const deliverables = (deliverablesQuery.data?.items || []).filter((item) => item.productionRunId === detail.run.id);
     const projectCanvasId = primaryManjuProjectCanvas(canvasImportsQuery.data?.items || [])?.canvasId || "";
     const runMutation = useMutation({
         mutationFn: () => runManjuProductionStage(projectId, detail.run.id, stage.key, {
@@ -3377,7 +3402,10 @@ function ProductionStageCard({
     });
     const confirmMutation = useMutation({
         mutationFn: () => confirmManjuProductionStage(projectId, detail.run.id, stage.key, `确认 ${stage.title}`),
-        onSuccess: ({ item }) => onUpdated(item),
+        onSuccess: ({ item }) => {
+            onUpdated(item);
+            if (stage.key === "qc_handoff") void deliverablesQuery.refetch();
+        },
         onError: (error) => setNotice({ tone: "error", text: error instanceof Error ? error.message : "阶段锁定失败" }),
     });
     const regenerateMutation = useMutation({
@@ -3663,6 +3691,36 @@ function ProductionStageCard({
             ) : null}
             {stage.key === "qc_handoff" && canvasImportsQuery.isError ? (
                 <InlineNotice tone="error">项目画布状态读取失败，请刷新后重试。</InlineNotice>
+            ) : null}
+            {stage.key === "qc_handoff" && detail.run.status === "COMPLETED" ? (
+                <section className="manju-production-deliverables" aria-label="P5 已持久化交付物">
+                    <header>
+                        <Download />
+                        <span>
+                            <strong>最终交付物</strong>
+                            <small>以下文件均来自服务端已锁定的交付记录。</small>
+                        </span>
+                    </header>
+                    {deliverablesQuery.isLoading ? <span>正在读取交付清单...</span> : null}
+                    {deliverablesQuery.isError ? <InlineNotice tone="error">交付清单读取失败，请刷新后重试。</InlineNotice> : null}
+                    {!deliverablesQuery.isLoading && !deliverablesQuery.isError && deliverables.length === 0 ? (
+                        <span>服务端尚未生成交付文件。</span>
+                    ) : null}
+                    <div>
+                        {deliverables.map((deliverable) => (
+                            <article key={deliverable.id}>
+                                <span>
+                                    <strong>{manjuDeliverableKindLabel(deliverable)}</strong>
+                                    <small>{deliverable.fileName}</small>
+                                    <code>SHA-256 {deliverable.contentHash.slice(0, 12)}</code>
+                                </span>
+                                <Button icon={<Download />} onClick={() => downloadManjuDeliverable(deliverable)}>
+                                    下载
+                                </Button>
+                            </article>
+                        ))}
+                    </div>
+                </section>
             ) : null}
             <AppModal
                 open={regenerateOpen}

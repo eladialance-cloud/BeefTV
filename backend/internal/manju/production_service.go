@@ -1777,6 +1777,13 @@ func (s *Service) ConfirmProductionStage(actorID, projectID, runID, stageKey str
 			return nil, err
 		}
 	}
+	var deliveryPlan *productionDeliveryPlan
+	if stageKey == ProductionStageQC {
+		deliveryPlan, err = s.prepareProductionDelivery(actorID, projectID, runID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	err = s.repo.Transaction(func(tx *repository.Repository) error {
 		access, err := tx.ManjuProjectForUser(actorID, projectID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1806,6 +1813,16 @@ func (s *Service) ConfirmProductionStage(actorID, projectID, runID, stageKey str
 			return ErrProductionStageNotFound
 		}
 		if run.Status == model.ManjuProductionRunStatusCompleted && stage.Status == model.ManjuProductionStageStatusLocked {
+			if stageKey == ProductionStageQC {
+				if deliveryPlan == nil || deliveryPlan.ArtifactID != stage.ArtifactID {
+					return ErrProductionDeliverablesNotReady
+				}
+				if !deliveryPlan.AlreadyReady {
+					if err := persistProductionDeliveryRows(tx, projectID, runID, deliveryPlan.Rows); err != nil {
+						return err
+					}
+				}
+			}
 			return nil
 		}
 		if run.Status != model.ManjuProductionRunStatusActive ||
@@ -1936,6 +1953,14 @@ func (s *Service) ConfirmProductionStage(actorID, projectID, runID, stageKey str
 		}
 		if stageKey == ProductionStageQC && canvasVerifiedThrough != CanvasPackageStageP4Videos {
 			if err := productionVideosReady(tx, runID); err != nil {
+				return err
+			}
+		}
+		if stageKey == ProductionStageQC {
+			if deliveryPlan == nil || deliveryPlan.ArtifactID != stage.ArtifactID {
+				return ErrProductionDeliverablesNotReady
+			}
+			if err := persistProductionDeliveryRows(tx, projectID, runID, deliveryPlan.Rows); err != nil {
 				return err
 			}
 		}

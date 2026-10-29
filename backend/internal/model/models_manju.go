@@ -54,6 +54,10 @@ const (
 	ManjuProductionArtifactPrevis        = "PREVIS_STORYBOARD.md"
 	ManjuProductionArtifactQC            = "QC_HANDOFF.md"
 
+	ManjuDeliverableKindMarkdown = "markdown"
+	ManjuDeliverableKindBoard    = "board"
+	ManjuDeliverableKindManifest = "manifest"
+
 	ManjuProductionMachineCheckStatusPass               = "PASS"
 	ManjuProductionMachineCheckStatusLegacyNonCompliant = "LEGACY_NON_COMPLIANT"
 
@@ -559,6 +563,23 @@ type ManjuProductionArtifact struct {
 }
 
 func (ManjuProductionArtifact) TableName() string { return "manju_production_artifacts" }
+
+// ManjuDeliverable is the immutable P5 delivery lock. A production run owns at
+// most one row per kind; regenerated runs receive new rows while history stays.
+type ManjuDeliverable struct {
+	ID              string    `json:"id" gorm:"primaryKey;size:36"`
+	ProjectID       string    `json:"projectId" gorm:"size:36;index"`
+	LockRevision    int64     `json:"lockRevision" gorm:"index"`
+	ProductionRunID string    `json:"productionRunId" gorm:"size:36;uniqueIndex:idx_manju_deliverable_run_kind,priority:1"`
+	Kind            string    `json:"kind" gorm:"size:32;uniqueIndex:idx_manju_deliverable_run_kind,priority:2"`
+	FileName        string    `json:"fileName" gorm:"size:255"`
+	MimeType        string    `json:"mimeType" gorm:"size:128"`
+	Content         string    `json:"content" gorm:"type:text"`
+	ContentHash     string    `json:"contentHash" gorm:"size:64"`
+	CreatedAt       time.Time `json:"createdAt"`
+}
+
+func (ManjuDeliverable) TableName() string { return "manju_deliverables" }
 
 // ManjuStageDraft preserves failed model or manual content so a user can
 // correct it without losing the original output.
