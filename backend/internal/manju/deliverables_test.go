@@ -19,16 +19,30 @@ func TestDeliveryModeBoardProducesMarkdownSourceAndHTMLBoard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertDeliverableKinds(t, deliverables, "markdown", "board", "manifest")
+	assertDeliverableKinds(t, deliverables, "markdown", "board", "previs", "manifest")
 	assertDeliverableContent(t, deliverables, "board", "<!doctype html>")
-	assertDeliverableContent(t, deliverables, "markdown", "# VisiDeep AI 漫剧全流程交付归档")
+	assertDeliverableContent(t, deliverables, "markdown", "## 资产提示词")
+	assertDeliverableContent(t, deliverables, "markdown", "## 分镜提示词")
+	assertDeliverableContent(t, deliverables, "markdown", "LOCKED_ASSET_FACT")
+	assertDeliverableContent(t, deliverables, "markdown", "P4_FEED_LOCKED_FACT")
+	assertDeliverableExcludes(t, deliverables, "markdown", "LOCKED_SCRIPT_FACT", "LOCKED_IP_FACT", "情绪锚点表", "预演故事板")
+	assertDeliverableContent(t, deliverables, "board", "LOCKED_SCRIPT_FACT")
+	assertDeliverableExcludes(t, deliverables, "board", "预演故事板：段1 ✅")
+	previs := findDeliverable(t, deliverables, "previs")
+	if previs.FileName != "线上漫剧项目-预演故事板.md" || previs.MimeType != "text/markdown; charset=utf-8" {
+		t.Fatalf("P4.5 deliverable metadata = %+v", previs)
+	}
+	if !strings.Contains(previs.Content, "预演故事板") {
+		t.Fatalf("P4.5 deliverable must contain the separate previs artifact: %s", previs.Content)
+	}
+	assertDeliverableContent(t, deliverables, "manifest", `"kind": "previs"`)
 
 	var rows []model.ManjuDeliverable
 	if err := f.db.Where("production_run_id = ?", detail.Run.ID).Order("kind ASC").Find(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 3 {
-		t.Fatalf("persisted deliverables = %d, want 3: %+v", len(rows), rows)
+	if len(rows) != 4 {
+		t.Fatalf("persisted deliverables = %d, want 4: %+v", len(rows), rows)
 	}
 	for _, row := range rows {
 		sum := sha256.Sum256([]byte(row.Content))
@@ -51,7 +65,7 @@ func TestDeliveryModeMarkdownDoesNotPretendBoardExists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertDeliverableKinds(t, deliverables, "markdown", "manifest")
+	assertDeliverableKinds(t, deliverables, "markdown", "previs", "manifest")
 	assertNoDeliverableKind(t, deliverables, "board")
 
 	var boardCount int64
@@ -72,8 +86,78 @@ func TestDeliveryModeBothProducesMarkdownAndBoard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertDeliverableKinds(t, deliverables, "markdown", "board", "manifest")
+	assertDeliverableKinds(t, deliverables, "markdown", "board", "previs", "manifest")
 	assertDeliverableContent(t, deliverables, "board", "<!doctype html>")
+}
+
+func TestProjectDeliverablesKeepAllRunsAndRunScopedRetrievalWorks(t *testing.T) {
+	f := newFixture(t)
+	older := completeProjectThroughP5ForTest(t, f, manju.DeliveryMarkdown)
+	olderRows, err := f.service.ProductionRunDeliverables(f.ownerID, f.projectID, older.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDeliverableKinds(t, olderRows, "markdown", "previs", "manifest")
+
+	now := time.Now()
+	if err := f.db.Create(&model.ManjuProductionRun{
+		ID: "delivery-newer-run", ProjectID: f.projectID, AssetRunID: older.AssetRun.ID,
+		Status: model.ManjuProductionRunStatusCompleted, CurrentStage: "", LockRevision: older.Run.LockRevision,
+		CreatedBy: f.ownerID, CreatedAt: now.Add(time.Hour), UpdatedAt: now.Add(time.Hour),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.Create(&model.ManjuDeliverable{
+		ID: "delivery-newer-markdown", ProjectID: f.projectID, LockRevision: older.Run.LockRevision,
+		ProductionRunID: "delivery-newer-run", Kind: "markdown", FileName: "新版本.md",
+		MimeType: "text/markdown; charset=utf-8", Content: "# 新版本\n",
+		ContentHash: strings.Repeat("c", 64), CreatedAt: now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	// A backfilled older run must not hide the newer run from project retrieval.
+	if err := f.db.Model(&model.ManjuDeliverable{}).
+		Where("production_run_id = ?", older.Run.ID).
+		Update("created_at", now.Add(2*time.Hour)).Error; err != nil {
+		t.Fatal(err)
+	}
+	all, err := f.service.UserDeliverables(f.ownerID, f.projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertHasDeliverableRun(t, all, older.Run.ID)
+	assertHasDeliverableRun(t, all, "delivery-newer-run")
+	scoped, err := f.service.ProductionRunDeliverables(f.ownerID, f.projectID, "delivery-newer-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDeliverableKinds(t, scoped, "markdown")
+}
+
+func TestCompletedRunBackfillIncludesQCArtifactExactlyOnce(t *testing.T) {
+	f := newFixture(t)
+	detail := completeProjectThroughP5ForTest(t, f, manju.DeliveryBoard)
+	if err := f.db.Where("production_run_id = ?", detail.Run.ID).Delete(&model.ManjuDeliverable{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.ConfirmProductionStage(
+		f.ownerID,
+		f.projectID,
+		detail.Run.ID,
+		manju.ProductionStageQC,
+		manju.ProductionConfirmInput{Note: "backfill"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := f.service.ProductionRunDeliverables(f.ownerID, f.projectID, detail.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDeliverableKinds(t, rows, "markdown", "board", "previs", "manifest")
+	board := findDeliverable(t, rows, "board")
+	if got := strings.Count(board.Content, "# P5 质检与交付"); got != 1 {
+		t.Fatalf("backfilled board contains the QC artifact %d times, want exactly once", got)
+	}
 }
 
 func TestDeliveryRowsRemainImmutableWhenSameRunIsConfirmedAgain(t *testing.T) {
@@ -358,15 +442,10 @@ func assertDeliverableKinds(t *testing.T, deliverables []manju.UserDeliverableVi
 
 func assertDeliverableContent(t *testing.T, deliverables []manju.UserDeliverableView, kind, contains string) {
 	t.Helper()
-	for _, deliverable := range deliverables {
-		if deliverable.Kind == kind {
-			if !strings.Contains(strings.ToLower(deliverable.Content), strings.ToLower(contains)) {
-				t.Fatalf("%s deliverable does not contain %q:\n%s", kind, contains, deliverable.Content)
-			}
-			return
-		}
+	deliverable := findDeliverable(t, deliverables, kind)
+	if !strings.Contains(strings.ToLower(deliverable.Content), strings.ToLower(contains)) {
+		t.Fatalf("%s deliverable does not contain %q:\n%s", kind, contains, deliverable.Content)
 	}
-	t.Fatalf("missing %s deliverable: %+v", kind, deliverables)
 }
 
 func assertNoDeliverableKind(t *testing.T, deliverables []manju.UserDeliverableView, kind string) {
@@ -376,6 +455,37 @@ func assertNoDeliverableKind(t *testing.T, deliverables []manju.UserDeliverableV
 			t.Fatalf("unexpected %s deliverable: %+v", kind, deliverable)
 		}
 	}
+}
+
+func assertDeliverableExcludes(t *testing.T, deliverables []manju.UserDeliverableView, kind string, excludes ...string) {
+	t.Helper()
+	deliverable := findDeliverable(t, deliverables, kind)
+	for _, exclude := range excludes {
+		if strings.Contains(deliverable.Content, exclude) {
+			t.Fatalf("%s deliverable leaks internal content %q:\n%s", kind, exclude, deliverable.Content)
+		}
+	}
+}
+
+func findDeliverable(t *testing.T, deliverables []manju.UserDeliverableView, kind string) manju.UserDeliverableView {
+	t.Helper()
+	for _, deliverable := range deliverables {
+		if deliverable.Kind == kind {
+			return deliverable
+		}
+	}
+	t.Fatalf("missing %s deliverable: %+v", kind, deliverables)
+	return manju.UserDeliverableView{}
+}
+
+func assertHasDeliverableRun(t *testing.T, deliverables []manju.UserDeliverableView, runID string) {
+	t.Helper()
+	for _, deliverable := range deliverables {
+		if deliverable.ProductionRunID == runID {
+			return
+		}
+	}
+	t.Fatalf("missing deliverables for production run %s: %+v", runID, deliverables)
 }
 
 func fmtHash(sum [sha256.Size]byte) string {

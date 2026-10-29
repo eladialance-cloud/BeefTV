@@ -187,7 +187,7 @@ export type ManjuUserDeliverable = {
     projectId: string;
     lockRevision: number;
     productionRunId: string;
-    kind: "markdown" | "board" | "manifest";
+    kind: "markdown" | "board" | "previs" | "manifest";
     fileName: string;
     mimeType: string;
     content: string;
@@ -699,6 +699,12 @@ export function getManjuRuleLibrary(projectId: string) {
 
 export function getManjuUserDeliverables(projectId: string) {
     return http.get<{ items: ManjuUserDeliverable[] }>(`/manju/projects/${encodeURIComponent(projectId)}/deliverables`);
+}
+
+export function getManjuProductionRunDeliverables(projectId: string, runId: string) {
+    return http.get<{ items: ManjuUserDeliverable[] }>(
+        `/manju/projects/${encodeURIComponent(projectId)}/production-runs/${encodeURIComponent(runId)}/deliverables`,
+    );
 }
 
 export function saveManjuLock(projectId: string, input: ManjuLockInput) {

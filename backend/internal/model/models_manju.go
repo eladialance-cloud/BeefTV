@@ -56,6 +56,7 @@ const (
 
 	ManjuDeliverableKindMarkdown = "markdown"
 	ManjuDeliverableKindBoard    = "board"
+	ManjuDeliverableKindPrevis   = "previs"
 	ManjuDeliverableKindManifest = "manifest"
 
 	ManjuProductionMachineCheckStatusPass               = "PASS"

@@ -93,7 +93,7 @@ import {
     createManjuProductionRun,
     generateManjuProductionPrevis,
     getManjuProductionRun,
-    getManjuUserDeliverables,
+    getManjuProductionRunDeliverables,
     listManjuProductionRuns,
     manualCorrectManjuProductionArtifact,
     previewManjuProductionStoryboardCompile,
@@ -1505,6 +1505,7 @@ function productionStageOrder(stageKey: string) {
 function manjuDeliverableKindLabel(deliverable: ManjuUserDeliverable) {
     if (deliverable.kind === "markdown") return "Markdown 源稿";
     if (deliverable.kind === "board") return "离线 HTML 看板（仅 board/both）";
+    if (deliverable.kind === "previs") return "预演故事板";
     if (deliverable.kind === "manifest") return "交付清单";
     return deliverable.kind;
 }
@@ -3385,11 +3386,11 @@ function ProductionStageCard({
         enabled: stage.key === "qc_handoff",
     });
     const deliverablesQuery = useQuery({
-        queryKey: ["manju", "deliverables", projectId],
-        queryFn: () => getManjuUserDeliverables(projectId),
-        enabled: stage.key === "qc_handoff" && detail.run.status === "COMPLETED",
+        queryKey: ["manju", "deliverables", projectId, detail.run.id],
+        queryFn: () => getManjuProductionRunDeliverables(projectId, detail.run.id),
+        enabled: stage.key === "qc_handoff",
     });
-    const deliverables = (deliverablesQuery.data?.items || []).filter((item) => item.productionRunId === detail.run.id);
+    const deliverables = deliverablesQuery.data?.items || [];
     const projectCanvasId = primaryManjuProjectCanvas(canvasImportsQuery.data?.items || [])?.canvasId || "";
     const runMutation = useMutation({
         mutationFn: () => runManjuProductionStage(projectId, detail.run.id, stage.key, {

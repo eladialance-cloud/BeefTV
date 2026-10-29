@@ -15,7 +15,9 @@ func TestBuildProductionDeliveryRowsMarkdownNeverBuildsBoard(t *testing.T) {
 		"测试项目",
 		run,
 		DeliveryMarkdown,
-		"# 最终交付\n",
+		"# 用户交付\n\n## 资产提示词\nA\n\n## 分镜提示词\nB\n",
+		"# 完整内部档案\n",
+		"# 测试项目 · 预演故事板\n",
 		func(string) (string, error) {
 			boardCalls++
 			return "<!DOCTYPE html>", nil
@@ -27,9 +29,10 @@ func TestBuildProductionDeliveryRowsMarkdownNeverBuildsBoard(t *testing.T) {
 	if boardCalls != 0 {
 		t.Fatalf("markdown-only delivery called the board compiler %d times", boardCalls)
 	}
-	if len(rows) != 2 ||
+	if len(rows) != 3 ||
 		rows[0].Kind != model.ManjuDeliverableKindMarkdown ||
-		rows[1].Kind != model.ManjuDeliverableKindManifest {
+		rows[1].Kind != "previs" ||
+		rows[2].Kind != model.ManjuDeliverableKindManifest {
 		t.Fatalf("markdown-only rows = %+v", rows)
 	}
 }
@@ -48,7 +51,9 @@ func TestBuildProductionDeliveryRowsFailsClosedOnBoardErrorsAndEmptyOutput(t *te
 				"测试项目",
 				run,
 				DeliveryBoard,
-				"# 最终交付\n",
+				"# 用户交付\n",
+				"# 完整内部档案\n",
+				"# 测试项目 · 预演故事板\n",
 				tc.build,
 			)
 			if err == nil {
@@ -58,5 +63,22 @@ func TestBuildProductionDeliveryRowsFailsClosedOnBoardErrorsAndEmptyOutput(t *te
 				t.Fatalf("board error was not preserved: %v", err)
 			}
 		})
+	}
+}
+
+func TestProductionBoardArchiveIncludesLockedQCArtifactOnce(t *testing.T) {
+	const qcArtifactID = "qc-artifact"
+	archive := buildProductionBoardArchive(
+		nil,
+		nil,
+		[]model.ManjuProductionArtifact{{
+			ID: qcArtifactID, Kind: model.ManjuProductionArtifactQC, Version: 1,
+			Content: "# P5 质检与交付\nQC_MARKER_ONCE\n",
+		}},
+		qcArtifactID,
+		"# P5 质检与交付\nQC_MARKER_ONCE\n",
+	)
+	if got := strings.Count(archive, "QC_MARKER_ONCE"); got != 1 {
+		t.Fatalf("locked QC artifact included %d times, want once:\n%s", got, archive)
 	}
 }

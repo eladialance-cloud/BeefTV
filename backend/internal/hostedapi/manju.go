@@ -36,6 +36,7 @@ type ManjuService interface {
 	StyleCatalog() manju.StyleCatalogView
 	RuleLibraryStatus(userID, projectID string) (*manju.RuleLibraryStatus, error)
 	UserDeliverables(userID, projectID string) ([]manju.UserDeliverableView, error)
+	ProductionRunDeliverables(userID, projectID, runID string) ([]manju.UserDeliverableView, error)
 	ProjectDetail(userID, projectID string) (*manju.ProjectDetail, error)
 	DeleteProject(actorID, projectID string) error
 	SaveLock(actorID, projectID string, input manju.LockInput) (*manju.LockReceipt, error)
@@ -141,6 +142,20 @@ func RegisterManjuRoutes(r *gin.RouterGroup, svc ManjuService, resolve ActorReso
 			return
 		}
 		items, err := svc.UserDeliverables(user.ID, c.Param("projectId"))
+		if err != nil {
+			writeManjuError(c, err)
+			return
+		}
+		c.Header("Cache-Control", "no-store")
+		writeOK(c, gin.H{"items": items})
+	})
+
+	group.GET("/projects/:projectId/production-runs/:runId/deliverables", func(c *gin.Context) {
+		user, ok := actor(c)
+		if !ok {
+			return
+		}
+		items, err := svc.ProductionRunDeliverables(user.ID, c.Param("projectId"), c.Param("runId"))
 		if err != nil {
 			writeManjuError(c, err)
 			return

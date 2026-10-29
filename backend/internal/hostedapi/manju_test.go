@@ -157,16 +157,31 @@ func TestManjuRoutesRequireSession(t *testing.T) {
 func TestManjuDeliverablesRouteReturnsPersistedDownloadMetadata(t *testing.T) {
 	engine, _, db := newManjuHTTPEnvWithDB(t)
 	now := time.Now().UTC()
+	runs := []model.ManjuProductionRun{
+		{
+			ID: "production-run-old", ProjectID: "project-secret", AssetRunID: "asset-old",
+			Status: model.ManjuProductionRunStatusCompleted, LockRevision: 3,
+			CreatedBy: testManjuOwnerID, CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Hour),
+		},
+		{
+			ID: "production-run-current", ProjectID: "project-secret", AssetRunID: "asset-current",
+			Status: model.ManjuProductionRunStatusCompleted, LockRevision: 3,
+			CreatedBy: testManjuOwnerID, CreatedAt: now, UpdatedAt: now,
+		},
+	}
+	if err := db.Create(&runs).Error; err != nil {
+		t.Fatal(err)
+	}
 	rows := []model.ManjuDeliverable{
 		{
 			ID: "delivery-markdown", ProjectID: "project-secret", LockRevision: 3,
-			ProductionRunID: "production-run-delivery", Kind: model.ManjuDeliverableKindMarkdown,
+			ProductionRunID: "production-run-old", Kind: model.ManjuDeliverableKindMarkdown,
 			FileName: "不可泄露的项目-P5最终交付.md", MimeType: "text/markdown; charset=utf-8",
-			Content: "# 最终交付\n", ContentHash: strings.Repeat("a", 64), CreatedAt: now,
+			Content: "# 最终交付\n", ContentHash: strings.Repeat("a", 64), CreatedAt: now.Add(time.Hour),
 		},
 		{
 			ID: "delivery-manifest", ProjectID: "project-secret", LockRevision: 3,
-			ProductionRunID: "production-run-delivery", Kind: model.ManjuDeliverableKindManifest,
+			ProductionRunID: "production-run-current", Kind: model.ManjuDeliverableKindManifest,
 			FileName: "不可泄露的项目-P5交付清单.json", MimeType: "application/json; charset=utf-8",
 			Content: `{"version":"V7.4.26"}`, ContentHash: strings.Repeat("b", 64), CreatedAt: now,
 		},
@@ -191,20 +206,51 @@ func TestManjuDeliverablesRouteReturnsPersistedDownloadMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(payload.Data.Items) != 2 {
-		t.Fatalf("deliverables = %d, want persisted markdown+manifest only: %+v", len(payload.Data.Items), payload.Data.Items)
+		t.Fatalf("deliverables = %d, want rows from both production runs: %+v", len(payload.Data.Items), payload.Data.Items)
 	}
-	if payload.Data.Items[0].Kind != model.ManjuDeliverableKindMarkdown ||
-		payload.Data.Items[1].Kind != model.ManjuDeliverableKindManifest {
-		t.Fatalf("unexpected persisted deliverable order: %+v", payload.Data.Items)
+	byRun := map[string]manjusvc.UserDeliverableView{}
+	for _, item := range payload.Data.Items {
+		byRun[item.ProductionRunID] = item
 	}
-	first := payload.Data.Items[0]
-	if first.ProductionRunID != "production-run-delivery" ||
+	first := byRun["production-run-old"]
+	if first.ProjectID != "project-secret" ||
 		first.FileName == "" ||
 		first.MimeType != "text/markdown; charset=utf-8" ||
 		first.ContentHash != strings.Repeat("a", 64) ||
 		first.LockRevision != 3 ||
 		!strings.Contains(first.Content, "最终交付") {
 		t.Fatalf("deliverable download metadata is incomplete: %+v", first)
+	}
+	if _, ok := byRun["production-run-current"]; !ok {
+		t.Fatalf("backfilled old run hid the current run deliverables: %+v", payload.Data.Items)
+	}
+
+	scoped := manjuRequest(
+		t,
+		engine,
+		http.MethodGet,
+		"/api/manju/projects/project-secret/production-runs/production-run-old/deliverables",
+		nil,
+		"owner",
+	)
+	if scoped.Code != http.StatusOK {
+		t.Fatalf("读取历史生产链交付物应 200，得到 %d: %s", scoped.Code, scoped.Body.String())
+	}
+	if scoped.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("历史交付物接口必须禁止缓存，得到 %q", scoped.Header().Get("Cache-Control"))
+	}
+	var scopedPayload struct {
+		Data struct {
+			Items []manjusvc.UserDeliverableView `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(scoped.Body.Bytes(), &scopedPayload); err != nil {
+		t.Fatal(err)
+	}
+	if len(scopedPayload.Data.Items) != 1 ||
+		scopedPayload.Data.Items[0].ProductionRunID != "production-run-old" ||
+		scopedPayload.Data.Items[0].Kind != model.ManjuDeliverableKindMarkdown {
+		t.Fatalf("run-scoped deliverables = %+v", scopedPayload.Data.Items)
 	}
 }
 

@@ -61,14 +61,18 @@ test("P5 deliverables render only persisted backend rows", () => {
     expect(api).toContain("productionRunId: string");
     expect(api).toContain("fileName: string");
     expect(api).toContain("mimeType: string");
-    expect(page).toContain("getManjuUserDeliverables");
+    expect(api).toContain("getManjuProductionRunDeliverables");
+    expect(api).toContain('"previs"');
+    expect(page).toContain("getManjuProductionRunDeliverables");
     expect(page).toContain('deliverable.kind === "markdown"');
     expect(page).toContain('deliverable.kind === "board"');
+    expect(page).toContain('deliverable.kind === "previs"');
     expect(page).toContain('deliverable.kind === "manifest"');
     expect(page).toContain("Markdown 源稿");
     expect(page).toContain("离线 HTML 看板");
+    expect(page).toContain("预演故事板");
     expect(page).toContain("交付清单");
-    expect(page).toContain("item.productionRunId === detail.run.id");
+    expect(page).toContain('queryKey: ["manju", "deliverables", projectId, detail.run.id]');
     expect(page).toContain("downloadManjuDeliverable(deliverable)");
 });
 

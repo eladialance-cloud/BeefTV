@@ -63,10 +63,37 @@ func (s *Service) UserDeliverables(actorID, projectID string) ([]UserDeliverable
 	} else if err != nil {
 		return nil, err
 	}
-	items, err := s.repo.LatestManjuDeliverables(projectID)
+	items, err := s.repo.ManjuDeliverablesForProject(projectID)
 	if err != nil {
 		return nil, err
 	}
+	return userDeliverableViews(items), nil
+}
+
+func (s *Service) ProductionRunDeliverables(actorID, projectID, runID string) ([]UserDeliverableView, error) {
+	actorID = strings.TrimSpace(actorID)
+	projectID = strings.TrimSpace(projectID)
+	runID = strings.TrimSpace(runID)
+	if _, err := s.repo.ManjuProjectForUser(actorID, projectID); errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	} else if err != nil {
+		return nil, err
+	}
+	run, err := s.repo.ManjuProductionRun(projectID, runID)
+	if err != nil {
+		return nil, err
+	}
+	if run == nil {
+		return nil, ErrProductionRunNotFound
+	}
+	items, err := s.repo.ManjuDeliverablesForRun(projectID, runID)
+	if err != nil {
+		return nil, err
+	}
+	return userDeliverableViews(items), nil
+}
+
+func userDeliverableViews(items []model.ManjuDeliverable) []UserDeliverableView {
 	sort.SliceStable(items, func(i, j int) bool {
 		return productionDeliverableKindOrder(items[i].Kind) < productionDeliverableKindOrder(items[j].Kind)
 	})
@@ -85,7 +112,7 @@ func (s *Service) UserDeliverables(actorID, projectID string) ([]UserDeliverable
 			CreatedAt:       item.CreatedAt,
 		})
 	}
-	return views, nil
+	return views
 }
 
 func (s *Service) prepareProductionDelivery(actorID, projectID, runID string) (*productionDeliveryPlan, error) {
@@ -162,7 +189,15 @@ func (s *Service) prepareProductionDelivery(actorID, projectID, runID string) (*
 	if err != nil || strings.TrimSpace(currentContent) == "" {
 		return nil, ErrProductionDeliverablesNotReady
 	}
-	markdown, err := buildProductionDeliveryMarkdown(s.repo, projectID, *run, *assetRun, currentContent)
+	sources, err := buildProductionDeliverySources(
+		s.repo,
+		access.Project.Name,
+		projectID,
+		*run,
+		*assetRun,
+		stage.ArtifactID,
+		currentContent,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +205,9 @@ func (s *Service) prepareProductionDelivery(actorID, projectID, runID string) (*
 		access.Project.Name,
 		*run,
 		mode,
-		markdown,
+		sources.Markdown,
+		sources.BoardSource,
+		sources.PrevisMarkdown,
 		func(source string) (string, error) {
 			return defaultManjuSkillRuntime.BuildBoard(source)
 		},
@@ -184,58 +221,138 @@ func (s *Service) prepareProductionDelivery(actorID, projectID, runID string) (*
 	}, nil
 }
 
-func buildProductionDeliveryMarkdown(
+type productionDeliverySources struct {
+	Markdown       string
+	BoardSource    string
+	PrevisMarkdown string
+}
+
+func buildProductionDeliverySources(
 	tx *repository.Repository,
+	projectName string,
 	projectID string,
 	run model.ManjuProductionRun,
 	assetRun model.ManjuAssetRun,
+	currentArtifactID string,
 	currentContent string,
-) (string, error) {
+) (productionDeliverySources, error) {
 	scriptRun, err := tx.ManjuScriptRun(projectID, assetRun.ScriptRunID)
 	if err != nil || scriptRun == nil {
-		return "", ErrProductionAssetNotReady
+		return productionDeliverySources{}, ErrProductionAssetNotReady
 	}
 	scriptArtifacts, err := lockedScriptArtifacts(tx, *scriptRun)
 	if err != nil {
-		return "", err
+		return productionDeliverySources{}, err
 	}
 	assetArtifacts, err := lockedAssetArtifacts(tx, assetRun)
 	if err != nil {
-		return "", err
+		return productionDeliverySources{}, err
 	}
 	productionArtifacts, err := lockedProductionArtifacts(tx, run.ID)
 	if err != nil {
-		return "", err
+		return productionDeliverySources{}, err
 	}
 	previs, err := tx.ManjuProductionPrevis(projectID, run.ID)
 	if err != nil {
-		return "", err
+		return productionDeliverySources{}, err
 	}
 	var previsArtifact *model.ManjuProductionArtifact
 	if previs != nil && strings.TrimSpace(previs.ArtifactID) != "" {
 		artifacts, listErr := tx.ManjuProductionArtifacts(run.ID)
 		if listErr != nil {
-			return "", listErr
+			return productionDeliverySources{}, listErr
 		}
 		previsArtifact = productionArtifactByID(artifacts, previs.ArtifactID)
 		if previsArtifact == nil {
-			return "", ErrProductionPrevisRequired
+			return productionDeliverySources{}, ErrProductionPrevisRequired
 		}
 	}
-	if previsArtifact == nil {
-		return "", ErrProductionPrevisRequired
+	if previsArtifact == nil || strings.TrimSpace(previsArtifact.Content) == "" {
+		return productionDeliverySources{}, ErrProductionPrevisRequired
 	}
-	return buildProductionContractArchive(scriptArtifacts, assetArtifacts, productionArtifacts, previsArtifact, currentContent), nil
+	assetPrompt := ""
+	expectedAssetKind := assetArtifactKind(assetRun.AssetMode, AssetStageCompile)
+	for _, artifact := range assetArtifacts {
+		if artifact.Kind == expectedAssetKind {
+			assetPrompt = artifact.Content
+			break
+		}
+	}
+	if strings.TrimSpace(assetPrompt) == "" {
+		return productionDeliverySources{}, ErrProductionDeliverablesNotReady
+	}
+	storyboardPrompt := ""
+	for _, artifact := range productionArtifacts {
+		if artifact.Kind == model.ManjuProductionArtifactFeed {
+			storyboardPrompt = artifact.Content
+			break
+		}
+	}
+	if strings.TrimSpace(storyboardPrompt) == "" {
+		return productionDeliverySources{}, ErrProductionDeliverablesNotReady
+	}
+	return productionDeliverySources{
+		Markdown:       buildUserFacingDeliveryMarkdown(projectName, assetPrompt, storyboardPrompt),
+		BoardSource:    buildProductionBoardArchive(scriptArtifacts, assetArtifacts, productionArtifacts, currentArtifactID, currentContent),
+		PrevisMarkdown: previsArtifact.Content,
+	}, nil
+}
+
+func buildUserFacingDeliveryMarkdown(projectName, assetPrompts, storyboardPrompts string) string {
+	var document strings.Builder
+	fmt.Fprintf(&document, "# %s · 漫剧交付\n\n", strings.TrimSpace(projectName))
+	document.WriteString("## 资产提示词\n\n")
+	document.WriteString(strings.TrimSpace(assetPrompts))
+	document.WriteString("\n\n## 分镜提示词\n\n")
+	document.WriteString(strings.TrimSpace(storyboardPrompts))
+	document.WriteString("\n")
+	return document.String()
+}
+
+func buildProductionBoardArchive(
+	scriptArtifacts []model.ManjuScriptArtifact,
+	assetArtifacts []model.ManjuAssetArtifact,
+	productionArtifacts []model.ManjuProductionArtifact,
+	currentArtifactID string,
+	currentContent string,
+) string {
+	var document strings.Builder
+	document.WriteString("# VisiDeep AI 漫剧全流程交付归档\n")
+	for _, artifact := range scriptArtifacts {
+		fmt.Fprintf(&document, "\n# P1 · %s v%d\n\n%s\n", artifact.Kind, artifact.Version, artifact.Content)
+	}
+	for _, artifact := range assetArtifacts {
+		fmt.Fprintf(&document, "\n# P2 · %s v%d\n\n%s\n", artifact.Kind, artifact.Version, artifact.Content)
+	}
+	currentIncluded := false
+	for _, artifact := range productionArtifacts {
+		fmt.Fprintf(&document, "\n# 生产阶段 · %s v%d\n\n%s\n", artifact.Kind, artifact.Version, artifact.Content)
+		if artifact.ID == currentArtifactID {
+			currentIncluded = true
+		}
+	}
+	if !currentIncluded && strings.TrimSpace(currentContent) != "" {
+		document.WriteString("\n# P5 当前质检交付\n\n")
+		document.WriteString(currentContent)
+		document.WriteString("\n")
+	}
+	return document.String()
 }
 
 func buildProductionDeliveryRows(
 	projectName string,
 	run model.ManjuProductionRun,
-	mode, markdown string,
+	mode, markdown, boardSource, previsMarkdown string,
 	buildBoard func(string) (string, error),
 ) ([]model.ManjuDeliverable, error) {
 	if strings.TrimSpace(markdown) == "" {
 		return nil, ErrProductionDeliverablesNotReady
+	}
+	if (mode == DeliveryBoard || mode == DeliveryBoth) && strings.TrimSpace(boardSource) == "" {
+		return nil, ErrProductionDeliverablesNotReady
+	}
+	if strings.TrimSpace(previsMarkdown) == "" {
+		return nil, ErrProductionPrevisRequired
 	}
 	baseName := safeProductionDeliveryBaseName(projectName)
 	now := time.Now()
@@ -250,7 +367,7 @@ func buildProductionDeliveryRows(
 		),
 	}
 	if mode == DeliveryBoard || mode == DeliveryBoth {
-		board, err := buildBoard(markdown)
+		board, err := buildBoard(boardSource)
 		if err != nil {
 			return nil, err
 		}
@@ -266,6 +383,14 @@ func buildProductionDeliveryRows(
 			now,
 		))
 	}
+	rows = append(rows, newProductionDeliverable(
+		run,
+		model.ManjuDeliverableKindPrevis,
+		baseName+"-预演故事板.md",
+		"text/markdown; charset=utf-8",
+		previsMarkdown,
+		now,
+	))
 	manifest := productionDeliveryManifest{
 		Version:         manjuSkillVersion,
 		ProjectID:       run.ProjectID,
@@ -351,8 +476,10 @@ func productionDeliverableKindOrder(kind string) int {
 		return 1
 	case model.ManjuDeliverableKindBoard:
 		return 2
-	case model.ManjuDeliverableKindManifest:
+	case model.ManjuDeliverableKindPrevis:
 		return 3
+	case model.ManjuDeliverableKindManifest:
+		return 4
 	default:
 		return 99
 	}
@@ -363,11 +490,13 @@ func productionDeliveryExpectedKinds(mode string) []string {
 		return []string{
 			model.ManjuDeliverableKindMarkdown,
 			model.ManjuDeliverableKindBoard,
+			model.ManjuDeliverableKindPrevis,
 			model.ManjuDeliverableKindManifest,
 		}
 	}
 	return []string{
 		model.ManjuDeliverableKindMarkdown,
+		model.ManjuDeliverableKindPrevis,
 		model.ManjuDeliverableKindManifest,
 	}
 }
