@@ -28,6 +28,7 @@ const (
 	ProductionStageStatusAwaitingConfirmation = model.ManjuProductionStageStatusAwaitingConfirmation
 	ProductionStageStatusLocked               = model.ManjuProductionStageStatusLocked
 	ProductionStageStatusBlocked              = model.ManjuProductionStageStatusBlocked
+	ProductionStageStatusStale                = model.ManjuProductionStageStatusStale
 )
 
 var (
@@ -145,6 +146,7 @@ func repairLegacyProductionDecisionStage(tx *repository.Repository, run *model.M
 		return nil
 	}
 	now := time.Now()
+	storyboardIndex := productionStageIndex(stages, ProductionStageStoryboard)
 	if err := tx.DB().Model(&model.ManjuProductionStage{}).
 		Where("run_id = ? AND position >= 1", run.ID).
 		UpdateColumn("position", gorm.Expr("position + 1")).Error; err != nil {
@@ -163,6 +165,60 @@ func repairLegacyProductionDecisionStage(tx *repository.Repository, run *model.M
 	}
 	if err := tx.CreateManjuProductionStages([]model.ManjuProductionStage{decision}); err != nil {
 		return err
+	}
+	if storyboardIndex >= 0 {
+		storyboard := &stages[storyboardIndex]
+		if strings.TrimSpace(storyboard.ArtifactID) != "" ||
+			storyboard.Status == model.ManjuProductionStageStatusLocked ||
+			storyboard.Status == model.ManjuProductionStageStatusAwaitingConfirmation {
+			if err := tx.DB().Model(&model.ManjuProductionStage{}).
+				Where("id = ?", storyboard.ID).
+				Updates(map[string]any{
+					"status": model.ManjuProductionStageStatusStale,
+					"error":  "旧 P3 创建时没有 P0B 决策锚点，必须重新生成 P3；旧工件与媒体仅保留为历史",
+				}).Error; err != nil {
+				return err
+			}
+		} else if storyboard.Status != model.ManjuProductionStageStatusLocked {
+			if err := tx.DB().Model(&model.ManjuProductionStage{}).
+				Where("id = ?", storyboard.ID).
+				Updates(map[string]any{
+					"status": model.ManjuProductionStageStatusNotStarted,
+					"error":  "",
+				}).Error; err != nil {
+				return err
+			}
+		}
+		for index := range stages {
+			if stages[index].Position <= storyboard.Position {
+				continue
+			}
+			if err := tx.DB().Model(&model.ManjuProductionStage{}).
+				Where("id = ?", stages[index].ID).
+				Updates(map[string]any{
+					"status":       model.ManjuProductionStageStatusNotStarted,
+					"task_id":      "",
+					"artifact_id":  "",
+					"error":        "旧 P3 缺少 P0B 决策链，等待重新生成的 P3",
+					"confirmed_by": "",
+					"confirmed_at": nil,
+					"completed_at": nil,
+					"input_json":   "",
+				}).Error; err != nil {
+				return err
+			}
+		}
+		previs, err := tx.ManjuProductionPrevis(run.ProjectID, run.ID)
+		if err != nil {
+			return err
+		}
+		if previs != nil {
+			previs.Status = model.ManjuProductionPrevisStatusFailed
+			previs.Error = "旧 P3 缺少 P0B 决策链，请重新生成 P3 后再生成 P4.5"
+			if err := tx.SaveManjuProductionPrevis(previs); err != nil {
+				return err
+			}
+		}
 	}
 	run.CurrentStage = ProductionStageDecisionAnchor
 	run.UpdatedAt = now
@@ -334,7 +390,8 @@ func (s *Service) RegenerateProductionStage(actorID, projectID, runID, stageKey 
 		}
 		target := stages[targetIndex]
 		if target.Status != model.ManjuProductionStageStatusLocked &&
-			target.Status != model.ManjuProductionStageStatusAwaitingConfirmation {
+			target.Status != model.ManjuProductionStageStatusAwaitingConfirmation &&
+			target.Status != model.ManjuProductionStageStatusStale {
 			return ErrProductionStageNotReady
 		}
 		if strings.TrimSpace(target.ArtifactID) == "" {
@@ -617,9 +674,15 @@ func (s *Service) RegenerateProductionArtifact(actorID, projectID, runID, stageK
 		switch target.Status {
 		case model.ManjuProductionStageStatusLocked,
 			model.ManjuProductionStageStatusAwaitingConfirmation,
-			model.ManjuProductionStageStatusBlocked:
+			model.ManjuProductionStageStatusBlocked,
+			model.ManjuProductionStageStatusStale:
 		default:
 			return ErrProductionStageNotReady
+		}
+		if stageKey != ProductionStageDecisionAnchor {
+			if err := ensureProductionStageGate(stages, stageKey); err != nil {
+				return err
+			}
 		}
 		if err := ensureNoLiveProductionWork(tx, actorID, runID, stages); err != nil {
 			return err
@@ -1296,6 +1359,29 @@ func mustJSON(value any) []byte {
 	return data
 }
 
+func (s *Service) repairLegacyProductionPrerequisite(actorID, projectID, runID string) error {
+	return s.repo.Transaction(func(tx *repository.Repository) error {
+		access, err := tx.ManjuProjectForUser(actorID, projectID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if !canEditProduction(access.Role) {
+			return ErrForbidden
+		}
+		run, err := tx.ManjuProductionRun(projectID, runID)
+		if err != nil {
+			return err
+		}
+		if run == nil {
+			return ErrProductionRunNotFound
+		}
+		return repairLegacyProductionDecisionStage(tx, run)
+	})
+}
+
 func (s *Service) preflightProductionStage(actorID, projectID, runID, stageKey string) error {
 	access, err := s.repo.ManjuProjectForUser(actorID, projectID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1330,14 +1416,17 @@ func (s *Service) RunProductionStage(actorID, projectID, runID, stageKey string,
 	runID = strings.TrimSpace(runID)
 	stageKey = strings.TrimSpace(stageKey)
 	input.Instruction = strings.TrimSpace(input.Instruction)
-	if s.officialSkillValidationEnabled() && stageKey == ProductionStageFeed {
-		return s.runOfficialProductionFeedCompiler(actorID, projectID, runID, input)
-	}
 	if stageKey != ProductionStageDecisionAnchor &&
 		stageKey != ProductionStageStoryboard &&
 		stageKey != ProductionStageFeed &&
 		stageKey != ProductionStageQC {
 		return nil, ErrProductionStageNotFound
+	}
+	if err := s.repairLegacyProductionPrerequisite(actorID, projectID, runID); err != nil {
+		return nil, err
+	}
+	if s.officialSkillValidationEnabled() && stageKey == ProductionStageFeed {
+		return s.runOfficialProductionFeedCompiler(actorID, projectID, runID, input)
 	}
 	if s.scriptTaskCreate == nil {
 		if err := s.preflightProductionStage(actorID, projectID, runID, stageKey); err != nil {
@@ -1471,7 +1560,7 @@ func (s *Service) RunProductionStage(actorID, projectID, runID, stageKey string,
 				assetRefKeyCatalog = manjuAssetRefKeyCatalogFromAssetArtifacts(assetArtifacts)
 			}
 		}
-		prompt := buildProductionStagePrompt(access.Project.Name, *run, *stage, *assetRun, receipt, assetArtifacts, productionArtifacts, productionImages, productionVideos, assetRefKeyCatalog, input.Instruction, skillContext)
+		prompt := buildProductionStagePrompt(access.Project.Name, *run, *stage, *assetRun, receipt, scriptArtifacts, assetArtifacts, productionArtifacts, productionImages, productionVideos, assetRefKeyCatalog, input.Instruction, skillContext)
 		operationKey = fmt.Sprintf("manju:production:%s:%s:v%d", run.ID, stage.Key, stage.Version+1)
 		ruleSnapshot, err := s.ensureManjuRuleSnapshot(tx, projectID, run.LockRevision, actorID)
 		if err != nil {
@@ -2151,7 +2240,7 @@ func productionArtifactContent(tx *repository.Repository, runID, artifactID stri
 	return "", ErrProductionStageNotReady
 }
 
-func buildProductionStagePrompt(projectName string, run model.ManjuProductionRun, stage model.ManjuProductionStage, assetRun model.ManjuAssetRun, receipt *model.ManjuLockReceipt, assetArtifacts []model.ManjuAssetArtifact, productionArtifacts []model.ManjuProductionArtifact, productionImages []model.ManjuProductionImage, productionVideos []model.ManjuProductionVideo, assetRefKeyCatalog, instruction, skillContext string) string {
+func buildProductionStagePrompt(projectName string, run model.ManjuProductionRun, stage model.ManjuProductionStage, assetRun model.ManjuAssetRun, receipt *model.ManjuLockReceipt, scriptArtifacts []model.ManjuScriptArtifact, assetArtifacts []model.ManjuAssetArtifact, productionArtifacts []model.ManjuProductionArtifact, productionImages []model.ManjuProductionImage, productionVideos []model.ManjuProductionVideo, assetRefKeyCatalog, instruction, skillContext string) string {
 	var out strings.Builder
 	out.WriteString("你是 VisiDeep AI 漫剧工作室的 P0B-P5 生产执行器，严格遵循漫剧老李 AIGC 全流程 V7.4.26。\n")
 	out.WriteString("只输出本阶段 Markdown 成果，不输出思考过程。不得伪造人工确认、PASS、成片、图片或视频生成结果。\n")
@@ -2160,6 +2249,13 @@ func buildProductionStagePrompt(projectName string, run model.ManjuProductionRun
 	fmt.Fprintf(&out, "【项目】%s\n【素材形态】%s\n【P0B-P5 阶段】%s（%s）\n【P2 资产任务】%s\n\n", projectName, assetRun.AssetMode, stage.Title, stage.Key, assetRun.ID)
 	if receipt != nil {
 		fmt.Fprintf(&out, "%s\n", p0DeliveryPrompt(receipt))
+	}
+	if stage.Key == ProductionStageDecisionAnchor && len(scriptArtifacts) > 0 {
+		out.WriteString("【P1 已锁定且可交接的剧本工件】\n")
+		for _, artifact := range scriptArtifacts {
+			fmt.Fprintf(&out, "--- %s v%d ---\n%s\n", artifact.Kind, artifact.Version, artifact.Content)
+		}
+		out.WriteString("\n")
 	}
 	if len(assetArtifacts) > 0 {
 		out.WriteString("【P2 已锁定且可交接的工件】\n")

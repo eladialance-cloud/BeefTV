@@ -2927,6 +2927,7 @@ const PRODUCTION_STAGE_STATUS_LABELS: Record<ManjuProductionStageStatus, string>
     AWAITING_CONFIRMATION: "等待人工确认",
     LOCKED: "已确认锁定",
     BLOCKED: "执行失败",
+    STALE: "上游已升级，需重新生成",
 };
 
 const PRODUCTION_STAGE_META: Record<string, { input: string; output: string; consumer: string; placeholder: string; runLabel: string; icon: LucideIcon }> = {
@@ -3318,7 +3319,8 @@ function ProductionStageCard({
         !hasLiveWork &&
         Boolean(artifact) &&
         ["decision_anchor", "director_storyboard", "feed_package"].includes(stage.key) &&
-        ["AWAITING_CONFIRMATION", "LOCKED", "BLOCKED"].includes(stage.status);
+        ["AWAITING_CONFIRMATION", "LOCKED", "BLOCKED", "STALE"].includes(stage.status) &&
+        (stage.key === "decision_anchor" || decisionAnchorLocked);
     const canManualCorrect =
         canEdit &&
         stage.key === "director_storyboard" &&

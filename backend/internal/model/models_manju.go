@@ -41,6 +41,7 @@ const (
 	ManjuProductionStageStatusAwaitingConfirmation = "AWAITING_CONFIRMATION"
 	ManjuProductionStageStatusLocked               = "LOCKED"
 	ManjuProductionStageStatusBlocked              = "BLOCKED"
+	ManjuProductionStageStatusStale                = "STALE"
 
 	ManjuProductionStageDecisionAnchor = "decision_anchor"
 	ManjuProductionStageStoryboard     = "director_storyboard"

@@ -62,6 +62,58 @@ func TestP3CannotStartBeforeP0BDecisionIsLocked(t *testing.T) {
 	}
 }
 
+func TestLegacyFeedCannotReachOfficialCompilerBeforeP0BRepair(t *testing.T) {
+	f := newFixture(t)
+	run := prepareP4AwaitingConfirmation(t, f)
+	f.service.SetSkillValidationEnabledForTest(true)
+
+	var decision model.ManjuProductionStage
+	if err := f.db.First(&decision, "run_id = ? AND key = ?", run.Run.ID, manju.ProductionStageDecisionAnchor).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.Delete(&decision).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.Model(&model.ManjuProductionStage{}).
+		Where("run_id = ?", run.Run.ID).
+		UpdateColumn("position", gorm.Expr("position - 1")).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.Model(&model.ManjuProductionStage{}).
+		Where("run_id = ? AND key = ?", run.Run.ID, manju.ProductionStageFeed).
+		Updates(map[string]any{
+			"status": model.ManjuProductionStageStatusInProgress, "task_id": "",
+			"artifact_id": "", "error": "", "completed_at": nil,
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.Model(&model.ManjuProductionRun{}).
+		Where("id = ?", run.Run.ID).
+		Update("current_stage", manju.ProductionStageFeed).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := f.service.RunProductionStage(
+		f.ownerID, f.projectID, run.Run.ID, manju.ProductionStageFeed,
+		manju.ProductionStageRunInput{},
+	); !errors.Is(err, manju.ErrProductionStageNotReady) {
+		t.Fatalf("legacy P4 must not reach compiler before P0B repair, got %v", err)
+	}
+	detail, err := f.service.ProductionRunDetail(f.ownerID, f.projectID, run.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := findProductionStage(t, detail, manju.ProductionStageDecisionAnchor); got.Status != model.ManjuProductionStageStatusInProgress {
+		t.Fatalf("legacy repair must insert P0B before dispatch: %+v", got)
+	}
+	if got := findProductionStage(t, detail, manju.ProductionStageStoryboard); got.Status != model.ManjuProductionStageStatusStale {
+		t.Fatalf("legacy P3 must not remain eligible after P0B repair: %+v", got)
+	}
+	if got := findProductionStage(t, detail, manju.ProductionStageFeed); got.Status != model.ManjuProductionStageStatusNotStarted || got.ArtifactID != "" {
+		t.Fatalf("legacy P4 lineage must be invalidated: %+v", got)
+	}
+}
+
 func TestProductionP0BPersistsAndLocksBeforeStoryboard(t *testing.T) {
 	f := newFixture(t)
 	assetRunID := prepareCompletedProductionAsset(t, f, "M1")
@@ -91,6 +143,7 @@ func TestProductionP0BPersistsAndLocksBeforeStoryboard(t *testing.T) {
 		"sd-decision-engine/SKILL.md",
 		"sd-decision-engine/references/emotion-anchor-table.md",
 		"永不解锁",
+		"LOCKED_SCRIPT_FACT 林澈推开旧宅的门。",
 	} {
 		if !strings.Contains(creator.requests[0].Prompt, required) {
 			t.Fatalf("P0B production prompt missing %q", required)
@@ -146,6 +199,31 @@ func TestP0BRejectsMalformedAndAuthorityViolations(t *testing.T) {
 			expected: "缺少必需列",
 		},
 		{
+			name: "extra emotion column",
+			content: strings.NewReplacer(
+				"| 节拍 # | 情绪关键词 | 服务的剧本动作 | 情境 ID | 核心组合摘要（80%定死） | 解锁雷区 |",
+				"| 节拍 # | 情绪关键词 | 服务的剧本动作 | 情境 ID | 核心组合摘要（80%定死） | 解锁雷区 | 备注 |",
+				"|---|---|---|---|---|---|",
+				"|---|---|---|---|---|---|---|",
+				"| 节拍 1 | 压抑试探 | 母亲把体检单压在茶杯下 | E05 | 长焦+大光圈+空旷留白 | — |",
+				"| 节拍 1 | 压抑试探 | 母亲把体检单压在茶杯下 | E05 | 长焦+大光圈+空旷留白 | — | 额外 |",
+				"| 节拍 2 | 察觉异样 | 女儿瞥见纸角，手指顿住 | E11 | 微距标点+静切动 | — |",
+				"| 节拍 2 | 察觉异样 | 女儿瞥见纸角，手指顿住 | E11 | 微距标点+静切动 | — | 额外 |",
+				"| 节拍 3 | 强装平静 | 母亲端起杯子继续夹菜 | E08 | 过肩+长焦+手持微动 | — |",
+				"| 节拍 3 | 强装平静 | 母亲端起杯子继续夹菜 | E08 | 过肩+长焦+手持微动 | — | 额外 |",
+			).Replace(validP0BArtifact()),
+			expected: "表头必须严格等于官方六列顺序",
+		},
+		{
+			name: "reordered emotion columns",
+			content: strings.Replace(validP0BArtifact(),
+				"| 节拍 # | 情绪关键词 | 服务的剧本动作 | 情境 ID | 核心组合摘要（80%定死） | 解锁雷区 |",
+				"| 情绪关键词 | 节拍 # | 服务的剧本动作 | 情境 ID | 核心组合摘要（80%定死） | 解锁雷区 |",
+				1,
+			),
+			expected: "表头必须严格等于官方六列顺序",
+		},
+		{
 			name: "short table row",
 			content: strings.Replace(validP0BArtifact(),
 				"| 节拍 1 | 压抑试探 | 母亲把体检单压在茶杯下 | E05 | 长焦+大光圈+空旷留白 | — |",
@@ -178,6 +256,24 @@ func TestP0BRejectsMalformedAndAuthorityViolations(t *testing.T) {
 			expected: "A 类解锁必须写明白名单理由",
 		},
 		{
+			name: "A class unlock with invalid whitelist reason",
+			content: strings.Replace(validP0BArtifact(),
+				"白名单理由为仪式感；配套强对称构图、静态运镜与长焦压缩。",
+				"白名单理由为看起来高级；配套强对称构图、静态运镜与长焦压缩。",
+				1,
+			),
+			expected: "必须引用官方白名单选项",
+		},
+		{
+			name: "A class unlock missing paired constraint",
+			content: strings.Replace(validP0BArtifact(),
+				"白名单理由为仪式感；配套强对称构图、静态运镜与长焦压缩。",
+				"白名单理由为仪式感。",
+				1,
+			),
+			expected: "缺少配对约束",
+		},
+		{
 			name: "malformed whitelist table row",
 			content: strings.Replace(validP0BArtifact(),
 				"- A1 正面居中：A类；解锁；白名单理由为仪式感；配套强对称构图、静态运镜与长焦压缩。",
@@ -194,6 +290,15 @@ func TestP0BRejectsMalformedAndAuthorityViolations(t *testing.T) {
 				1,
 			),
 			expected: "缺少 B 类判定",
+		},
+		{
+			name: "B class hazard in unlock column",
+			content: strings.Replace(validP0BArtifact(),
+				"| 节拍 1 | 压抑试探 | 母亲把体检单压在茶杯下 | E05 | 长焦+大光圈+空旷留白 | — |",
+				"| 节拍 1 | 压抑试探 | 母亲把体检单压在茶杯下 | E05 | 长焦+大光圈+空旷留白 | 物体穿身解锁 |",
+				1,
+			),
+			expected: "B 类技术雷区不得出现在解锁雷区",
 		},
 	}
 	for _, testCase := range testCases {
@@ -295,6 +400,46 @@ func TestLegacyActiveProductionRunGetsDecisionAnchorWithoutDeletingHistory(t *te
 	}
 	if len(detail.Artifacts) == 0 || len(detail.Images) == 0 {
 		t.Fatalf("legacy repair must not delete artifacts or media: %+v", detail)
+	}
+	if repairedStoryboard.Status != model.ManjuProductionStageStatusStale ||
+		!strings.Contains(repairedStoryboard.Error, "重新生成 P3") {
+		t.Fatalf("legacy pre-P0B P3 must require regeneration: %+v", repairedStoryboard)
+	}
+
+	locked := lockProductionP0BForTest(t, f, run.Run.ID)
+	if got := findProductionStage(t, locked, manju.ProductionStageStoryboard).Status; got != model.ManjuProductionStageStatusStale {
+		t.Fatalf("P0B confirmation must not grandfather an old locked P3: %s", got)
+	}
+	task := &model.Task{
+		ID: "legacy-p3-regenerate-task", UserID: f.ownerID, ProjectID: f.projectID,
+		Type: "canvas_text", Status: model.TaskStatusQueued,
+	}
+	if err := f.db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	f.service.SetScriptTaskCreator((&sequentialScriptTaskCreator{tasks: []*model.Task{task}}).create)
+	regenerated, err := f.service.RegenerateProductionArtifact(
+		f.ownerID, f.projectID, run.Run.ID, manju.ProductionStageStoryboard,
+		manju.ProductionStageRunInput{Instruction: "按已锁定 P0B 重新生成旧 P3"},
+	)
+	if err != nil {
+		t.Fatalf("stale legacy P3 must be regenerable into a new lineage: %v", err)
+	}
+	regeneratedP3 := findProductionStage(t, regenerated, manju.ProductionStageStoryboard)
+	if regenerated.Run.ID != run.Run.ID ||
+		findProductionStage(t, regenerated, manju.ProductionStageDecisionAnchor).Status != model.ManjuProductionStageStatusLocked ||
+		regeneratedP3.Status != model.ManjuProductionStageStatusInProgress ||
+		regeneratedP3.TaskID != task.ID ||
+		regeneratedP3.ArtifactID != "" {
+		t.Fatalf("regenerated lineage must start from locked P0B and fresh P3: %+v", regenerated)
+	}
+	if got := findProductionStage(t, regenerated, manju.ProductionStageFeed); got.Status != model.ManjuProductionStageStatusNotStarted || got.ArtifactID != "" {
+		t.Fatalf("old P3 must not feed a new P4: %+v", got)
+	}
+	findProductionArtifact(t, regenerated, artifact.ID)
+	if countModels[model.ManjuProductionArtifact](t, f, run.Run.ID) < 2 ||
+		countModels[model.ManjuProductionImage](t, f, run.Run.ID) == 0 {
+		t.Fatal("legacy P3 artifacts and media must remain as historical rows")
 	}
 }
 

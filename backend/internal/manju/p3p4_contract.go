@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -297,6 +298,15 @@ type styleLensRange struct {
 
 var styleLensRangePattern = regexp.MustCompile(`\[\s*(\d{1,3})\s*mm\s*,\s*(\d{1,3})\s*mm\s*\]`)
 
+var p0bOfficialEmotionColumns = []string{
+	"节拍 #",
+	"情绪关键词",
+	"服务的剧本动作",
+	"情境 ID",
+	"核心组合摘要（80%定死）",
+	"解锁雷区",
+}
+
 func loadP0BDecisionContract() (P0BDecisionContract, error) {
 	p0bDecisionContractOnce.Do(func() {
 		p0bDecisionContractErr = json.Unmarshal(p0bDecisionContractJSON, &p0bDecisionContractData)
@@ -308,7 +318,7 @@ func loadP0BDecisionContract() (P0BDecisionContract, error) {
 			p0bDecisionContractData.ArtifactKind != "EMOTION_ANCHOR_TABLE.md" ||
 			len(p0bDecisionContractData.RequiredSections) != 2 ||
 			len(p0bDecisionContractData.RequiredColumns) != 1 ||
-			len(p0bDecisionContractData.RequiredColumns["## 情绪锚点表"]) != 6 {
+			!slices.Equal(p0bDecisionContractData.RequiredColumns["## 情绪锚点表"], p0bOfficialEmotionColumns) {
 			p0bDecisionContractErr = errors.New("P0B 决策锚点共享输出契约不完整")
 		}
 	})
@@ -339,7 +349,7 @@ func p0bDecisionPrompt() string {
 	}
 	out.WriteString("\n情境 ID 只能使用 E01-E15 或 EXnn；核心组合摘要与解锁雷区不得留空，无解锁填“—”。\n")
 	out.WriteString("## 构图雷区白名单\n")
-	out.WriteString("必须逐项给出 A/B 判定：A 类如解锁必须写明白名单理由；B 类技术雷区必须标明“永不解锁”。\n")
+	out.WriteString("必须逐项给出 A/B 判定：A 类如解锁必须引用官方白名单选项（如 A1 第②项仪式感）并写明配套约束；B 类技术雷区必须标明“永不解锁”。\n")
 	out.WriteString("B 类至少覆盖：物体穿身、角色服装突变、杂乱前景刺眼物、比例失调、重复元素无重点、空鸡蛋构图、道具状态突变。\n")
 	out.WriteString("任何 Markdown 表格行都必须与表头列数完全一致。\n")
 	return out.String()
@@ -373,6 +383,14 @@ func validateP0BDecisionArtifact(content string) error {
 				issues = append(issues, fmt.Sprintf("第 %d 个大分镜缺少 Markdown 表格", blockIndex+1))
 				continue
 			}
+			expectedHeaders := contract.RequiredColumns["## 情绪锚点表"]
+			if !slices.Equal(table.Headers, expectedHeaders) {
+				issues = append(issues, fmt.Sprintf(
+					"第 %d 个大分镜表头必须严格等于官方六列顺序：%s",
+					blockIndex+1,
+					strings.Join(expectedHeaders, " | "),
+				))
+			}
 			columnIndexes := p0bColumnIndexes(table.Headers)
 			for _, column := range contract.RequiredColumns["## 情绪锚点表"] {
 				if _, ok := columnIndexes[column]; !ok {
@@ -399,6 +417,18 @@ func validateP0BDecisionArtifact(content string) error {
 				for _, column := range []string{"核心组合摘要（80%定死）", "解锁雷区"} {
 					if index, ok := columnIndexes[column]; ok && strings.TrimSpace(p0bTableCell(row, index)) == "" {
 						issues = append(issues, fmt.Sprintf("%s %s 不得留空", rowLabel, column))
+					}
+				}
+				if index, ok := columnIndexes["解锁雷区"]; ok {
+					unlockValue := p0bTableCell(row, index)
+					for _, hazard := range p0bBHazards {
+						if strings.Contains(unlockValue, hazard) {
+							issues = append(issues, fmt.Sprintf(
+								"%s 的解锁雷区含 B 类技术雷区 %s；B 类技术雷区不得出现在解锁雷区",
+								rowLabel,
+								hazard,
+							))
+						}
 					}
 				}
 			}
@@ -458,6 +488,115 @@ func p0bColumnIndexes(headers []string) map[string]int {
 	return indexes
 }
 
+var p0bBHazards = []string{
+	"物体穿身",
+	"角色服装突变",
+	"杂乱前景刺眼物",
+	"比例失调",
+	"重复元素无重点",
+	"空鸡蛋构图",
+	"道具状态突变",
+}
+
+type p0bAWhitelistRule struct {
+	ID               string
+	Options          [][]string
+	ConstraintGroups [][]string
+}
+
+var p0bAWhitelistRules = []p0bAWhitelistRule{
+	{
+		ID: "A1",
+		Options: [][]string{
+			{"①", "异化时刻", "库布里克"},
+			{"②", "仪式感", "婚礼", "葬礼", "加冕", "审判"},
+			{"③", "对峙瞬间", "审讯", "法庭", "决斗"},
+			{"④", "强迫观众参与", "第四面墙"},
+			{"⑤", "风格化作者印记", "韦斯·安德森", "强对称美学"},
+			{"⑥", "权力凝固", "君主", "反派"},
+		},
+		ConstraintGroups: [][]string{
+			{"对称布景", "强对称构图", "对称"},
+			{"静态运镜", "静态"},
+			{"长焦压缩", "长焦"},
+		},
+	},
+	{
+		ID: "A2",
+		Options: [][]string{
+			{"①", "天花板压住", "牢笼感"},
+			{"②", "阶级压迫", "环境吞噬"},
+			{"③", "监视感"},
+		},
+		ConstraintGroups: [][]string{
+			{"广角"},
+			{"压迫感", "闭塞空间"},
+		},
+	},
+	{
+		ID: "A3",
+		Options: [][]string{
+			{"①", "异化", "程式化", "库布里克", "艾舍尔"},
+			{"②", "童话仪式感", "韦斯·安德森"},
+			{"③", "强对称美学"},
+		},
+		ConstraintGroups: [][]string{
+			{"对称"},
+			{"风格化"},
+		},
+	},
+	{
+		ID: "A4",
+		Options: [][]string{
+			{"①", "凝视虚空", "失控", "心理失序"},
+			{"②", "看不见的力量"},
+			{"③", "主观恐惧"},
+		},
+		ConstraintGroups: [][]string{
+			{"长焦", "虚化背景"},
+			{"凝视虚空", "心理失序"},
+		},
+	},
+	{
+		ID: "A5",
+		Options: [][]string{
+			{"①", "强调局部", "微距", "特写"},
+			{"②", "暴力美学", "昆汀", "北野武"},
+			{"③", "抽离感", "局部蒙太奇"},
+		},
+		ConstraintGroups: [][]string{
+			{"微距", "特写"},
+			{"长焦"},
+		},
+	},
+	{
+		ID: "A6",
+		Options: [][]string{
+			{"①", "神性显现", "顿悟", "死亡"},
+			{"②", "逆光剪影"},
+			{"③", "回忆", "梦境", "过曝"},
+		},
+		ConstraintGroups: [][]string{
+			{"逆光剪影", "过曝梦境感"},
+			{"高调过曝", "神性光线", "梦境质感"},
+		},
+	},
+	{
+		ID: "A7",
+		Options: [][]string{
+			{"①", "全家福", "法庭", "仪式", "集体宣誓", "教科书"},
+			{"②", "强迫观众参与", "第四面墙"},
+			{"③", "仪式威严", "多人朝贺"},
+		},
+		ConstraintGroups: [][]string{
+			{"对称布景", "对称"},
+			{"仪式感", "集体凝视"},
+		},
+	},
+}
+
+var p0bAWhitelistIDPattern = regexp.MustCompile(`A[1-7]`)
+
 func validateP0BForbiddenZoneDecision(section []string) error {
 	text := strings.Join(section, "\n")
 	issues := make([]string, 0)
@@ -467,38 +606,61 @@ func validateP0BForbiddenZoneDecision(section []string) error {
 	if !strings.Contains(text, "B类") && !strings.Contains(text, "B 类") {
 		issues = append(issues, "构图雷区白名单缺少 B 类判定")
 	}
-	if !strings.Contains(text, "永不解锁") && !strings.Contains(text, "不可解锁") {
-		issues = append(issues, "B 类技术雷区必须标明永不解锁")
-	}
-	for _, hazard := range []string{
-		"物体穿身",
-		"角色服装突变",
-		"杂乱前景刺眼物",
-		"比例失调",
-		"重复元素无重点",
-		"空鸡蛋构图",
-		"道具状态突变",
-	} {
-		if !strings.Contains(text, hazard) {
-			issues = append(issues, "B 类技术雷区缺少 "+hazard)
+	for _, hazard := range p0bBHazards {
+		explicitlyNever := false
+		for _, line := range section {
+			if strings.Contains(line, hazard) &&
+				(strings.Contains(line, "永不解锁") || strings.Contains(line, "不可解锁")) {
+				explicitlyNever = true
+				break
+			}
+		}
+		if !explicitlyNever {
+			issues = append(issues, "B 类技术雷区 "+hazard+" 必须显式列为永不解锁")
 		}
 	}
+
 	hasUnlockDecision := false
 	for _, line := range section {
 		trimmed := strings.TrimSpace(line)
-		if !regexp.MustCompile(`A[1-7]`).MatchString(trimmed) {
+		hazardIDs := p0bAWhitelistIDPattern.FindAllString(trimmed, -1)
+		if len(hazardIDs) == 0 {
 			continue
 		}
 		hasUnlockDecision = true
-		if strings.Contains(trimmed, "解锁") &&
-			!strings.Contains(trimmed, "未解锁") &&
-			!strings.Contains(trimmed, "无解锁") &&
-			!strings.Contains(trimmed, "不可解锁") &&
-			!p0bHasWhitelistReason(trimmed) {
+		if !p0bLineUnlocks(trimmed) {
+			continue
+		}
+		if !p0bHasWhitelistReason(trimmed) {
 			issues = append(issues, "A 类解锁必须写明白名单理由："+trimmed)
+			continue
+		}
+		reason, _ := p0bWhitelistReason(trimmed)
+		for _, hazardID := range p0bUniqueIDs(hazardIDs) {
+			rule, ok := p0bAWhitelistRuleByID(hazardID)
+			if !ok {
+				continue
+			}
+			if !p0bWhitelistReasonMatches(reason, rule.Options) {
+				issues = append(issues, fmt.Sprintf(
+					"%s 解锁必须引用官方白名单选项：%s",
+					hazardID,
+					trimmed,
+				))
+			}
+			if missing := p0bMissingConstraintGroups(trimmed, rule.ConstraintGroups); len(missing) > 0 {
+				issues = append(issues, fmt.Sprintf(
+					"%s 解锁缺少配对约束：%s；%s",
+					hazardID,
+					strings.Join(missing, "、"),
+					trimmed,
+				))
+			}
 		}
 	}
-	if !hasUnlockDecision && !strings.Contains(text, "A类：无解锁") && !strings.Contains(text, "A 类：无解锁") {
+	if !hasUnlockDecision &&
+		!strings.Contains(text, "A类：无解锁") &&
+		!strings.Contains(text, "A 类：无解锁") {
 		issues = append(issues, "构图雷区白名单必须逐项给出 A 类解锁或无解锁判定")
 	}
 	if len(issues) > 0 {
@@ -507,15 +669,87 @@ func validateP0BForbiddenZoneDecision(section []string) error {
 	return nil
 }
 
+func p0bLineUnlocks(value string) bool {
+	if !strings.Contains(value, "解锁") {
+		return false
+	}
+	for _, blocked := range []string{"未解锁", "无解锁", "不可解锁", "永不解锁", "不解锁"} {
+		if strings.Contains(value, blocked) {
+			return false
+		}
+	}
+	return true
+}
+
 func p0bHasWhitelistReason(value string) bool {
+	_, ok := p0bWhitelistReason(value)
+	return ok
+}
+
+func p0bWhitelistReason(value string) (string, bool) {
 	const marker = "白名单理由"
 	index := strings.Index(value, marker)
 	if index < 0 {
-		return false
+		return "", false
 	}
 	reason := strings.TrimSpace(value[index+len(marker):])
 	reason = strings.TrimLeft(reason, "：:，,；;。 ")
-	return reason != ""
+	for _, separator := range []string{"；配套", ";配套", "；约束", ";约束", "\n"} {
+		if separatorIndex := strings.Index(reason, separator); separatorIndex >= 0 {
+			reason = strings.TrimSpace(reason[:separatorIndex])
+		}
+	}
+	return reason, reason != ""
+}
+
+func p0bWhitelistReasonMatches(reason string, options [][]string) bool {
+	for _, markers := range options {
+		for _, marker := range markers {
+			if strings.Contains(reason, marker) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func p0bMissingConstraintGroups(value string, groups [][]string) []string {
+	missing := make([]string, 0)
+	for _, group := range groups {
+		found := false
+		for _, marker := range group {
+			if strings.Contains(value, marker) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			missing = append(missing, strings.Join(group, "/"))
+		}
+	}
+	return missing
+}
+
+func p0bAWhitelistRuleByID(id string) (p0bAWhitelistRule, bool) {
+	for _, rule := range p0bAWhitelistRules {
+		if rule.ID == id {
+			return rule, true
+		}
+	}
+	return p0bAWhitelistRule{}, false
+}
+
+func p0bUniqueIDs(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if seen[value] {
+			continue
+		}
+		seen[value] = true
+		result = append(result, value)
+	}
+	return result
 }
 
 type p0bMarkdownTableData struct {

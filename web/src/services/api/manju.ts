@@ -441,7 +441,7 @@ export type ManjuAssetReferenceInput = {
     notes?: string;
 };
 
-export type ManjuProductionStageStatus = "NOT_STARTED" | "IN_PROGRESS" | "AWAITING_CONFIRMATION" | "LOCKED" | "BLOCKED";
+export type ManjuProductionStageStatus = "NOT_STARTED" | "IN_PROGRESS" | "AWAITING_CONFIRMATION" | "LOCKED" | "BLOCKED" | "STALE";
 
 export type ManjuProductionRun = {
     id: string;
