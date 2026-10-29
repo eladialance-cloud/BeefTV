@@ -10,6 +10,11 @@ const retiredAgentBoundaryMessage = localtask.RetiredAgentBoundaryMessage
 
 // CreateTask 把应用层请求交给任务域。模型目录、密钥和配额仍通过 typed ports 留在 app。
 func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task, error) {
+	resolved, err := s.applyCreationPrompt(req)
+	if err != nil {
+		return nil, err
+	}
+	req = resolved
 	return s.taskDomain().CreateTask(userID, toTaskCreateRequest(req))
 }
 
