@@ -14,15 +14,19 @@ import (
 	"syscall"
 	"time"
 
+	"infinite-canvas/backend/internal/app"
 	"infinite-canvas/backend/internal/asset"
 	"infinite-canvas/backend/internal/auth"
 	"infinite-canvas/backend/internal/bootstrap"
 	"infinite-canvas/backend/internal/credits"
 	_ "infinite-canvas/backend/internal/database/postgresdriver"
 	"infinite-canvas/backend/internal/hostedapi"
+	"infinite-canvas/backend/internal/manju"
+	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/payment"
 	"infinite-canvas/backend/internal/repository"
 	"infinite-canvas/backend/internal/storageconfig"
+	localtask "infinite-canvas/backend/internal/task"
 
 	"github.com/gin-gonic/gin"
 )
@@ -50,6 +54,24 @@ func registerHostedRoutes(hosted bootstrap.HostedContext) error {
 	hostedapi.RegisterCreditRoutes(hosted.API, creditService, creditActor)
 	hostedapi.RegisterCreditAdminRoutes(hosted.API, creditService, hosted.Repository,
 		creditActor, hosted.Service.RequireAdmin)
+
+	// 漫剧工作室：项目成员与不可变 P0 锁只在托管入口提供，身份来自登录会话。
+	manjuService := manju.New(hosted.Repository)
+	manjuService.SetScriptTaskCreator(func(userID string, request localtask.CreateRequest) (*model.Task, error) {
+		return hosted.Service.CreateTask(userID, app.CreateTaskRequest{
+			ProjectID:      request.ProjectID,
+			Type:           request.Type,
+			Operation:      request.Operation,
+			Prompt:         request.Prompt,
+			Provider:       request.Provider,
+			Model:          request.Model,
+			LogicalModelID: request.LogicalModelID,
+			Input:          request.Input,
+			TraceID:        request.TraceID,
+			RequestID:      request.RequestID,
+		})
+	})
+	hostedapi.RegisterManjuRoutes(hosted.API, manjuService, creditActor)
 
 	// 价格：三张价格规则表统一走后台 CRUD，运行时按生效区间报价。
 	pricingService := credits.NewPricing(hosted.Repository, credits.Config{})
