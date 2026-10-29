@@ -2,8 +2,6 @@ package hostedapi
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -144,49 +142,6 @@ func confirmedManjuLockKeys(includeSeam bool) []string {
 		keys = append(keys, manjusvc.LockSeamMode)
 	}
 	return keys
-}
-
-func lockP0BThroughAPI(t *testing.T, engine *gin.Engine, db *gorm.DB, runID string) {
-	t.Helper()
-	content := strings.Join([]string{
-		"# P0B 决策锚点",
-		"## 情绪锚点表",
-		"| 场次 | 情绪锚点 | 情境映射 | 核心机位组合 | 权重占比 |",
-		"|---|---|---|---|---|",
-		"| 场1 | 压抑试探 | E05 孤独沉思 | 长焦+大光圈+空旷留白 | 80/15/5 |",
-		"## 构图雷区白名单",
-		"| 雷区 | 允许条件 | 替代方案 | 下游约束 |",
-		"|---|---|---|---|",
-		"| A1 正面居中 | 仪式感 | 侧45度反打 | 镜行不得重复正面居中 |",
-	}, "\n")
-	var stage model.ManjuScriptStage
-	if err := db.First(&stage, "run_id = ? AND key = ?", runID, manjusvc.ScriptStageDecisionAnchor).Error; err != nil {
-		t.Fatal(err)
-	}
-	sum := sha256.Sum256([]byte(content))
-	artifact := &model.ManjuScriptArtifact{
-		ID: "p0b-" + runID[:8], ProjectID: "project-secret", RunID: runID, StageID: stage.ID,
-		Kind: model.ManjuScriptArtifactEmotionAnchor, Version: 1, Content: content,
-		ContentHash: hex.EncodeToString(sum[:]), CreatedBy: testManjuOwnerID, CreatedAt: time.Now(),
-	}
-	if err := db.Create(artifact).Error; err != nil {
-		t.Fatal(err)
-	}
-	now := time.Now()
-	if err := db.Model(&model.ManjuScriptStage{}).Where("id = ?", stage.ID).Updates(map[string]any{
-		"status": model.ManjuScriptStageStatusAwaitingConfirm, "artifact_id": artifact.ID,
-		"version": 1, "completed_at": now, "error": "",
-	}).Error; err != nil {
-		t.Fatal(err)
-	}
-	confirmed := manjuRequest(
-		t, engine, http.MethodPost,
-		"/api/manju/projects/project-secret/script-runs/"+runID+"/stages/"+manjusvc.ScriptStageDecisionAnchor+"/confirm",
-		nil, "owner",
-	)
-	if confirmed.Code != http.StatusOK {
-		t.Fatalf("confirm persisted P0B artifact: %d %s", confirmed.Code, confirmed.Body.String())
-	}
 }
 
 func TestManjuRoutesRequireSession(t *testing.T) {
@@ -498,8 +453,14 @@ func TestManjuWriterCannotChangeProjectModels(t *testing.T) {
 	}
 }
 
-func TestManjuP0BDecisionGatesScriptRunCreateRegisterAndRead(t *testing.T) {
-	engine, _, db := newManjuHTTPEnvWithDB(t)
+func TestManjuScriptSourceRouteDoesNotRequireRetiredP0BStage(t *testing.T) {
+	engine, service := newManjuHTTPEnv(t)
+	service.SetScriptTaskCreator(func(userID string, request localtask.CreateRequest) (*model.Task, error) {
+		return &model.Task{
+			ID: "task-script-blocked", UserID: userID, ProjectID: request.ProjectID,
+			Type: request.Type, Status: model.TaskStatusQueued,
+		}, nil
+	})
 	lockBody := map[string]any{
 		"track": "domestic", "source": "adaptation", "videoModel": "seedance-2.0",
 		"aspectRatio": "9:16", "deliveryMode": "both", "targetDurationSeconds": 60,
@@ -530,8 +491,8 @@ func TestManjuP0BDecisionGatesScriptRunCreateRegisterAndRead(t *testing.T) {
 		t.Fatalf("P1 必须从 P0 推导小说改编支线: %+v", createPayload.Data.Item)
 	}
 	if len(createPayload.Data.Item.Stages) == 0 ||
-		createPayload.Data.Item.Stages[0].Key != manjusvc.ScriptStageDecisionAnchor {
-		t.Fatalf("P1 first stage must be P0B: %+v", createPayload.Data.Item.Stages)
+		createPayload.Data.Item.Stages[0].Key != manjusvc.ScriptStageSourceRegistration {
+		t.Fatalf("P0B 已移出 P1，来源登记必须保持为第一剧本阶段: %+v", createPayload.Data.Item.Stages)
 	}
 	blockedIP := manjuRequest(
 		t, engine, http.MethodPost,
@@ -539,9 +500,8 @@ func TestManjuP0BDecisionGatesScriptRunCreateRegisterAndRead(t *testing.T) {
 		map[string]any{}, "owner",
 	)
 	if blockedIP.Code != http.StatusConflict {
-		t.Fatalf("IP stage must stay blocked before P0B: %d %s", blockedIP.Code, blockedIP.Body.String())
+		t.Fatalf("来源未登记时 IP 阶段必须保持阻塞: %d %s", blockedIP.Code, blockedIP.Body.String())
 	}
-	lockP0BThroughAPI(t, engine, db, runID)
 
 	sourcePath := "/api/manju/projects/project-secret/script-runs/" + runID + "/source"
 	registered := manjuRequest(t, engine, http.MethodPost, sourcePath, map[string]any{
@@ -574,8 +534,8 @@ func TestManjuP0BDecisionGatesScriptRunCreateRegisterAndRead(t *testing.T) {
 		t.Fatalf("读取任务必须返回来源账本: %+v", readPayload.Data.Item)
 	}
 	for _, stage := range readPayload.Data.Item.Stages {
-		if stage.Key == manjusvc.ScriptStageDecisionAnchor && stage.Status != manjusvc.ScriptStageStatusLocked {
-			t.Fatalf("P0B artifact must remain locked: %+v", stage)
+		if stage.Key == "decision_anchor" {
+			t.Fatalf("P0B 不得继续作为剧本阶段存在: %+v", stage)
 		}
 		if stage.Key == manjusvc.ScriptStageSourceRegistration && (stage.Status != manjusvc.ScriptStageStatusLocked || stage.ConfirmedBy != testManjuOwnerID) {
 			t.Fatalf("来源阶段确认状态错误: %+v", stage)
@@ -689,8 +649,8 @@ func TestManjuAssetRoutesRequireCompletedScript(t *testing.T) {
 	}
 }
 
-func TestManjuP0BAllowsStageRunAfterDecisionLock(t *testing.T) {
-	engine, service, db := newManjuHTTPEnvWithDB(t)
+func TestManjuRetiredP0BDoesNotGateScriptStageRun(t *testing.T) {
+	engine, service := newManjuHTTPEnv(t)
 	lockBody := map[string]any{
 		"track": "domestic", "source": "adaptation", "videoModel": "seedance-2.0",
 		"aspectRatio": "9:16", "deliveryMode": "both", "targetDurationSeconds": 15,
@@ -724,7 +684,6 @@ func TestManjuP0BAllowsStageRunAfterDecisionLock(t *testing.T) {
 	}
 	runID := createPayload.Data.Item.Run.ID
 	base := "/api/manju/projects/project-secret/script-runs/" + runID
-	lockP0BThroughAPI(t, engine, db, runID)
 	if recorder := manjuRequest(t, engine, http.MethodPost, base+"/source", map[string]any{
 		"title": "雨夜旧宅", "authorizationScope": "仅本项目改编", "rangeLabel": "第 1 章", "content": "林澈推开旧宅的门。",
 	}, "owner"); recorder.Code != http.StatusOK {
@@ -761,6 +720,103 @@ func TestManjuP0BAllowsStageRunAfterDecisionLock(t *testing.T) {
 			t.Fatalf("阶段未绑定返回的任务: %+v", stage)
 		}
 	}
+}
+
+func TestManjuProductionP0BDecisionLocksBeforeStoryboard(t *testing.T) {
+	engine, service, db := newManjuHTTPEnvWithDB(t)
+	seedProductionReadyProject(t, db)
+
+	created := manjuRequest(t, engine, http.MethodPost, "/api/manju/projects/project-secret/production-runs", map[string]any{
+		"assetRunId": "asset-production",
+	}, "owner")
+	if created.Code != http.StatusOK {
+		t.Fatalf("创建生产链失败: %d %s", created.Code, created.Body.String())
+	}
+	var createdPayload struct {
+		Data struct {
+			Item manjusvc.ProductionRunDetail `json:"item"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &createdPayload); err != nil {
+		t.Fatal(err)
+	}
+	run := createdPayload.Data.Item
+	if len(run.Stages) != 4 || run.Stages[0].Key != manjusvc.ProductionStageDecisionAnchor {
+		t.Fatalf("生产链必须以 P0B 为首阶段: %+v", run.Stages)
+	}
+	base := "/api/manju/projects/project-secret/production-runs/" + run.Run.ID
+	blocked := manjuRequest(t, engine, http.MethodPost, base+"/stages/"+manjusvc.ProductionStageStoryboard+"/run", map[string]any{}, "owner")
+	if blocked.Code != http.StatusConflict {
+		t.Fatalf("P0B 未锁定时 P3 必须冲突: %d %s", blocked.Code, blocked.Body.String())
+	}
+
+	task := &model.Task{
+		ID: "task-http-production-p0b", UserID: testManjuOwnerID, ProjectID: "project-secret",
+		Type: "canvas_text", Status: model.TaskStatusQueued,
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	service.SetScriptTaskCreator(func(userID string, request localtask.CreateRequest) (*model.Task, error) {
+		return task, nil
+	})
+	started := manjuRequest(t, engine, http.MethodPost, base+"/stages/"+manjusvc.ProductionStageDecisionAnchor+"/run", map[string]any{}, "owner")
+	if started.Code != http.StatusOK {
+		t.Fatalf("启动生产 P0B 失败: %d %s", started.Code, started.Body.String())
+	}
+	result, err := json.Marshal(map[string]any{"mode": "text", "text": validProductionP0BArtifact()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.Task{}).Where("id = ?", task.ID).Updates(map[string]any{
+		"status": model.TaskStatusSucceeded, "stage": "完成", "result_json": string(result),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	detail := manjuRequest(t, engine, http.MethodGet, base, nil, "owner")
+	if detail.Code != http.StatusOK {
+		t.Fatalf("读取生产链失败: %d %s", detail.Code, detail.Body.String())
+	}
+	confirmed := manjuRequest(t, engine, http.MethodPost, base+"/stages/"+manjusvc.ProductionStageDecisionAnchor+"/confirm", map[string]any{}, "owner")
+	if confirmed.Code != http.StatusOK {
+		t.Fatalf("确认生产 P0B 失败: %d %s", confirmed.Code, confirmed.Body.String())
+	}
+	var confirmedPayload struct {
+		Data struct {
+			Item manjusvc.ProductionRunDetail `json:"item"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(confirmed.Body.Bytes(), &confirmedPayload); err != nil {
+		t.Fatal(err)
+	}
+	for _, stage := range confirmedPayload.Data.Item.Stages {
+		if stage.Key == manjusvc.ProductionStageDecisionAnchor && stage.Status != model.ManjuProductionStageStatusLocked {
+			t.Fatalf("P0B 必须锁定: %+v", stage)
+		}
+		if stage.Key == manjusvc.ProductionStageStoryboard && stage.Status != model.ManjuProductionStageStatusInProgress {
+			t.Fatalf("P0B 锁定后必须开放 P3: %+v", stage)
+		}
+	}
+}
+
+func validProductionP0BArtifact() string {
+	return `# P0B 决策锚点
+## 情绪锚点表
+
+【大分镜 #B01 · 情绪锚点表】
+
+| 节拍 # | 情绪关键词 | 服务的剧本动作 | 情境 ID | 核心组合摘要（80%定死） | 解锁雷区 |
+|---|---|---|---|---|---|
+| 节拍 1 | 压抑试探 | 母亲把体检单压在茶杯下 | E05 | 长焦+大光圈+空旷留白 | — |
+| 节拍 2 | 察觉异样 | 女儿瞥见纸角，手指顿住 | E11 | 微距标点+静切动 | — |
+| 节拍 3 | 强装平静 | 母亲端起杯子继续夹菜 | E08 | 过肩+长焦+手持微动 | — |
+
+## 构图雷区白名单
+
+- A1 正面居中：A类；解锁；白名单理由为仪式感；配套强对称构图、静态运镜与长焦压缩。
+- A类：其余项目无解锁；未命中白名单时按默认规避。
+- B类 · 永不解锁：物体穿身、角色服装突变、杂乱前景刺眼物、比例失调、重复元素无重点、空鸡蛋构图、道具状态突变。
+`
 }
 
 func seedProductionReadyProject(t *testing.T, db *gorm.DB) {
@@ -803,6 +859,38 @@ func seedProductionReadyProject(t *testing.T, db *gorm.DB) {
 		if err := db.Create(item).Error; err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func lockProductionP0BStageThroughAPI(t *testing.T, engine *gin.Engine, db *gorm.DB, baseURL, runID string) {
+	t.Helper()
+	var stage model.ManjuProductionStage
+	if err := db.First(&stage, "run_id = ? AND key = ?", runID, manjusvc.ProductionStageDecisionAnchor).Error; err != nil {
+		t.Fatal(err)
+	}
+	content := validProductionP0BArtifact()
+	artifact := &model.ManjuProductionArtifact{
+		ID: "p0b-http-" + runID[:8], ProjectID: "project-secret", RunID: runID, StageID: stage.ID,
+		Kind: model.ManjuProductionArtifactEmotionAnchor, Version: 1, Content: content,
+		ContentHash: "locked-p0b-hash", CreatedBy: testManjuOwnerID, CreatedAt: time.Now(),
+	}
+	if err := db.Create(artifact).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := db.Model(&model.ManjuProductionStage{}).Where("id = ?", stage.ID).Updates(map[string]any{
+		"status": model.ManjuProductionStageStatusAwaitingConfirmation, "artifact_id": artifact.ID,
+		"version": 1, "completed_at": now, "error": "",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	confirmed := manjuRequest(
+		t, engine, http.MethodPost,
+		baseURL+"/stages/"+manjusvc.ProductionStageDecisionAnchor+"/confirm",
+		map[string]any{}, "owner",
+	)
+	if confirmed.Code != http.StatusOK {
+		t.Fatalf("确认生产 P0B 失败: %d %s", confirmed.Code, confirmed.Body.String())
 	}
 }
 
@@ -878,7 +966,7 @@ func TestManjuProductionRoutesCreateRunAndAdvanceStoryboardStage(t *testing.T) {
 		t.Fatal(err)
 	}
 	run := createPayload.Data.Item.Run
-	if run.ID == "" || run.AssetRunID != "asset-production" || run.CurrentStage != manjusvc.ProductionStageStoryboard {
+	if run.ID == "" || run.AssetRunID != "asset-production" || run.CurrentStage != manjusvc.ProductionStageDecisionAnchor {
 		t.Fatalf("生产链创建回执错误: %+v", run)
 	}
 
@@ -887,6 +975,7 @@ func TestManjuProductionRoutesCreateRunAndAdvanceStoryboardStage(t *testing.T) {
 		t.Fatalf("生产链列表必须返回刚创建的任务: %d %s", listed.Code, listed.Body.String())
 	}
 	base := "/api/manju/projects/project-secret/production-runs/" + run.ID
+	lockProductionP0BStageThroughAPI(t, engine, db, base, run.ID)
 	detail := manjuRequest(t, engine, http.MethodGet, base, nil, "owner")
 	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), manjusvc.ProductionStageStoryboard) {
 		t.Fatalf("生产链详情必须返回 P3 阶段: %d %s", detail.Code, detail.Body.String())

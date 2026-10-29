@@ -198,7 +198,6 @@ export type ManjuScriptInputKind = "novel" | "outline" | "finished_script";
 export type ManjuTrendResolution = "" | "original" | "benchmark";
 export type ManjuScriptStageStatus = "NOT_STARTED" | "IN_PROGRESS" | "AWAITING_CONFIRMATION" | "AWAITING_USER_DECISION" | "LOCKED" | "STALE" | "BLOCKED";
 export type ManjuScriptStageKey =
-    | "decision_anchor"
     | "source_registration"
     | "recon_intelligence"
     | "ip_development"
@@ -210,7 +209,6 @@ export type ManjuScriptStageKey =
     | "polish_findings"
     | "polish_confirmation";
 export type ManjuScriptArtifactKind =
-    | "EMOTION_ANCHOR_TABLE.md"
     | "SOURCE_MANIFEST.json"
     | "RECON_INTELLIGENCE_CARD.md"
     | "IP_DEVELOPMENT.md"

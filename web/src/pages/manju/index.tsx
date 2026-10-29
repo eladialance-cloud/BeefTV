@@ -1611,8 +1611,6 @@ export function ScriptPipeline({ detail, onChanged }: { detail: ManjuProjectDeta
         refetchInterval: selectedRun?.status === "ACTIVE" ? 2500 : false,
     });
     const runDetail = runQuery.data?.item;
-    const decisionAnchorStage = runDetail?.stages.find((stage) => stage.key === "decision_anchor");
-    const decisionAnchorLocked = decisionAnchorStage?.status === "LOCKED";
     const p1Loading = runsQuery.isLoading || runQuery.isLoading;
     const applyRun = (item: ManjuScriptRunDetail) => {
         queryClient.setQueryData(["manju", "script-run", detail.project.id, item.run.id], { item });
@@ -1795,31 +1793,10 @@ export function ScriptPipeline({ detail, onChanged }: { detail: ManjuProjectDeta
             ) : (
                 <>
                     <SourceLedger detail={runDetail} />
-                    {decisionAnchorStage ? (
-                        <section className="manju-script-decision-gate" aria-label="P0B 决策锚点">
-                            <header>
-                                <div>
-                                    <span className="manju-kicker">P1 前置门禁</span>
-                                    <h3>P0B 决策锚点</h3>
-                                    <p>情绪锚点表与构图雷区白名单必须先落盘并锁定，之后才开放六阶段编剧链。</p>
-                                </div>
-                                {decisionAnchorLocked ? <ShieldCheck /> : <LockKeyhole />}
-                            </header>
-                            <ScriptStageCard
-                                projectId={detail.project.id}
-                                projectName={detail.project.name}
-                                detail={runDetail}
-                                stage={decisionAnchorStage}
-                                canEdit={canEdit}
-                                decisionAnchorLocked={decisionAnchorLocked}
-                                onUpdated={applyRun}
-                            />
-                        </section>
-                    ) : null}
                     <section className="manju-script-timeline" aria-label="P1 剧本阶段">
                         <header>
                             <div>
-                                <span className="manju-kicker">P0B 后的六阶段编剧链</span>
+                                <span className="manju-kicker">六阶段编剧链</span>
                                 <h3>{runDetail.run.mode === "STEPWISE" ? "逐步确认 · 真实阶段状态" : "完整流程 · 真实阶段状态"}</h3>
                             </div>
                             <div className="manju-inline-actions">
@@ -1835,7 +1812,7 @@ export function ScriptPipeline({ detail, onChanged }: { detail: ManjuProjectDeta
                         </header>
                         <div className="manju-script-stage-stack">
                             {runDetail.stages
-                                .filter((stage) => stage.key !== "decision_anchor" && !(stage.key === "source_registration" && runDetail.source && runDetail.run.sourceDocumentId))
+                                .filter((stage) => !(stage.key === "source_registration" && runDetail.source && runDetail.run.sourceDocumentId))
                                 .map((stage) => (
                                     <ScriptStageCard
                                         key={stage.id}
@@ -1844,7 +1821,6 @@ export function ScriptPipeline({ detail, onChanged }: { detail: ManjuProjectDeta
                                         detail={runDetail}
                                         stage={stage}
                                         canEdit={canEdit}
-                                        decisionAnchorLocked={decisionAnchorLocked}
                                         onUpdated={applyRun}
                                     />
                                 ))}
@@ -1875,7 +1851,7 @@ function SourceLedger({ detail }: { detail: ManjuScriptRunDetail }) {
     );
 }
 
-function ScriptStageCard({ projectId, projectName, detail, stage, canEdit, decisionAnchorLocked, onUpdated }: { projectId: string; projectName: string; detail: ManjuScriptRunDetail; stage: ManjuScriptStage; canEdit: boolean; decisionAnchorLocked: boolean; onUpdated: (item: ManjuScriptRunDetail) => void }) {
+function ScriptStageCard({ projectId, projectName, detail, stage, canEdit, onUpdated }: { projectId: string; projectName: string; detail: ManjuScriptRunDetail; stage: ManjuScriptStage; canEdit: boolean; onUpdated: (item: ManjuScriptRunDetail) => void }) {
     const artifact = detail.artifacts?.find((item) => item.id === stage.artifactId);
     const [instruction, setInstruction] = useState("");
     const [notice, setNotice] = useState<{ tone: "error" | "success"; text: string } | null>(null);
@@ -1921,10 +1897,9 @@ function ScriptStageCard({ projectId, projectName, detail, stage, canEdit, decis
     const isCurrent = detail.run.currentStage === stage.key;
     const runActive = detail.run.status === "ACTIVE";
     const runReadable = runActive || detail.run.status === "COMPLETED";
-    const decisionGateBlocked = stage.key === "ip_development" && !decisionAnchorLocked;
     const canConfirm = canEdit && runActive && ["AWAITING_CONFIRMATION", "AWAITING_USER_DECISION"].includes(stage.status);
     const canRegenerateArtifact = canEdit && runReadable && Boolean(artifact) && !stage.taskId && ["LOCKED", "BLOCKED", "AWAITING_CONFIRMATION", "AWAITING_USER_DECISION"].includes(stage.status);
-    const canRun = canEdit && runActive && isCurrent && !decisionGateBlocked && ["IN_PROGRESS", "BLOCKED", "STALE"].includes(stage.status) && !canRegenerateArtifact;
+    const canRun = canEdit && runActive && isCurrent && ["IN_PROGRESS", "BLOCKED", "STALE"].includes(stage.status) && !canRegenerateArtifact;
     const canManualCorrect = canEdit && stage.status === "BLOCKED" && Boolean(stage.draft?.content);
     const stageSubtitle =
         stage.key === "source_registration" && detail.source
@@ -1989,12 +1964,6 @@ function ScriptStageCard({ projectId, projectName, detail, stage, canEdit, decis
                 <div className="manju-script-running">
                     <Spin size="small" />
                     <span>VisiDeep AI 文本任务已提交，积分已按画布计费规则冻结。页面每 2.5 秒读取真实状态。</span>
-                </div>
-            ) : null}
-            {decisionGateBlocked ? (
-                <div className="manju-script-input">
-                    <span>P0B 锁定后才能执行 IP 与角色开发。</span>
-                    <Button disabled icon={<LockKeyhole />}>执行 {stage.title}</Button>
                 </div>
             ) : null}
             {canRun && !stage.taskId ? (
@@ -2961,8 +2930,16 @@ const PRODUCTION_STAGE_STATUS_LABELS: Record<ManjuProductionStageStatus, string>
 };
 
 const PRODUCTION_STAGE_META: Record<string, { input: string; output: string; consumer: string; placeholder: string; runLabel: string; icon: LucideIcon }> = {
+    decision_anchor: {
+        input: "读取已锁定的 P1 剧本动作、P2 资产事实与 P0 模型/画幅合同。",
+        output: "EMOTION_ANCHOR_TABLE.md",
+        consumer: "P3 只能读取已锁定的六列情绪锚点表与 A/B 构图雷区判定。",
+        placeholder: "可选补充：本段情绪节拍、情境 ID 或必须核对的白名单雷区。",
+        runLabel: "执行 P0B 决策锚点",
+        icon: Sparkles,
+    },
     director_storyboard: {
-        input: "只读取已锁定的 P2 资产包、P1 剧本事实与 P0 模型/画幅/段缝合同。",
+        input: "只读取已锁定的 P2 资产包、P1 剧本事实、P0B 决策锚点与 P0 模型/画幅/段缝合同。",
         output: "DIRECTOR_STORYBOARD.md",
         consumer: "人工确认并写入 project_state 后，P4 由官方 compile_feed.py 读取 segments/shots 生成投喂稿。",
         placeholder: "可选补充：每段动作相位、重点镜头、故事板格数或剧情分镜格要求。",
@@ -3012,9 +2989,9 @@ const PRODUCTION_PIPELINE_META: Record<"p3" | "p4" | "p5", { key: string; title:
     p3: {
         key: "director_storyboard",
         title: "P3 分镜与故事板",
-        description: "读取已锁定资产，生成表演、调度、分镜文字和逐段故事板图片。",
+        description: "先锁定 P0B 决策锚点，再读取资产生成表演、调度、分镜文字和逐段故事板图片。",
         icon: Film,
-        gate: "先完成 P2 资产交付与最终确认。",
+        gate: "先完成 P2 资产交付与最终确认，再锁定 P0B 决策锚点。",
     },
     p4: {
         key: "feed_package",
@@ -3104,7 +3081,7 @@ function ProductionPipeline({ detail, activeStage, onChanged }: { detail: ManjuP
         mutationFn: () => createManjuProductionRun(detail.project.id, { assetRunId: selectedAssetRunId }),
         onSuccess: ({ item }) => {
             applyProduction(item);
-            setNotice({ tone: "success", text: "已建立 P3-P5 生产链，P3 现在可以执行。" });
+            setNotice({ tone: "success", text: "已建立 P0B-P5 生产链，先完成 P0B 决策锚点。" });
         },
         onError: (error) => setNotice({ tone: "error", text: error instanceof Error ? error.message : "生产链创建失败" }),
     });
@@ -3118,10 +3095,15 @@ function ProductionPipeline({ detail, activeStage, onChanged }: { detail: ManjuP
             ? "生产链进行中"
             : "等待已完成 P2";
     const activeMeta = PRODUCTION_PIPELINE_META[activeStage];
+    const productionStagesForTab = productionRun
+        ? activeStage === "p3"
+            ? productionRun.stages.filter((stage) => stage.key === "decision_anchor" || stage.key === activeMeta.key)
+            : productionRun.stages.filter((stage) => stage.key === activeMeta.key)
+        : [];
     const ActiveMetaIcon = activeMeta.icon;
 
     return (
-        <section className="manju-production-workspace" aria-label="P3-P5 生产链工作区">
+        <section className="manju-production-workspace" aria-label="P0B-P5 生产链工作区">
             <header className="manju-production-head">
                 <div>
                     <span className="manju-kicker">VisiDeep AI · V7.4.26 · {activeMeta.title}</span>
@@ -3131,9 +3113,9 @@ function ProductionPipeline({ detail, activeStage, onChanged }: { detail: ManjuP
                 <span className={`manju-truth-badge${productionRun?.run.status === "COMPLETED" ? " is-completed" : ""}`}>{runBadge}</span>
             </header>
 
-            <InlineNotice tone="info">当前只显示 {activeMeta.title}。阶段未确认锁定前，下一阶段不会读取未确认成果。</InlineNotice>
+            <InlineNotice tone="info">当前只显示 {activeStage === "p3" ? "P0B 与 P3" : activeMeta.title}。阶段未确认锁定前，下一阶段不会读取未确认成果。</InlineNotice>
             {ruleLibraryQuery.data?.item ? <RuleLibraryStatusBar status={ruleLibraryQuery.data.item} /> : null}
-            {!detail.models?.text.modelKey ? <InlineNotice tone="info">P3 与 P5 需要项目文本模型；P4 使用官方 compile_feed.py，不调用文本模型。请先在“模型”页选择文本模型。</InlineNotice> : null}
+            {!detail.models?.text.modelKey ? <InlineNotice tone="info">P0B、P3 与 P5 需要项目文本模型；P4 使用官方 compile_feed.py，不调用文本模型。请先在“模型”页选择文本模型。</InlineNotice> : null}
             {notice ? <InlineNotice tone={notice.tone}>{notice.text}</InlineNotice> : null}
             {assetRunsQuery.isError || productionRunsQuery.isError || productionRunQuery.isError ? <InlineNotice tone="error">生产链状态读取失败，请刷新后重试。</InlineNotice> : null}
 
@@ -3152,7 +3134,7 @@ function ProductionPipeline({ detail, activeStage, onChanged }: { detail: ManjuP
                         <Select value={selectedAssetRunId} options={completedAssetRuns.map((run) => ({ value: run.id, label: `${run.assetMode} · ${run.id.slice(0, 8)} · P0 revision ${run.lockRevision}` }))} onChange={setSelectedAssetRunId} />
                     </label>
                     <Button type="primary" icon={<Play />} disabled={!canEdit || !selectedAssetRunId || !detail.models?.text.modelKey || hasActiveProduction} loading={createMutation.isPending} onClick={() => createMutation.mutate()}>
-                        建立 P3-P5 生产链
+                        建立 P0B-P5 生产链
                     </Button>
                 </div>
             ) : !productionRuns.length ? (
@@ -3180,7 +3162,7 @@ function ProductionPipeline({ detail, activeStage, onChanged }: { detail: ManjuP
                         </div>
                         <div>
                             <span>当前阶段</span>
-                            <strong>{productionRun.run.status === "COMPLETED" ? "P3-P5 已完成" : productionRun.run.status === "SUPERSEDED" ? "历史版本" : currentStage?.title || "等待阶段"}</strong>
+                            <strong>{productionRun.run.status === "COMPLETED" ? "P0B-P5 已完成" : productionRun.run.status === "SUPERSEDED" ? "历史版本" : currentStage?.title || "等待阶段"}</strong>
                             <small>{productionRun.run.status === "COMPLETED" ? "最终人工确认已保存，输入与工件均已锁定。" : productionRun.run.status === "SUPERSEDED" ? "该版本已保留，只能查看历史工件和媒体。" : "当前阶段未确认前，下一阶段不能读取。"}</small>
                         </div>
                         <Button icon={<RefreshCw />} loading={productionRunQuery.isFetching} onClick={() => void productionRunQuery.refetch()}>
@@ -3188,11 +3170,9 @@ function ProductionPipeline({ detail, activeStage, onChanged }: { detail: ManjuP
                         </Button>
                     </div>
                     <div className="manju-production-stage-stack">
-                        {productionRun.stages
-                            .filter((stage) => stage.key === activeMeta.key)
-                            .map((stage) => (
-                                <ProductionStageCard key={stage.id} projectId={detail.project.id} projectName={detail.project.name} detail={productionRun} stage={stage} canEdit={canEdit} onUpdated={applyProduction} />
-                            ))}
+                        {productionStagesForTab.map((stage) => (
+                            <ProductionStageCard key={stage.id} projectId={detail.project.id} projectName={detail.project.name} detail={productionRun} stage={stage} canEdit={canEdit} onUpdated={applyProduction} />
+                        ))}
                     </div>
                 </>
             ) : null}
@@ -3324,6 +3304,8 @@ function ProductionStageCard({
     const isCurrent = detail.run.currentStage === stage.key;
     const runActive = detail.run.status === "ACTIVE";
     const runReadable = runActive || detail.run.status === "COMPLETED";
+    const decisionAnchorLocked = detail.stages.find((item) => item.key === "decision_anchor")?.status === "LOCKED";
+    const decisionGateBlocked = stage.key === "director_storyboard" && !decisionAnchorLocked;
     const canConfirm = canEdit && runActive && isCurrent && stage.status === "AWAITING_CONFIRMATION" && Boolean(artifact) && (stage.key !== "feed_package" || previsReady);
     const canGeneratePrevis = canEdit && runActive && stage.key === "feed_package" && Boolean(artifact) && !previsReady && !previsLive;
     const hasLiveWork = detail.stages.some((item) => item.status === "IN_PROGRESS" && Boolean(item.taskId)) ||
@@ -3335,21 +3317,21 @@ function ProductionStageCard({
         runReadable &&
         !hasLiveWork &&
         Boolean(artifact) &&
-        ["director_storyboard", "feed_package"].includes(stage.key) &&
+        ["decision_anchor", "director_storyboard", "feed_package"].includes(stage.key) &&
         ["AWAITING_CONFIRMATION", "LOCKED", "BLOCKED"].includes(stage.status);
     const canManualCorrect =
         canEdit &&
         stage.key === "director_storyboard" &&
         stage.status === "BLOCKED" &&
         Boolean(stage.draft?.content);
-    const canRun = canEdit && runActive && isCurrent && !stage.taskId && ["IN_PROGRESS", "BLOCKED"].includes(stage.status) && !canRegenerate;
+    const canRun = canEdit && runActive && isCurrent && !decisionGateBlocked && !stage.taskId && ["IN_PROGRESS", "BLOCKED"].includes(stage.status) && !canRegenerate;
     const canvasPackageStage: ManjuCanvasPackageStage | null = stage.key === "director_storyboard" ? "p3_images" : stage.key === "feed_package" || stage.key === "qc_handoff" ? "p4_videos" : null;
     const canvasSourceStages: ManjuCanvasPackageStage[] = canvasPackageStage === "p3_images" ? ["p2_assets"] : canvasPackageStage === "p4_videos" ? ["p2_assets", "p3_images"] : [];
 
     return (
         <article className={`manju-production-stage is-${stage.status.toLowerCase()}`}>
             <header>
-                <span className="manju-production-stage-index">{stage.position + 2}</span>
+                <span className="manju-production-stage-index">{stage.key === "decision_anchor" ? "P0B" : `P${stage.position + 1}`}</span>
                 <span className="manju-production-stage-icon">
                     <Icon />
                 </span>
@@ -3442,6 +3424,12 @@ function ProductionStageCard({
 
             {stage.error ? <InlineNotice tone="error">{stage.error}</InlineNotice> : null}
             {notice ? <InlineNotice tone={notice.tone}>{notice.text}</InlineNotice> : null}
+            {decisionGateBlocked ? (
+                <div className="manju-production-stage-input">
+                    <span>P0B 锁定后才能执行 P3 分镜。</span>
+                    <Button disabled icon={<LockKeyhole />}>执行 P3 分镜与故事板</Button>
+                </div>
+            ) : null}
             {canManualCorrect ? (
                 <div className="manju-production-stage-input">
                     <span>保留当前失败正文，人工修改后重新运行同一官方机检。</span>
@@ -3493,7 +3481,7 @@ function ProductionStageCard({
                             setRegenerateOpen(true);
                         }}
                     >
-                        重新生成 {stage.key === "director_storyboard" ? "P3" : "P4"} 工件
+                        {stage.key === "decision_anchor" ? "重新生成 P0B 工件" : `重新生成 ${stage.key === "director_storyboard" ? "P3" : "P4"} 工件`}
                     </Button>
                 </footer>
             ) : null}
@@ -3515,7 +3503,9 @@ function ProductionStageCard({
                     <span>
                         {stage.key === "qc_handoff"
                             ? "请逐段查看真实视频，并核对质检边界、FAIL/WARN 项和最终裁决。文本机检通过不等于成片通过。"
-                            : stage.key === "director_storyboard"
+                            : stage.key === "decision_anchor"
+                              ? "核对六列情绪锚点表、3-5 个节拍、E01-E15/EXnn 情境 ID，以及 A/B 构图雷区判定。锁定后才会开放 P3。"
+                              : stage.key === "director_storyboard"
                               ? "核对分镜总表、故事板表和动作相位。故事板图片是可选的视觉参考，不影响文字投喂稿生成，没有图片也可以确认进入 P4。"
                               : stage.key === "feed_package"
                                 ? "P4 投喂稿、真实视频和已通过 check_p45.py 的 P4.5 预演故事板会一起锁定，再开放 P5。"
@@ -3560,7 +3550,7 @@ function ProductionStageCard({
             ) : null}
             <AppModal
                 open={regenerateOpen}
-                title={stage.key === "director_storyboard" ? "重新生成 P3 工件" : "重新生成 P4 工件"}
+                title={stage.key === "decision_anchor" ? "重新生成 P0B 工件" : stage.key === "director_storyboard" ? "重新生成 P3 工件" : "重新生成 P4 工件"}
                 onCancel={() => setRegenerateOpen(false)}
                 width={620}
                 footer={
@@ -3578,7 +3568,9 @@ function ProductionStageCard({
                 }
             >
                 <div className="manju-regenerate-dialog">
-                    {stage.key === "director_storyboard" ? (
+                    {stage.key === "decision_anchor" ? (
+                        <p>只重新生成当前 P0B 工件。历史 P0B 工件和媒体保留；P3-P5 会等待新的决策锚点并重新校验。</p>
+                    ) : stage.key === "director_storyboard" ? (
                         <>
                             <p>只重新生成当前 P3 工件。已锁定 P2、历史 P3/P4/P5 工件和媒体均保留；P4 与 P5 会等待新 P3。</p>
                             <label>

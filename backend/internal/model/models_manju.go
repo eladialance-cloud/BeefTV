@@ -42,14 +42,16 @@ const (
 	ManjuProductionStageStatusLocked               = "LOCKED"
 	ManjuProductionStageStatusBlocked              = "BLOCKED"
 
-	ManjuProductionStageStoryboard = "director_storyboard"
-	ManjuProductionStageFeed       = "feed_package"
-	ManjuProductionStageQC         = "qc_handoff"
+	ManjuProductionStageDecisionAnchor = "decision_anchor"
+	ManjuProductionStageStoryboard     = "director_storyboard"
+	ManjuProductionStageFeed           = "feed_package"
+	ManjuProductionStageQC             = "qc_handoff"
 
-	ManjuProductionArtifactStoryboard = "DIRECTOR_STORYBOARD.md"
-	ManjuProductionArtifactFeed       = "FEED_PACKAGE.md"
-	ManjuProductionArtifactPrevis     = "PREVIS_STORYBOARD.md"
-	ManjuProductionArtifactQC         = "QC_HANDOFF.md"
+	ManjuProductionArtifactEmotionAnchor = "EMOTION_ANCHOR_TABLE.md"
+	ManjuProductionArtifactStoryboard    = "DIRECTOR_STORYBOARD.md"
+	ManjuProductionArtifactFeed          = "FEED_PACKAGE.md"
+	ManjuProductionArtifactPrevis        = "PREVIS_STORYBOARD.md"
+	ManjuProductionArtifactQC            = "QC_HANDOFF.md"
 
 	ManjuProductionPrevisStatusQueued  = "QUEUED"
 	ManjuProductionPrevisStatusRunning = "RUNNING"
@@ -88,7 +90,6 @@ const (
 	ManjuScriptStageStatusStale            = "STALE"
 	ManjuScriptStageStatusBlocked          = "BLOCKED"
 
-	ManjuScriptStageDecisionAnchor     = "decision_anchor"
 	ManjuScriptStageSourceRegistration = "source_registration"
 	ManjuScriptStageReconIntelligence  = "recon_intelligence"
 	ManjuScriptStageIPDevelopment      = "ip_development"
@@ -100,7 +101,6 @@ const (
 	ManjuScriptStagePolishFindings     = "polish_findings"
 	ManjuScriptStagePolishConfirmation = "polish_confirmation"
 
-	ManjuScriptArtifactEmotionAnchor  = "EMOTION_ANCHOR_TABLE.md"
 	ManjuScriptArtifactSourceManifest = "SOURCE_MANIFEST.json"
 	ManjuScriptArtifactReconCard      = "RECON_INTELLIGENCE_CARD.md"
 	ManjuScriptArtifactStageOutput    = "STAGE_OUTPUT.md"

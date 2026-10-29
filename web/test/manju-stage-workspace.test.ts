@@ -80,11 +80,12 @@ test("P1 never shows an empty state while the active run is still loading", () =
     expect(sourceLibraryPanel).toContain('queryKey: ["manju", "script-runs", projectId]');
 });
 
-test("P0B decision artifact renders before the script timeline and gates IP", () => {
-    expect(page).toContain("const decisionAnchorStage");
-    expect(page).toContain("const decisionAnchorLocked");
-    expect(page).toContain('aria-label="P0B 决策锚点"');
-    expect(page).toContain('stage.key !== "decision_anchor"');
-    expect(page).toContain('stage.key === "ip_development" && !decisionAnchorLocked');
-    expect(page).toContain("P0B 锁定后才能执行");
+test("P0B decision artifact renders inside P3 and gates storyboard", () => {
+    expect(page).toContain("decision_anchor: {");
+    expect(page).toContain('aria-label="P0B-P5 生产链工作区"');
+    expect(page).toContain("const productionStagesForTab");
+    expect(page).toContain('const decisionAnchorLocked = detail.stages.find((item) => item.key === "decision_anchor")?.status === "LOCKED"');
+    expect(page).toContain('stage.key === "director_storyboard" && !decisionAnchorLocked');
+    expect(page).toContain("P0B 锁定后才能执行 P3 分镜");
+    expect(page).not.toContain("manju-script-decision-gate");
 });

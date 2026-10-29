@@ -33,7 +33,6 @@ const (
 	ScriptBranchBenchmark  = model.ManjuScriptBranchBenchmark
 	ScriptBranchPolish     = model.ManjuScriptBranchPolish
 
-	ScriptStageDecisionAnchor     = model.ManjuScriptStageDecisionAnchor
 	ScriptStageSourceRegistration = model.ManjuScriptStageSourceRegistration
 	ScriptStageReconIntelligence  = model.ManjuScriptStageReconIntelligence
 	ScriptStageIPDevelopment      = model.ManjuScriptStageIPDevelopment
@@ -218,16 +217,13 @@ func (s *Service) ScriptRuns(actorID, projectID string) ([]ScriptRunView, error)
 		if runs[index].Status != "ACTIVE" || runs[index].Branch != ScriptBranchAdaptation {
 			continue
 		}
-		if scriptRunBeforeSourceRegistration(runs[index].CurrentStage) {
-			continue
-		}
 		var sourceCount int64
 		if err := s.repo.DB().Table("manju_script_sources").
 			Where("run_id = ? AND TRIM(content_text) <> ''", runs[index].ID).
 			Count(&sourceCount).Error; err != nil {
 			return nil, err
 		}
-		if sourceCount == 0 && (runs[index].CurrentStage != ScriptStageSourceRegistration || strings.TrimSpace(runs[index].SourceID) != "") {
+		if sourceCount == 0 {
 			if err := s.repo.DB().Table("manju_script_runs").Where("id = ?", runs[index].ID).Updates(map[string]any{
 				"status": "ABANDONED", "current_stage": "", "updated_at": time.Now(),
 			}).Error; err != nil {
@@ -305,10 +301,8 @@ func (s *Service) CreateScriptRun(actorID, projectID string, input ScriptRunInpu
 			return err
 		}
 		var activeRuns []struct {
-			ID           string
-			Branch       string
-			CurrentStage string
-			SourceID     string
+			ID     string
+			Branch string
 		}
 		if err := tx.DB().Table("manju_script_runs").
 			Where("project_id = ? AND status = ?", projectID, "ACTIVE").
@@ -316,14 +310,14 @@ func (s *Service) CreateScriptRun(actorID, projectID string, input ScriptRunInpu
 			return err
 		}
 		for _, active := range activeRuns {
-			if active.Branch == ScriptBranchAdaptation && !scriptRunBeforeSourceRegistration(active.CurrentStage) {
+			if active.Branch == ScriptBranchAdaptation {
 				var sourceCount int64
 				if err := tx.DB().Table("manju_script_sources").
 					Where("run_id = ? AND TRIM(content_text) <> ''", active.ID).
 					Count(&sourceCount).Error; err != nil {
 					return err
 				}
-				if sourceCount == 0 && (active.CurrentStage != ScriptStageSourceRegistration || strings.TrimSpace(active.SourceID) != "") {
+				if sourceCount == 0 {
 					if err := tx.DB().Table("manju_script_runs").Where("id = ?", active.ID).Updates(map[string]any{
 						"status": "ABANDONED", "current_stage": "", "updated_at": time.Now(),
 					}).Error; err != nil {
@@ -414,11 +408,7 @@ func (s *Service) CreateScriptRun(actorID, projectID string, input ScriptRunInpu
 			return err
 		}
 		if seededSource != nil {
-			sourceStageIndex := scriptStageIndex(stages, ScriptStageSourceRegistration)
-			if sourceStageIndex < 0 {
-				return ErrScriptStageNotFound
-			}
-			sourceStage := &stages[sourceStageIndex]
+			sourceStage := &stages[0]
 			source, err := persistScriptSource(tx, projectID, actorID, run, sourceStage, *seededSource, now)
 			if err != nil {
 				return err
@@ -430,7 +420,11 @@ func (s *Service) CreateScriptRun(actorID, projectID string, input ScriptRunInpu
 			if err := tx.SaveManjuScriptStage(sourceStage); err != nil {
 				return err
 			}
-			run.CurrentStage = ScriptStageDecisionAnchor
+			next, err := activateNextScriptStage(tx, run, sourceStage.Position)
+			if err != nil {
+				return err
+			}
+			run.CurrentStage = next
 		}
 		if run.ReuseGlobalStages {
 			var previousRuns []struct {
@@ -469,7 +463,11 @@ func (s *Service) CreateScriptRun(actorID, projectID string, input ScriptRunInpu
 				if err := reuseGlobalScriptStages(tx, baseRunID, run.ID, run.LockRevision, actorID, now); err != nil {
 					return err
 				}
-				run.CurrentStage = ScriptStageDecisionAnchor
+				next, err := activateNextScriptStage(tx, run, 1)
+				if err != nil {
+					return err
+				}
+				run.CurrentStage = next
 			}
 		}
 		runID = run.ID
@@ -575,9 +573,6 @@ func (s *Service) RegisterScriptSource(actorID, projectID, runID string, input S
 		}
 		if stage == nil {
 			return ErrScriptStageNotFound
-		}
-		if err := ensureScriptDecisionAnchorLocked(tx, runID, ScriptStageSourceRegistration); err != nil {
-			return err
 		}
 		if stage.Status != model.ManjuScriptStageStatusInProgress && stage.Status != model.ManjuScriptStageStatusAwaitingConfirm && stage.Status != model.ManjuScriptStageStatusLocked {
 			return ErrScriptStageNotReady
@@ -779,9 +774,6 @@ func (s *Service) RunScriptStage(actorID, projectID, runID, stageKey string, inp
 	runID = strings.TrimSpace(runID)
 	stageKey = strings.TrimSpace(stageKey)
 	input.Instruction = strings.TrimSpace(input.Instruction)
-	if err := ensureScriptDecisionAnchorLocked(s.repo, runID, stageKey); err != nil {
-		return nil, err
-	}
 	if s.scriptTaskCreate == nil {
 		return nil, ErrScriptTaskUnavailable
 	}
@@ -846,11 +838,7 @@ func (s *Service) RunScriptStage(actorID, projectID, runID, stageKey string, inp
 		if err != nil {
 			return err
 		}
-		skillStage := "P1"
-		if stage.Key == ScriptStageDecisionAnchor {
-			skillStage = "P0B"
-		}
-		skillOptions := manjuSkillStageOptions(skillStage, receipt, assetModeFromReceipt(receipt), "none")
+		skillOptions := manjuSkillStageOptions("P1", receipt, assetModeFromReceipt(receipt), "none")
 		skillOptions.ExternalScript = run.Branch == ScriptBranchPolish
 		if run.TrendResolution == TrendResolutionOriginal {
 			skillOptions.Source = "1"
@@ -918,7 +906,7 @@ func (s *Service) RunScriptStage(actorID, projectID, runID, stageKey string, inp
 		if err := tx.CreateManjuModelExchange(exchange); err != nil {
 			return err
 		}
-		if err := s.recordManjuRuleReads(tx, ruleSnapshot, run.ID, stage.ID, skillStage, operationKey, ruleBundle); err != nil {
+		if err := s.recordManjuRuleReads(tx, ruleSnapshot, run.ID, stage.ID, "P1", operationKey, ruleBundle); err != nil {
 			return err
 		}
 		stageInput, err := json.Marshal(map[string]string{
@@ -1136,9 +1124,7 @@ func buildScriptStagePrompt(projectName string, run model.ManjuScriptRun, stage 
 }
 
 func scriptStageInstruction(stageKey string) string {
-	if stageKey == ScriptStageDecisionAnchor {
-		return p0bDecisionPrompt()
-	}
+	_ = stageKey
 	return "运行接口：严格按上方官方总控和强制读取原文执行当前阶段。只输出当前阶段官方规定的 Markdown 工件；不要输出规则复述、思考过程、流程回执或机检说明。"
 }
 
@@ -1152,8 +1138,6 @@ func truncateScriptText(value string, limit int) string {
 
 func scriptArtifactKind(branch, stageKey string) string {
 	switch stageKey {
-	case ScriptStageDecisionAnchor:
-		return model.ManjuScriptArtifactEmotionAnchor
 	case ScriptStageReconIntelligence:
 		return model.ManjuScriptArtifactReconCard
 	case ScriptStagePolishDraft:
@@ -1236,21 +1220,6 @@ func (s *Service) reconcileScriptStageTasks(actorID, projectID, runID string) (a
 						return saveErr
 					}
 					continue
-				}
-				if stage.Key == ScriptStageDecisionAnchor {
-					if err := validateP0BDecisionArtifact(content); err != nil {
-						message := fmt.Sprintf("%v", err)
-						if draftErr := saveFailedManjuStageDraft(
-							tx, projectID, "P1", runID, stage.ID, stage.Key, content,
-							"MODEL_FAILED", validationJSONForError(message), actorID,
-						); draftErr != nil {
-							return draftErr
-						}
-						if blockErr := blockScriptStageRecord(tx, stage, message); blockErr != nil {
-							return blockErr
-						}
-						continue
-					}
 				}
 				now := time.Now()
 				stage.Version++
@@ -1341,21 +1310,6 @@ func blockScriptStageRecord(tx *repository.Repository, stage *model.ManjuScriptS
 	return tx.SaveManjuScriptStage(stage)
 }
 
-func ensureScriptDecisionAnchorLocked(tx *repository.Repository, runID, stageKey string) error {
-	if strings.TrimSpace(stageKey) == ScriptStageDecisionAnchor {
-		return nil
-	}
-	stages, err := tx.ManjuScriptStages(runID)
-	if err != nil {
-		return err
-	}
-	decisionIndex := scriptStageIndex(stages, ScriptStageDecisionAnchor)
-	if decisionIndex < 0 || stages[decisionIndex].Status != model.ManjuScriptStageStatusLocked {
-		return ErrScriptStageNotReady
-	}
-	return nil
-}
-
 func scriptStageIndex(stages []model.ManjuScriptStage, key string) int {
 	for index := range stages {
 		if stages[index].Key == key {
@@ -1400,9 +1354,6 @@ func (s *Service) ConfirmScriptStage(actorID, projectID, runID, stageKey string)
 		if stage == nil {
 			return ErrScriptStageNotFound
 		}
-		if err := ensureScriptDecisionAnchorLocked(tx, runID, stage.Key); err != nil {
-			return err
-		}
 		if stage.Status == model.ManjuScriptStageStatusLocked {
 			return nil
 		}
@@ -1415,11 +1366,6 @@ func (s *Service) ConfirmScriptStage(actorID, projectID, runID, stageKey string)
 		content, err := scriptArtifactContentByID(tx, runID, stage.ArtifactID)
 		if err != nil {
 			return err
-		}
-		if stage.Key == ScriptStageDecisionAnchor {
-			if err := validateP0BDecisionArtifact(content); err != nil {
-				return fmt.Errorf("%w: %v", ErrScriptStageNotReady, err)
-			}
 		}
 		if s.officialSkillValidationEnabled() && scriptProjectStateStageKey(stage.Key) != "" {
 			if err := commitManjuProjectStatePatch(tx, projectID, access.Project.Name, run.LockRevision, scriptProjectStateStageKey(stage.Key), stage.ArtifactID, content, actorID, false); err != nil {
@@ -1606,25 +1552,6 @@ func (s *Service) repairLegacyChapterSourceStage(projectID, runID string) error 
 		}).Error; err != nil {
 			return err
 		}
-		decisionIndex := -1
-		for index := range stages {
-			if stages[index].Key == ScriptStageDecisionAnchor {
-				decisionIndex = index
-				break
-			}
-		}
-		if decisionIndex >= 0 && stages[decisionIndex].Status != model.ManjuScriptStageStatusLocked {
-			if stages[decisionIndex].Status != model.ManjuScriptStageStatusInProgress {
-				if err := tx.DB().Table("manju_script_stages").Where("id = ?", stages[decisionIndex].ID).Updates(map[string]any{
-					"status": "IN_PROGRESS", "started_at": now, "error": "", "updated_at": now,
-				}).Error; err != nil {
-					return err
-				}
-			}
-			return tx.DB().Table("manju_script_runs").Where("id = ?", runs[runIndex].ID).Updates(map[string]any{
-				"current_stage": ScriptStageDecisionAnchor, "updated_at": now,
-			}).Error
-		}
 		next := ""
 		for index := range stages {
 			if stages[index].Position <= stages[stageIndex].Position || stages[index].Status == "LOCKED" {
@@ -1676,17 +1603,7 @@ func scriptBranchForInput(source, inputKind, trendResolution string) (string, er
 	return "", ErrInvalidScriptRun
 }
 
-func scriptRunBeforeSourceRegistration(stageKey string) bool {
-	switch strings.TrimSpace(stageKey) {
-	case ScriptStageDecisionAnchor, ScriptStageReconIntelligence:
-		return true
-	default:
-		return false
-	}
-}
-
 func scriptStageDefinitions(branch string) []scriptStageDefinition {
-	decision := scriptStageDefinition{Key: ScriptStageDecisionAnchor, Title: "P0B 决策锚点"}
 	pipeline := []scriptStageDefinition{
 		{Key: ScriptStageSourceRegistration, Title: "来源登记"},
 		{Key: ScriptStageIPDevelopment, Title: "IP 与角色开发"},
@@ -1695,21 +1612,19 @@ func scriptStageDefinitions(branch string) []scriptStageDefinition {
 		{Key: ScriptStageScriptDraft, Title: "正式剧本"},
 		{Key: ScriptStageRoundtableReview, Title: "五席圆桌审核"},
 	}
-	var branchPipeline []scriptStageDefinition
 	switch branch {
 	case ScriptBranchBenchmark:
-		branchPipeline = append([]scriptStageDefinition{{Key: ScriptStageReconIntelligence, Title: "对标情报卡"}}, pipeline...)
+		return append([]scriptStageDefinition{{Key: ScriptStageReconIntelligence, Title: "对标情报卡"}}, pipeline...)
 	case ScriptBranchPolish:
-		branchPipeline = []scriptStageDefinition{
+		return []scriptStageDefinition{
 			{Key: ScriptStageSourceRegistration, Title: "外来剧本登记"},
 			{Key: ScriptStagePolishDraft, Title: "补表演层与调度层"},
 			{Key: ScriptStagePolishFindings, Title: "润色发现清单"},
 			{Key: ScriptStagePolishConfirmation, Title: "润色回签"},
 		}
 	default:
-		branchPipeline = pipeline
+		return pipeline
 	}
-	return append([]scriptStageDefinition{decision}, branchPipeline...)
 }
 
 func validateScriptSourceForBranch(branch string, input ScriptSourceInput) error {

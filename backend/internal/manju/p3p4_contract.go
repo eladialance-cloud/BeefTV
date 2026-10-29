@@ -307,7 +307,8 @@ func loadP0BDecisionContract() (P0BDecisionContract, error) {
 			p0bDecisionContractData.RulesVersion != manjuSkillVersion ||
 			p0bDecisionContractData.ArtifactKind != "EMOTION_ANCHOR_TABLE.md" ||
 			len(p0bDecisionContractData.RequiredSections) != 2 ||
-			len(p0bDecisionContractData.RequiredColumns) != 2 {
+			len(p0bDecisionContractData.RequiredColumns) != 1 ||
+			len(p0bDecisionContractData.RequiredColumns["## 情绪锚点表"]) != 6 {
 			p0bDecisionContractErr = errors.New("P0B 决策锚点共享输出契约不完整")
 		}
 	})
@@ -326,20 +327,21 @@ func p0bDecisionPrompt() string {
 	contract := mustLoadP0BDecisionContract()
 	var out strings.Builder
 	out.WriteString("任务：输出 P0B《情绪锚点表》决策工件。\n")
-	out.WriteString("只输出以下合同要求的 Markdown 正文，不得用说明、清单或“详见上游”代替表格。\n")
-	for _, heading := range contract.RequiredSections {
-		out.WriteString(heading)
-		out.WriteString("\n")
-		columns := contract.RequiredColumns[heading]
-		out.WriteString("| ")
-		out.WriteString(strings.Join(columns, " | "))
-		out.WriteString(" |\n|")
-		for range columns {
-			out.WriteString("---|")
-		}
-		out.WriteString("\n每张表至少填写 1 行有效数据。\n")
+	out.WriteString("只输出官方 Markdown 工件，不得用说明、清单或“详见上游”代替表格。\n")
+	out.WriteString("## 情绪锚点表\n")
+	out.WriteString("每个大分镜必须使用标记 `【大分镜 #B01 · 情绪锚点表】`，表中必须包含 3-5 个节拍。\n")
+	columns := contract.RequiredColumns["## 情绪锚点表"]
+	out.WriteString("| ")
+	out.WriteString(strings.Join(columns, " | "))
+	out.WriteString(" |\n|")
+	for range columns {
+		out.WriteString("---|")
 	}
-	out.WriteString("《构图雷区白名单》每行的“允许条件”或“替代方案”至少填写一项；两项都为空时不得锁定。\n")
+	out.WriteString("\n情境 ID 只能使用 E01-E15 或 EXnn；核心组合摘要与解锁雷区不得留空，无解锁填“—”。\n")
+	out.WriteString("## 构图雷区白名单\n")
+	out.WriteString("必须逐项给出 A/B 判定：A 类如解锁必须写明白名单理由；B 类技术雷区必须标明“永不解锁”。\n")
+	out.WriteString("B 类至少覆盖：物体穿身、角色服装突变、杂乱前景刺眼物、比例失调、重复元素无重点、空鸡蛋构图、道具状态突变。\n")
+	out.WriteString("任何 Markdown 表格行都必须与表头列数完全一致。\n")
 	return out.String()
 }
 
@@ -350,66 +352,170 @@ func validateP0BDecisionArtifact(content string) error {
 	}
 	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
 	issues := make([]string, 0)
-	for _, heading := range contract.RequiredSections {
-		section, found := p0bMarkdownSection(lines, heading)
-		if !found {
-			issues = append(issues, fmt.Sprintf("缺少必需章节 %s", heading))
-			continue
+	for _, tableErr := range p0bValidateMarkdownTableWidths(lines) {
+		issues = append(issues, tableErr.Error())
+	}
+	emotionSection, emotionFound := p0bMarkdownSection(lines, "## 情绪锚点表")
+	if !emotionFound {
+		issues = append(issues, "缺少必需章节 ## 情绪锚点表")
+	} else {
+		blocks := p0bStoryboardBlocks(emotionSection)
+		if len(blocks) == 0 {
+			issues = append(issues, "情绪锚点表缺少【大分镜 #BXX · 情绪锚点表】")
 		}
-		table, found := p0bMarkdownTable(section)
-		if !found {
-			issues = append(issues, fmt.Sprintf("%s 缺少 Markdown 表格", heading))
-			continue
-		}
-		if len(table.Rows) == 0 {
-			issues = append(issues, fmt.Sprintf("%s 不能为空表", heading))
-		}
-		columnIndexes := make(map[string]int, len(table.Headers))
-		for index, header := range table.Headers {
-			columnIndexes[header] = index
-		}
-		for _, column := range contract.RequiredColumns[heading] {
-			if _, ok := columnIndexes[column]; !ok {
-				issues = append(issues, fmt.Sprintf("%s 缺少必需列 %s", heading, column))
+		for blockIndex, block := range blocks {
+			table, found, tableErr := p0bMarkdownTable(block)
+			if tableErr != nil {
+				issues = append(issues, tableErr.Error())
+				continue
 			}
-		}
-		switch heading {
-		case "## 情绪锚点表":
+			if !found {
+				issues = append(issues, fmt.Sprintf("第 %d 个大分镜缺少 Markdown 表格", blockIndex+1))
+				continue
+			}
+			columnIndexes := p0bColumnIndexes(table.Headers)
+			for _, column := range contract.RequiredColumns["## 情绪锚点表"] {
+				if _, ok := columnIndexes[column]; !ok {
+					issues = append(issues, fmt.Sprintf("第 %d 个大分镜缺少必需列 %s", blockIndex+1, column))
+				}
+			}
+			if len(table.Rows) < 3 || len(table.Rows) > 5 {
+				issues = append(issues, fmt.Sprintf("第 %d 个大分镜必须包含 3-5 个节拍，实际 %d 个", blockIndex+1, len(table.Rows)))
+			}
 			for rowIndex, row := range table.Rows {
-				for _, column := range contract.RequiredColumns[heading] {
+				rowLabel := fmt.Sprintf("第 %d 个大分镜第 %d 行", blockIndex+1, rowIndex+1)
+				for _, column := range contract.RequiredColumns["## 情绪锚点表"] {
 					columnIndex, ok := columnIndexes[column]
-					if !ok {
-						continue
+					if ok && strings.TrimSpace(p0bTableCell(row, columnIndex)) == "" {
+						issues = append(issues, fmt.Sprintf("%s %s 不能为空", rowLabel, column))
 					}
-					if p0bTableCell(row, columnIndex) == "" {
-						issues = append(issues, fmt.Sprintf("情绪锚点表第 %d 行 %s 不能为空", rowIndex+1, column))
+				}
+				if index, ok := columnIndexes["情境 ID"]; ok {
+					id := strings.TrimSpace(p0bTableCell(row, index))
+					if id != "" && !p0bValidContextID(id) {
+						issues = append(issues, fmt.Sprintf("%s 情境 ID %q 无效，只允许 E01-E15 或 EXnn", rowLabel, id))
+					}
+				}
+				for _, column := range []string{"核心组合摘要（80%定死）", "解锁雷区"} {
+					if index, ok := columnIndexes[column]; ok && strings.TrimSpace(p0bTableCell(row, index)) == "" {
+						issues = append(issues, fmt.Sprintf("%s %s 不得留空", rowLabel, column))
 					}
 				}
 			}
-		case "## 构图雷区白名单":
-			for rowIndex, row := range table.Rows {
-				zoneIndex := columnIndexes["雷区"]
-				constraintIndex := columnIndexes["下游约束"]
-				allowedIndex, hasAllowed := columnIndexes["允许条件"]
-				replacementIndex, hasReplacement := columnIndexes["替代方案"]
-				if zoneIndex < len(row) && strings.TrimSpace(row[zoneIndex]) == "" {
-					issues = append(issues, fmt.Sprintf("构图雷区白名单第 %d 行 雷区 不能为空", rowIndex+1))
-				}
-				if constraintIndex < len(row) && strings.TrimSpace(row[constraintIndex]) == "" {
-					issues = append(issues, fmt.Sprintf("构图雷区白名单第 %d 行 下游约束 不能为空", rowIndex+1))
-				}
-				allowed := hasAllowed && p0bOptionalTableCell(row, allowedIndex)
-				replacement := hasReplacement && p0bOptionalTableCell(row, replacementIndex)
-				if !allowed && !replacement {
-					issues = append(issues, fmt.Sprintf("构图雷区白名单第 %d 行必须填写允许条件或替代方案", rowIndex+1))
-				}
-			}
+		}
+	}
+	forbiddenSection, forbiddenFound := p0bMarkdownSection(lines, "## 构图雷区白名单")
+	if !forbiddenFound {
+		issues = append(issues, "缺少必需章节 ## 构图雷区白名单")
+	} else {
+		if err := validateP0BForbiddenZoneDecision(forbiddenSection); err != nil {
+			issues = append(issues, err.Error())
 		}
 	}
 	if len(issues) > 0 {
 		return fmt.Errorf("%w: %s", ErrP0BDecisionContract, strings.Join(issues, "；"))
 	}
 	return nil
+}
+
+var p0bStoryboardMarkerPattern = regexp.MustCompile(`^【大分镜 #B\d+ · 情绪锚点表】$`)
+
+func p0bStoryboardBlocks(section []string) [][]string {
+	blocks := make([][]string, 0)
+	for index, line := range section {
+		if !p0bStoryboardMarkerPattern.MatchString(strings.TrimSpace(line)) {
+			continue
+		}
+		block := make([]string, 0)
+		for next := index + 1; next < len(section); next++ {
+			if p0bStoryboardMarkerPattern.MatchString(strings.TrimSpace(section[next])) {
+				break
+			}
+			block = append(block, section[next])
+		}
+		blocks = append(blocks, block)
+	}
+	return blocks
+}
+
+func p0bValidContextID(value string) bool {
+	value = strings.TrimSpace(value)
+	if regexp.MustCompile(`^EX\d{2}$`).MatchString(value) {
+		return true
+	}
+	if !regexp.MustCompile(`^E\d{2}$`).MatchString(value) {
+		return false
+	}
+	number, err := strconv.Atoi(value[1:])
+	return err == nil && number >= 1 && number <= 15
+}
+
+func p0bColumnIndexes(headers []string) map[string]int {
+	indexes := make(map[string]int, len(headers))
+	for index, header := range headers {
+		indexes[header] = index
+	}
+	return indexes
+}
+
+func validateP0BForbiddenZoneDecision(section []string) error {
+	text := strings.Join(section, "\n")
+	issues := make([]string, 0)
+	if !strings.Contains(text, "A类") && !strings.Contains(text, "A 类") {
+		issues = append(issues, "构图雷区白名单缺少 A 类判定")
+	}
+	if !strings.Contains(text, "B类") && !strings.Contains(text, "B 类") {
+		issues = append(issues, "构图雷区白名单缺少 B 类判定")
+	}
+	if !strings.Contains(text, "永不解锁") && !strings.Contains(text, "不可解锁") {
+		issues = append(issues, "B 类技术雷区必须标明永不解锁")
+	}
+	for _, hazard := range []string{
+		"物体穿身",
+		"角色服装突变",
+		"杂乱前景刺眼物",
+		"比例失调",
+		"重复元素无重点",
+		"空鸡蛋构图",
+		"道具状态突变",
+	} {
+		if !strings.Contains(text, hazard) {
+			issues = append(issues, "B 类技术雷区缺少 "+hazard)
+		}
+	}
+	hasUnlockDecision := false
+	for _, line := range section {
+		trimmed := strings.TrimSpace(line)
+		if !regexp.MustCompile(`A[1-7]`).MatchString(trimmed) {
+			continue
+		}
+		hasUnlockDecision = true
+		if strings.Contains(trimmed, "解锁") &&
+			!strings.Contains(trimmed, "未解锁") &&
+			!strings.Contains(trimmed, "无解锁") &&
+			!strings.Contains(trimmed, "不可解锁") &&
+			!p0bHasWhitelistReason(trimmed) {
+			issues = append(issues, "A 类解锁必须写明白名单理由："+trimmed)
+		}
+	}
+	if !hasUnlockDecision && !strings.Contains(text, "A类：无解锁") && !strings.Contains(text, "A 类：无解锁") {
+		issues = append(issues, "构图雷区白名单必须逐项给出 A 类解锁或无解锁判定")
+	}
+	if len(issues) > 0 {
+		return errors.New(strings.Join(issues, "；"))
+	}
+	return nil
+}
+
+func p0bHasWhitelistReason(value string) bool {
+	const marker = "白名单理由"
+	index := strings.Index(value, marker)
+	if index < 0 {
+		return false
+	}
+	reason := strings.TrimSpace(value[index+len(marker):])
+	reason = strings.TrimLeft(reason, "：:，,；;。 ")
+	return reason != ""
 }
 
 type p0bMarkdownTableData struct {
@@ -439,7 +545,7 @@ func p0bMarkdownSection(lines []string, heading string) ([]string, bool) {
 	return section, true
 }
 
-func p0bMarkdownTable(lines []string) (p0bMarkdownTableData, bool) {
+func p0bMarkdownTable(lines []string) (p0bMarkdownTableData, bool, error) {
 	for index := 0; index+1 < len(lines); index++ {
 		line := strings.TrimSpace(lines[index])
 		if !strings.Contains(line, "|") {
@@ -459,11 +565,55 @@ func p0bMarkdownTable(lines []string) (p0bMarkdownTableData, bool) {
 			if !ok {
 				break
 			}
+			if len(row) != len(headers) {
+				return p0bMarkdownTableData{}, false, fmt.Errorf(
+					"Markdown 表格第 %d 行列数为 %d，表头列数为 %d",
+					rowIndex+1,
+					len(row),
+					len(headers),
+				)
+			}
 			rows = append(rows, row)
 		}
-		return p0bMarkdownTableData{Headers: headers, Rows: rows}, true
+		return p0bMarkdownTableData{Headers: headers, Rows: rows}, true, nil
 	}
-	return p0bMarkdownTableData{}, false
+	return p0bMarkdownTableData{}, false, nil
+}
+
+func p0bValidateMarkdownTableWidths(lines []string) []error {
+	errorsFound := make([]error, 0)
+	for index := 0; index+1 < len(lines); index++ {
+		line := strings.TrimSpace(lines[index])
+		if !strings.Contains(line, "|") {
+			continue
+		}
+		headers, ok := p0bMarkdownRow(line)
+		if !ok || !p0bMarkdownSeparator(strings.TrimSpace(lines[index+1]), len(headers)) {
+			continue
+		}
+		for rowIndex := index + 2; rowIndex < len(lines); rowIndex++ {
+			rowLine := strings.TrimSpace(lines[rowIndex])
+			if rowLine == "" || !strings.Contains(rowLine, "|") {
+				index = rowIndex
+				break
+			}
+			row, ok := p0bMarkdownRow(rowLine)
+			if !ok {
+				index = rowIndex
+				break
+			}
+			if len(row) != len(headers) {
+				errorsFound = append(errorsFound, fmt.Errorf(
+					"Markdown 表格第 %d 行列数为 %d，表头列数为 %d",
+					rowIndex+1,
+					len(row),
+					len(headers),
+				))
+			}
+			index = rowIndex
+		}
+	}
+	return errorsFound
 }
 
 func p0bMarkdownRow(line string) ([]string, bool) {
