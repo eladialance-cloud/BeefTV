@@ -641,6 +641,13 @@ func validateP0BForbiddenZoneDecision(section []string) error {
 			if !ok {
 				continue
 			}
+			if p0bAUnlockClauseHasNegation(trimmed) {
+				issues = append(issues, fmt.Sprintf(
+					"%s 解锁白名单理由或配套约束包含否定标记：%s",
+					hazardID,
+					trimmed,
+				))
+			}
 			reasonState := p0bTokenStateForMarkers(reason, rule.Options)
 			if reasonState.Negative {
 				issues = append(issues, fmt.Sprintf(
@@ -717,6 +724,24 @@ func p0bWhitelistReason(value string) (string, bool) {
 		}
 	}
 	return reason, reason != ""
+}
+
+func p0bAUnlockClauseHasNegation(value string) bool {
+	const marker = "白名单理由"
+	index := strings.Index(value, marker)
+	if index < 0 {
+		return false
+	}
+	clause := value[index:]
+	for _, allowed := range []string{"永不解锁", "无解锁", "未解锁", "—"} {
+		clause = strings.ReplaceAll(clause, allowed, "")
+	}
+	for _, negation := range []string{"非", "不", "未", "无", "禁"} {
+		if strings.Contains(clause, negation) {
+			return true
+		}
+	}
+	return false
 }
 
 type p0bTokenState struct {
