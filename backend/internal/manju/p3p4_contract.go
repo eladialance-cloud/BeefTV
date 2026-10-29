@@ -641,14 +641,31 @@ func validateP0BForbiddenZoneDecision(section []string) error {
 			if !ok {
 				continue
 			}
-			if !p0bWhitelistReasonMatches(reason, rule.Options) {
+			reasonState := p0bTokenStateForMarkers(reason, rule.Options)
+			if reasonState.Negative {
+				issues = append(issues, fmt.Sprintf(
+					"%s 解锁白名单理由包含否定或矛盾白名单选项：%s",
+					hazardID,
+					trimmed,
+				))
+			}
+			if !reasonState.Positive {
 				issues = append(issues, fmt.Sprintf(
 					"%s 解锁必须引用官方白名单选项：%s",
 					hazardID,
 					trimmed,
 				))
 			}
-			if missing := p0bMissingConstraintGroups(trimmed, rule.ConstraintGroups); len(missing) > 0 {
+			missing, contradictory := p0bConstraintStates(trimmed, rule.ConstraintGroups)
+			if len(contradictory) > 0 {
+				issues = append(issues, fmt.Sprintf(
+					"%s 解锁配对约束包含否定或矛盾状态：%s；%s",
+					hazardID,
+					strings.Join(contradictory, "、"),
+					trimmed,
+				))
+			}
+			if len(missing) > 0 {
 				issues = append(issues, fmt.Sprintf(
 					"%s 解锁缺少配对约束：%s；%s",
 					hazardID,
@@ -702,32 +719,93 @@ func p0bWhitelistReason(value string) (string, bool) {
 	return reason, reason != ""
 }
 
-func p0bWhitelistReasonMatches(reason string, options [][]string) bool {
-	for _, markers := range options {
-		for _, marker := range markers {
-			if strings.Contains(reason, marker) {
-				return true
+type p0bTokenState struct {
+	Positive bool
+	Negative bool
+}
+
+func p0bTokenStateForMarkers(value string, markerGroups [][]string) p0bTokenState {
+	state := p0bTokenState{}
+	for _, markers := range markerGroups {
+		groupState := p0bTokenStateForMarkerList(value, markers)
+		state.Positive = state.Positive || groupState.Positive
+		state.Negative = state.Negative || groupState.Negative
+	}
+	return state
+}
+
+func p0bTokenStateForMarkerList(value string, markers []string) p0bTokenState {
+	state := p0bTokenState{}
+	for _, marker := range markers {
+		if marker == "" {
+			continue
+		}
+		for offset := 0; offset < len(value); {
+			relative := strings.Index(value[offset:], marker)
+			if relative < 0 {
+				break
 			}
+			start := offset + relative
+			end := start + len(marker)
+			if p0bTokenOccurrenceNegated(value, start, end) {
+				state.Negative = true
+			} else {
+				state.Positive = true
+			}
+			offset = end
+		}
+	}
+	return state
+}
+
+func p0bTokenOccurrenceNegated(value string, start, end int) bool {
+	clauseStart := 0
+	prefixBeforeToken := value[:start]
+	for _, separator := range []string{"，", ",", "；", ";", "。", "：", ":", "\n", "、"} {
+		if index := strings.LastIndex(prefixBeforeToken, separator); index >= 0 {
+			next := index + len(separator)
+			if next > clauseStart {
+				clauseStart = next
+			}
+		}
+	}
+	prefix := strings.TrimSpace(value[clauseStart:start])
+	for _, marker := range []string{
+		"并非", "不是", "没有", "不使用", "不采用", "不支持", "不启用", "不允许",
+		"不得使用", "不得采用", "避免使用", "避免采用", "未使用", "未采用",
+		"否定", "反对", "不得", "禁止", "避免", "不要", "非", "无", "未", "勿", "否", "不",
+	} {
+		if strings.HasSuffix(prefix, marker) {
+			return true
+		}
+	}
+	suffixEnd := end + 8
+	if suffixEnd > len(value) {
+		suffixEnd = len(value)
+	}
+	suffix := strings.TrimSpace(value[end:suffixEnd])
+	for _, marker := range []string{"不适用", "不允许", "不可用", "无效", "禁止", "（否）", "(否)"} {
+		if strings.HasPrefix(suffix, marker) {
+			return true
 		}
 	}
 	return false
 }
 
-func p0bMissingConstraintGroups(value string, groups [][]string) []string {
-	missing := make([]string, 0)
+func p0bConstraintStates(value string, groups [][]string) (missing, contradictory []string) {
+	missing = make([]string, 0)
+	contradictory = make([]string, 0)
 	for _, group := range groups {
-		found := false
-		for _, marker := range group {
-			if strings.Contains(value, marker) {
-				found = true
-				break
-			}
+		label := strings.Join(group, "/")
+		state := p0bTokenStateForMarkerList(value, group)
+		if state.Negative {
+			contradictory = append(contradictory, label)
 		}
-		if !found {
-			missing = append(missing, strings.Join(group, "/"))
+		if !state.Positive {
+			missing = append(missing, label)
 		}
 	}
-	return missing
+	return missing, contradictory
 }
 
 func p0bAWhitelistRuleByID(id string) (p0bAWhitelistRule, bool) {

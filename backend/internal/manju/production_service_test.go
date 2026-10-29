@@ -265,6 +265,15 @@ func TestP0BRejectsMalformedAndAuthorityViolations(t *testing.T) {
 			expected: "必须引用官方白名单选项",
 		},
 		{
+			name: "negated A class whitelist reason and constraint",
+			content: strings.Replace(validP0BArtifact(),
+				"白名单理由为仪式感；配套强对称构图、静态运镜与长焦压缩。",
+				"白名单理由为非仪式感；配套非对称布景、静态运镜与长焦压缩。",
+				1,
+			),
+			expected: "否定或矛盾",
+		},
+		{
 			name: "A class unlock missing paired constraint",
 			content: strings.Replace(validP0BArtifact(),
 				"白名单理由为仪式感；配套强对称构图、静态运镜与长焦压缩。",
@@ -440,6 +449,93 @@ func TestLegacyActiveProductionRunGetsDecisionAnchorWithoutDeletingHistory(t *te
 	if countModels[model.ManjuProductionArtifact](t, f, run.Run.ID) < 2 ||
 		countModels[model.ManjuProductionImage](t, f, run.Run.ID) == 0 {
 		t.Fatal("legacy P3 artifacts and media must remain as historical rows")
+	}
+}
+
+func TestLegacyInProgressProductionStageP3TaskCannotBecomeRepairedArtifact(t *testing.T) {
+	f := newFixture(t)
+	assetRunID := prepareCompletedProductionAsset(t, f, "M1")
+	run, err := f.service.CreateProductionRun(f.ownerID, f.projectID, manju.ProductionRunInput{AssetRunID: assetRunID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	oldResult := `{"mode":"text","text":` + mustJSONString(validStoryboardArtifact()+"\nOLD_PRE_P0B_TASK_RESULT") + `}`
+	oldTask := &model.Task{
+		ID: "legacy-in-progress-p3-task", UserID: f.ownerID, ProjectID: f.projectID,
+		Type: "canvas_text", Status: model.TaskStatusSucceeded, ResultJSON: oldResult,
+	}
+	if err := f.db.Create(oldTask).Error; err != nil {
+		t.Fatal(err)
+	}
+	decision := findProductionStage(t, run, manju.ProductionStageDecisionAnchor)
+	storyboard := findProductionStage(t, run, manju.ProductionStageStoryboard)
+	if err := f.db.Where("id = ?", decision.ID).Delete(&model.ManjuProductionStage{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.Model(&model.ManjuProductionStage{}).
+		Where("run_id = ?", run.Run.ID).
+		UpdateColumn("position", gorm.Expr("position - 1")).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.Model(&model.ManjuProductionStage{}).Where("id = ?", storyboard.ID).Updates(map[string]any{
+		"status": model.ManjuProductionStageStatusInProgress, "task_id": oldTask.ID,
+		"started_at": now, "completed_at": nil, "artifact_id": "", "error": "",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.Model(&model.ManjuProductionRun{}).
+		Where("id = ?", run.Run.ID).
+		Update("current_stage", manju.ProductionStageStoryboard).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := f.service.ConfirmProductionStage(
+		f.ownerID, f.projectID, run.Run.ID, manju.ProductionStageStoryboard,
+		manju.ProductionConfirmInput{},
+	); !errors.Is(err, manju.ErrProductionStageNotReady) {
+		t.Fatalf("confirmation must not reconcile a stale pre-P0B task, got %v", err)
+	}
+	repaired, err := f.service.ProductionRunDetail(f.ownerID, f.projectID, run.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repairedP3 := findProductionStage(t, repaired, manju.ProductionStageStoryboard)
+	if repairedP3.Status != model.ManjuProductionStageStatusNotStarted ||
+		repairedP3.TaskID != "" || repairedP3.ArtifactID != "" ||
+		repairedP3.StartedAt != nil || repairedP3.CompletedAt != nil {
+		t.Fatalf("repair must clear the old task before P0B: %+v", repairedP3)
+	}
+	if countModels[model.ManjuProductionArtifact](t, f, run.Run.ID) != 0 {
+		t.Fatal("old P3 task result must not become an artifact during repair")
+	}
+
+	locked := lockProductionP0BForTest(t, f, run.Run.ID)
+	if got := findProductionStage(t, locked, manju.ProductionStageStoryboard).Status; got != model.ManjuProductionStageStatusInProgress {
+		t.Fatalf("P3 must be ready for a new task after P0B lock: %s", got)
+	}
+	newTask := &model.Task{
+		ID: "legacy-p3-new-task", UserID: f.ownerID, ProjectID: f.projectID,
+		Type: "canvas_text", Status: model.TaskStatusQueued,
+	}
+	if err := f.db.Create(newTask).Error; err != nil {
+		t.Fatal(err)
+	}
+	creator := &sequentialScriptTaskCreator{tasks: []*model.Task{newTask}}
+	f.service.SetScriptTaskCreator(creator.create)
+	started, err := f.service.RunProductionStage(
+		f.ownerID, f.projectID, run.Run.ID, manju.ProductionStageStoryboard,
+		manju.ProductionStageRunInput{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	startedP3 := findProductionStage(t, started, manju.ProductionStageStoryboard)
+	if startedP3.TaskID != newTask.ID || startedP3.ArtifactID != "" {
+		t.Fatalf("P3 must use a new task and no stale result: %+v", startedP3)
+	}
+	if countModels[model.ManjuProductionArtifact](t, f, run.Run.ID) != 1 {
+		t.Fatal("old P3 task must not create an artifact when reconciliation runs")
 	}
 }
 

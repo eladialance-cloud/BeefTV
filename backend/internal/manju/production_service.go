@@ -174,8 +174,14 @@ func repairLegacyProductionDecisionStage(tx *repository.Repository, run *model.M
 			if err := tx.DB().Model(&model.ManjuProductionStage{}).
 				Where("id = ?", storyboard.ID).
 				Updates(map[string]any{
-					"status": model.ManjuProductionStageStatusStale,
-					"error":  "旧 P3 创建时没有 P0B 决策锚点，必须重新生成 P3；旧工件与媒体仅保留为历史",
+					"status":       model.ManjuProductionStageStatusStale,
+					"task_id":      "",
+					"started_at":   nil,
+					"completed_at": nil,
+					"confirmed_by": "",
+					"confirmed_at": nil,
+					"input_json":   "",
+					"error":        "旧 P3 创建时没有 P0B 决策锚点，必须重新生成 P3；旧工件与媒体仅保留为历史",
 				}).Error; err != nil {
 				return err
 			}
@@ -183,8 +189,15 @@ func repairLegacyProductionDecisionStage(tx *repository.Repository, run *model.M
 			if err := tx.DB().Model(&model.ManjuProductionStage{}).
 				Where("id = ?", storyboard.ID).
 				Updates(map[string]any{
-					"status": model.ManjuProductionStageStatusNotStarted,
-					"error":  "",
+					"status":       model.ManjuProductionStageStatusNotStarted,
+					"task_id":      "",
+					"started_at":   nil,
+					"completed_at": nil,
+					"artifact_id":  "",
+					"confirmed_by": "",
+					"confirmed_at": nil,
+					"input_json":   "",
+					"error":        "",
 				}).Error; err != nil {
 				return err
 			}
@@ -1692,6 +1705,9 @@ func (s *Service) ConfirmProductionStage(actorID, projectID, runID, stageKey str
 		stageKey != ProductionStageFeed &&
 		stageKey != ProductionStageQC {
 		return nil, ErrProductionStageNotFound
+	}
+	if err := s.repairLegacyProductionPrerequisite(actorID, projectID, runID); err != nil {
+		return nil, err
 	}
 	if err := s.reconcileProductionStageTasks(actorID, projectID, runID); err != nil {
 		return nil, err
