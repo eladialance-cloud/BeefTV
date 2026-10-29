@@ -104,6 +104,7 @@ const (
 
 	ManjuScriptArtifactSourceManifest = "SOURCE_MANIFEST.json"
 	ManjuScriptArtifactReconCard      = "RECON_INTELLIGENCE_CARD.md"
+	ManjuScriptArtifactRoundtable     = "ROUNDTABLE_REVIEW.md"
 	ManjuScriptArtifactStageOutput    = "STAGE_OUTPUT.md"
 	ManjuScriptArtifactPolishedScript = "POLISHED_SCRIPT.md"
 	ManjuScriptArtifactPolishFindings = "POLISH_FINDINGS.md"
@@ -400,6 +401,28 @@ type ManjuScriptArtifact struct {
 }
 
 func (ManjuScriptArtifact) TableName() string { return "manju_script_artifacts" }
+
+// ManjuRoundtableDecision is the append-only user decision ledger for each
+// roundtable review round. Review artifacts stay immutable; the decision record
+// captures the selected action, risk acknowledgement and exact review identity.
+type ManjuRoundtableDecision struct {
+	ID                 string    `json:"id" gorm:"primaryKey;size:36"`
+	ProjectID          string    `json:"projectId" gorm:"size:36;index"`
+	RunID              string    `json:"runId" gorm:"size:36;index;uniqueIndex:idx_manju_roundtable_decision_round,priority:1"`
+	StageID            string    `json:"stageId" gorm:"size:36;index"`
+	Round              int64     `json:"round" gorm:"uniqueIndex:idx_manju_roundtable_decision_round,priority:2"`
+	Version            int64     `json:"version"`
+	Decision           string    `json:"decision" gorm:"size:32;index"`
+	ActorID            string    `json:"actorId" gorm:"size:36;index"`
+	Note               string    `json:"note,omitempty" gorm:"type:text"`
+	ReviewArtifactID   string    `json:"reviewArtifactId" gorm:"size:36;index"`
+	ReviewArtifactHash string    `json:"reviewArtifactHash" gorm:"size:64;index"`
+	Grade              string    `json:"grade" gorm:"size:16;index"`
+	RiskAccepted       bool      `json:"riskAccepted"`
+	CreatedAt          time.Time `json:"createdAt" gorm:"index"`
+}
+
+func (ManjuRoundtableDecision) TableName() string { return "manju_roundtable_decisions" }
 
 // ManjuAssetRun is the durable P2 envelope. It is tied to one completed P1
 // run and the same immutable P0 lock revision that P1 used.

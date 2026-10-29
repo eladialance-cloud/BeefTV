@@ -197,6 +197,7 @@ export type ManjuScriptBranch = "original" | "adaptation" | "benchmark" | "polis
 export type ManjuScriptInputKind = "novel" | "outline" | "finished_script";
 export type ManjuTrendResolution = "" | "original" | "benchmark";
 export type ManjuRoundtableDecision = "PROCEED_CURRENT" | "REFINE_OR_REWRITE";
+export type ManjuRoundtableGrade = "S" | "A" | "B" | "NOT_READY" | "UNKNOWN";
 export type ManjuScriptStageStatus = "NOT_STARTED" | "IN_PROGRESS" | "AWAITING_CONFIRMATION" | "AWAITING_USER_DECISION" | "LOCKED" | "STALE" | "BLOCKED";
 export type ManjuScriptStageKey =
     | "source_registration"
@@ -315,6 +316,7 @@ export type ManjuScriptStage = {
     completedAt?: string;
     updatedAt: string;
     draft?: ManjuStageDraft;
+    reviewGrade?: ManjuRoundtableGrade;
 };
 
 export type ManjuStageDraft = {
@@ -344,6 +346,24 @@ export type ManjuScriptRunDetail = {
     source?: ManjuScriptSource;
     stages: ManjuScriptStage[];
     artifacts?: ManjuScriptArtifact[];
+    roundtableDecisions?: ManjuRoundtableDecisionRecord[];
+};
+
+export type ManjuRoundtableDecisionRecord = {
+    id: string;
+    projectId: string;
+    runId: string;
+    stageId: string;
+    round: number;
+    version: number;
+    decision: ManjuRoundtableDecision;
+    actorId: string;
+    note?: string;
+    reviewArtifactId: string;
+    reviewArtifactHash: string;
+    grade: ManjuRoundtableGrade;
+    riskAccepted: boolean;
+    createdAt: string;
 };
 
 export type ManjuScriptSourceInput = {
@@ -741,10 +761,14 @@ export function confirmManjuScriptStage(projectId: string, runId: string, stageK
     return http.post<{ item: ManjuScriptRunDetail }>(`/manju/projects/${encodeURIComponent(projectId)}/script-runs/${encodeURIComponent(runId)}/stages/${encodeURIComponent(stageKey)}/confirm`, {});
 }
 
-export function decideManjuRoundtable(projectId: string, runId: string, decision: ManjuRoundtableDecision, note = "") {
+export function decideManjuRoundtable(
+    projectId: string,
+    runId: string,
+    input: { decision: ManjuRoundtableDecision; acceptQualityRisk?: boolean; note?: string },
+) {
     return http.post<{ item: ManjuScriptRunDetail }>(
         `/manju/projects/${encodeURIComponent(projectId)}/script-runs/${encodeURIComponent(runId)}/stages/roundtable_review/decide`,
-        { decision, note },
+        input,
     );
 }
 

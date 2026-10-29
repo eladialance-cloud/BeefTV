@@ -66,6 +66,7 @@ func HostedModels() []any {
 		&model.TaskCostCharge{},
 		// 支付渠道配置（托管专属，密钥加密存储）。
 		&model.PaymentProviderConfig{},
+		&model.ManjuRoundtableDecision{},
 		// 充值商品、支付订单与回调记录（托管专属）。
 		&model.TopupProduct{}, &model.PaymentOrder{}, &model.PaymentNotification{},
 	)

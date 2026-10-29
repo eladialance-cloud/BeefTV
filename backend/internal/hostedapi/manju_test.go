@@ -560,6 +560,11 @@ func TestManjuScriptSourceRouteDoesNotRequireRetiredP0BStage(t *testing.T) {
 
 func prepareManjuRoundtableAwaitingDecision(t *testing.T, db *gorm.DB) string {
 	t.Helper()
+	return prepareManjuRoundtableAwaitingDecisionWithReview(t, db, "# 五席圆桌审核\ngrade: A\n等待用户选择。")
+}
+
+func prepareManjuRoundtableAwaitingDecisionWithReview(t *testing.T, db *gorm.DB, reviewContent string) string {
+	t.Helper()
 	now := time.Now()
 	runID := "run-roundtable-http"
 	run := &model.ManjuScriptRun{
@@ -578,7 +583,7 @@ func prepareManjuRoundtableAwaitingDecision(t *testing.T, db *gorm.DB) string {
 	}
 	reviewArtifact := &model.ManjuScriptArtifact{
 		ID: "http-roundtable-v1", ProjectID: run.ProjectID, RunID: runID, StageID: "http-stage-roundtable-review",
-		Kind: "ROUNDTABLE_REVIEW.md", Version: 1, Content: "# 五席圆桌审核\n等待用户选择。",
+		Kind: "ROUNDTABLE_REVIEW.md", Version: 1, Content: reviewContent,
 		ContentHash: "http-roundtable-v1", CreatedBy: testManjuOwnerID, CreatedAt: now,
 	}
 	if err := db.Create(&[]model.ManjuScriptArtifact{*scriptArtifact, *reviewArtifact}).Error; err != nil {
@@ -635,6 +640,75 @@ func TestManjuRoundtableDecisionRejectsNonAwaitingReviewAsConflict(t *testing.T)
 
 	if recorder.Code != http.StatusConflict {
 		t.Fatalf("non-awaiting roundtable decision must map to 409, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestManjuRoundtableProceedRequiresRiskAcknowledgement(t *testing.T) {
+	engine, _, db := newManjuHTTPEnvWithDB(t)
+	runID := prepareManjuRoundtableAwaitingDecisionWithReview(
+		t, db, "# 五席圆桌审核\ngrade: B\n等待用户选择。",
+	)
+	path := "/api/manju/projects/project-secret/script-runs/" + runID + "/stages/roundtable_review/decide"
+
+	rejected := manjuRequest(t, engine, http.MethodPost, path, map[string]any{
+		"decision": manjusvc.RoundtableProceed,
+	}, "owner")
+	if rejected.Code != http.StatusBadRequest {
+		t.Fatalf("B-grade proceed without risk acknowledgement must map to 400, got %d: %s", rejected.Code, rejected.Body.String())
+	}
+
+	accepted := manjuRequest(t, engine, http.MethodPost, path, map[string]any{
+		"decision":          manjusvc.RoundtableProceed,
+		"acceptQualityRisk": true,
+		"note":              "USER_ACCEPTED_QUALITY_RISK",
+	}, "owner")
+	if accepted.Code != http.StatusOK {
+		t.Fatalf("B-grade proceed with risk acknowledgement must return 200, got %d: %s", accepted.Code, accepted.Body.String())
+	}
+	var payload struct {
+		Data struct {
+			Item manjusvc.ScriptRunDetail `json:"item"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(accepted.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Data.Item.RoundtableDecisions) != 1 {
+		t.Fatalf("decision API must expose the immutable ledger row: %+v", payload.Data.Item.RoundtableDecisions)
+	}
+	record := payload.Data.Item.RoundtableDecisions[0]
+	if record.Grade != "B" || !record.RiskAccepted || record.Decision != string(manjusvc.RoundtableProceed) {
+		t.Fatalf("decision API ledger mismatch: %+v", record)
+	}
+	var review manjusvc.ScriptStageView
+	for _, stage := range payload.Data.Item.Stages {
+		if stage.Key == manjusvc.ScriptStageRoundtableReview {
+			review = stage
+			break
+		}
+	}
+	if review.ReviewGrade != "B" {
+		t.Fatalf("review grade must be exposed for the risk UI: %+v", review)
+	}
+
+	read := manjuRequest(t, engine, http.MethodGet, "/api/manju/projects/project-secret/script-runs/"+runID, nil, "owner")
+	if read.Code != http.StatusOK || !strings.Contains(read.Body.String(), `"grade":"B"`) ||
+		!strings.Contains(read.Body.String(), `"riskAccepted":true`) {
+		t.Fatalf("run detail must expose the decision ledger after refresh: %d %s", read.Code, read.Body.String())
+	}
+}
+
+func TestManjuRoundtableRegenerationRejectedWhileAwaitingDecision(t *testing.T) {
+	engine, _, db := newManjuHTTPEnvWithDB(t)
+	runID := prepareManjuRoundtableAwaitingDecision(t, db)
+	path := "/api/manju/projects/project-secret/script-runs/" + runID + "/stages/roundtable_review/regenerate-artifact"
+
+	recorder := manjuRequest(t, engine, http.MethodPost, path, map[string]any{
+		"instruction": "try regenerating review",
+	}, "owner")
+
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("roundtable regeneration while awaiting decision must map to 409, got %d: %s", recorder.Code, recorder.Body.String())
 	}
 }
 
@@ -703,8 +777,21 @@ func TestManjuRoundtableDecisionReturnsDownstreamState(t *testing.T) {
 			if review.Status != testCase.expectedReview {
 				t.Fatalf("unexpected review state: %+v", review)
 			}
+			if review.ReviewGrade != "A" {
+				t.Fatalf("unexpected review grade: %+v", review)
+			}
 			if scriptDraft.Status != testCase.expectedScript || scriptDraft.Version != testCase.expectedVersion {
 				t.Fatalf("unexpected script_draft state: %+v", scriptDraft)
+			}
+			if len(detail.RoundtableDecisions) != 1 {
+				t.Fatalf("decision must be present in run detail: %+v", detail.RoundtableDecisions)
+			}
+			record := detail.RoundtableDecisions[0]
+			if record.Decision != string(testCase.decision) ||
+				record.Grade != "A" ||
+				record.RiskAccepted ||
+				record.Note != "API decision regression" {
+				t.Fatalf("unexpected decision ledger row: %+v", record)
 			}
 		})
 	}

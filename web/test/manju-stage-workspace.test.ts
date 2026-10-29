@@ -93,11 +93,16 @@ test("P0B decision artifact renders inside P3 and gates storyboard", () => {
 
 test("roundtable review requires two explicit user decisions", () => {
     expect(api).toContain("export type ManjuRoundtableDecision");
+    expect(api).toContain("export type ManjuRoundtableDecisionRecord");
     expect(api).toContain("PROCEED_CURRENT");
     expect(api).toContain("REFINE_OR_REWRITE");
     expect(api).toContain("decideManjuRoundtable");
+    expect(api).toContain("acceptQualityRisk");
     expect(page).toContain("decideRoundtableMutation");
+    expect(page).toContain("qualityRiskRequired");
+    expect(page).toContain("USER_ACCEPTED_QUALITY_RISK");
     expect(page).toContain("接受当前稿");
     expect(page).toContain("精修并重写");
     expect(page).not.toContain("提交圆桌决策并锁定");
+    expect(page).not.toContain('"AWAITING_USER_DECISION"].includes(stage.status)');
 });

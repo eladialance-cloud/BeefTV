@@ -1856,6 +1856,7 @@ function SourceLedger({ detail }: { detail: ManjuScriptRunDetail }) {
 function ScriptStageCard({ projectId, projectName, detail, stage, canEdit, onUpdated }: { projectId: string; projectName: string; detail: ManjuScriptRunDetail; stage: ManjuScriptStage; canEdit: boolean; onUpdated: (item: ManjuScriptRunDetail) => void }) {
     const artifact = detail.artifacts?.find((item) => item.id === stage.artifactId);
     const [instruction, setInstruction] = useState("");
+    const [acceptQualityRisk, setAcceptQualityRisk] = useState(false);
     const [notice, setNotice] = useState<{ tone: "error" | "success"; text: string } | null>(null);
     const [manualCorrectionOpen, setManualCorrectionOpen] = useState(false);
     const runMutation = useMutation({
@@ -1875,11 +1876,12 @@ function ScriptStageCard({ projectId, projectName, detail, stage, canEdit, onUpd
         onError: (error) => setNotice({ tone: "error", text: error instanceof Error ? error.message : "剧本阶段确认失败" }),
     });
     const decideRoundtableMutation = useMutation({
-        mutationFn: (decision: ManjuRoundtableDecision) => decideManjuRoundtable(projectId, detail.run.id, decision),
-        onSuccess: ({ item }, decision) => {
+        mutationFn: (input: { decision: ManjuRoundtableDecision; acceptQualityRisk: boolean }) =>
+            decideManjuRoundtable(projectId, detail.run.id, input),
+        onSuccess: ({ item }, input) => {
             setNotice({
                 tone: "success",
-                text: decision === "PROCEED_CURRENT" ? "已接受当前稿并锁定圆桌审核。" : "已重新打开正式剧本，等待生成新版本。",
+                text: input.decision === "PROCEED_CURRENT" ? "已接受当前稿并锁定圆桌审核。" : "已重新打开正式剧本，等待生成新版本。",
             });
             onUpdated(item);
         },
@@ -1912,7 +1914,8 @@ function ScriptStageCard({ projectId, projectName, detail, stage, canEdit, onUpd
     const runReadable = runActive || detail.run.status === "COMPLETED";
     const canConfirm = canEdit && runActive && stage.key !== "roundtable_review" && stage.status === "AWAITING_CONFIRMATION";
     const canDecideRoundtable = canEdit && runActive && stage.key === "roundtable_review" && stage.status === "AWAITING_USER_DECISION";
-    const canRegenerateArtifact = canEdit && runReadable && Boolean(artifact) && !stage.taskId && ["LOCKED", "BLOCKED", "AWAITING_CONFIRMATION", "AWAITING_USER_DECISION"].includes(stage.status);
+    const qualityRiskRequired = stage.reviewGrade === "B" || stage.reviewGrade === "NOT_READY";
+    const canRegenerateArtifact = canEdit && runReadable && Boolean(artifact) && !stage.taskId && ["LOCKED", "BLOCKED", "AWAITING_CONFIRMATION"].includes(stage.status);
     const canRun = canEdit && runActive && isCurrent && ["IN_PROGRESS", "BLOCKED", "STALE"].includes(stage.status) && !canRegenerateArtifact;
     const canManualCorrect = canEdit && stage.status === "BLOCKED" && Boolean(stage.draft?.content);
     const stageSubtitle =
@@ -2017,13 +2020,24 @@ function ScriptStageCard({ projectId, projectName, detail, stage, canEdit, onUpd
                 </footer>
             ) : null}
             {canDecideRoundtable ? (
-                <footer className="manju-script-stage-actions">
+                <footer className="manju-script-stage-actions manju-roundtable-actions">
                     <span>五席意见已生成。请明确选择接受当前稿，或授权进入一次精修/重写。</span>
+                    {qualityRiskRequired ? (
+                        <Checkbox
+                            className="manju-roundtable-risk-ack"
+                            aria-label="确认接受圆桌质量风险"
+                            checked={acceptQualityRisk}
+                            onChange={(event) => setAcceptQualityRisk(event.target.checked)}
+                        >
+                            我已知晓当前等级为 {stage.reviewGrade}，仍接受质量风险（USER_ACCEPTED_QUALITY_RISK）
+                        </Checkbox>
+                    ) : null}
                     <Button
                         type="primary"
                         icon={<Check />}
                         loading={decideRoundtableMutation.isPending}
-                        onClick={() => decideRoundtableMutation.mutate("PROCEED_CURRENT")}
+                        disabled={qualityRiskRequired && !acceptQualityRisk}
+                        onClick={() => decideRoundtableMutation.mutate({ decision: "PROCEED_CURRENT", acceptQualityRisk })}
                     >
                         接受当前稿
                     </Button>
@@ -2031,7 +2045,7 @@ function ScriptStageCard({ projectId, projectName, detail, stage, canEdit, onUpd
                         danger
                         icon={<RefreshCw />}
                         loading={decideRoundtableMutation.isPending}
-                        onClick={() => decideRoundtableMutation.mutate("REFINE_OR_REWRITE")}
+                        onClick={() => decideRoundtableMutation.mutate({ decision: "REFINE_OR_REWRITE", acceptQualityRisk: false })}
                     >
                         精修并重写
                     </Button>

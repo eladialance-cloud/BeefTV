@@ -2604,6 +2604,18 @@
     flex: 0 0 auto;
 }
 
+.manju-roundtable-actions {
+    flex-wrap: wrap;
+}
+
+.manju-roundtable-actions > .manju-roundtable-risk-ack {
+    flex: 1 1 100%;
+    max-width: 720px;
+    color: var(--manju-ink-soft);
+    font-size: 10px;
+    line-height: 18px;
+}
+
 .manju-script-artifact {
     margin-top: 11px;
     overflow: hidden;

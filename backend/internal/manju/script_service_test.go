@@ -263,6 +263,11 @@ func findScriptStage(t *testing.T, detail *manju.ScriptRunDetail, key string) ma
 
 func prepareRoundtableAwaitingDecision(t *testing.T, f fixture) *manju.ScriptRunDetail {
 	t.Helper()
+	return prepareRoundtableAwaitingDecisionWithReview(t, f, "# 五席圆桌审核\ngrade: A\n等待用户选择。")
+}
+
+func prepareRoundtableAwaitingDecisionWithReview(t *testing.T, f fixture, reviewContent string) *manju.ScriptRunDetail {
+	t.Helper()
 	now := time.Now()
 	run := &model.ManjuScriptRun{
 		ID: "run-roundtable-decision", ProjectID: f.projectID, Branch: manju.ScriptBranchOriginal,
@@ -280,7 +285,7 @@ func prepareRoundtableAwaitingDecision(t *testing.T, f fixture) *manju.ScriptRun
 	}
 	reviewArtifact := &model.ManjuScriptArtifact{
 		ID: "artifact-roundtable-v1", ProjectID: f.projectID, RunID: run.ID, StageID: "stage-roundtable-review",
-		Kind: "ROUNDTABLE_REVIEW.md", Version: 1, Content: "# 五席圆桌审核\n等待用户选择。",
+		Kind: "ROUNDTABLE_REVIEW.md", Version: 1, Content: reviewContent,
 		ContentHash: "roundtable-v1", CreatedBy: f.ownerID, CreatedAt: now,
 	}
 	if err := f.db.Create(&[]model.ManjuScriptArtifact{*scriptArtifact, *reviewArtifact}).Error; err != nil {
@@ -347,6 +352,123 @@ func TestRoundtableDecisionRequiresAllowedValue(t *testing.T) {
 				t.Fatalf("invalid decision must not mutate review status, got %s", got)
 			}
 		})
+	}
+}
+
+func TestRoundtableProceedRequiresRiskAcceptanceForBAndNotReady(t *testing.T) {
+	for _, grade := range []string{"B", "NOT_READY"} {
+		t.Run(grade+" rejected without risk acceptance", func(t *testing.T) {
+			f := newFixture(t)
+			run := prepareRoundtableAwaitingDecisionWithReview(
+				t, f, "# 五席圆桌审核\ngrade: "+grade+"\n等待用户选择。",
+			)
+
+			_, err := f.service.DecideRoundtable(
+				f.ownerID, f.projectID, run.Run.ID,
+				manju.RoundtableDecisionInput{Decision: manju.RoundtableProceed},
+			)
+			if !errors.Is(err, manju.ErrRoundtableQualityRiskRequired) {
+				t.Fatalf("grade %s proceed without risk acceptance must fail, got %v", grade, err)
+			}
+			detail, detailErr := f.service.ScriptRunDetail(f.ownerID, f.projectID, run.Run.ID)
+			if detailErr != nil {
+				t.Fatal(detailErr)
+			}
+			review := findScriptStage(t, detail, manju.ScriptStageRoundtableReview)
+			if review.Status != manju.ScriptStageStatusAwaitingDecision {
+				t.Fatalf("rejected risk acceptance must leave review awaiting decision, got %s", review.Status)
+			}
+			if review.ReviewGrade != grade {
+				t.Fatalf("review grade must be exposed before decision: got %q want %q", review.ReviewGrade, grade)
+			}
+			if len(detail.RoundtableDecisions) != 0 {
+				t.Fatalf("rejected decision must not create a ledger row: %+v", detail.RoundtableDecisions)
+			}
+		})
+
+		t.Run(grade+" accepted with risk acceptance", func(t *testing.T) {
+			f := newFixture(t)
+			run := prepareRoundtableAwaitingDecisionWithReview(
+				t, f, "# 五席圆桌审核\ngrade: "+grade+"\n等待用户选择。",
+			)
+
+			detail, err := f.service.DecideRoundtable(
+				f.ownerID, f.projectID, run.Run.ID,
+				manju.RoundtableDecisionInput{
+					Decision: manju.RoundtableProceed, AcceptQualityRisk: true,
+					Note: "接受 " + grade + " 质量风险",
+				},
+			)
+			if err != nil {
+				t.Fatalf("grade %s proceed with explicit risk acceptance must pass: %v", grade, err)
+			}
+			if got := findScriptStage(t, detail, manju.ScriptStageRoundtableReview).Status; got != manju.ScriptStageStatusLocked {
+				t.Fatalf("accepted risk must lock review, got %s", got)
+			}
+			if len(detail.RoundtableDecisions) != 1 ||
+				!detail.RoundtableDecisions[0].RiskAccepted ||
+				detail.RoundtableDecisions[0].Grade != grade {
+				t.Fatalf("risk-accepted decision ledger mismatch: %+v", detail.RoundtableDecisions)
+			}
+		})
+	}
+}
+
+func TestRoundtableDecisionPersistsImmutableLedgerRecord(t *testing.T) {
+	f := newFixture(t)
+	run := prepareRoundtableAwaitingDecisionWithReview(
+		t, f, "# 五席圆桌审核\ngrade: B\nR1_DURABLE_LEDGER",
+	)
+
+	detail, err := f.service.DecideRoundtable(
+		f.ownerID, f.projectID, run.Run.ID,
+		manju.RoundtableDecisionInput{
+			Decision: manju.RoundtableProceed, AcceptQualityRisk: true,
+			Note: "DURABLE_DECISION_NOTE",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.RoundtableDecisions) != 1 {
+		t.Fatalf("roundtable decision must be returned by run detail: %+v", detail.RoundtableDecisions)
+	}
+	record := detail.RoundtableDecisions[0]
+	if record.ProjectID != f.projectID ||
+		record.RunID != run.Run.ID ||
+		record.StageID != "stage-roundtable-review" ||
+		record.Round != 1 ||
+		record.Version != 1 ||
+		record.Decision != string(manju.RoundtableProceed) ||
+		record.ActorID != f.ownerID ||
+		record.Note != "DURABLE_DECISION_NOTE" ||
+		record.ReviewArtifactID != "artifact-roundtable-v1" ||
+		record.ReviewArtifactHash != "roundtable-v1" ||
+		record.Grade != "B" ||
+		!record.RiskAccepted ||
+		record.CreatedAt.IsZero() {
+		t.Fatalf("decision ledger record is incomplete: %+v", record)
+	}
+
+	var stored model.ManjuRoundtableDecision
+	if err := f.db.First(&stored, "id = ?", record.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Decision != string(manju.RoundtableProceed) || stored.ReviewArtifactHash != "roundtable-v1" {
+		t.Fatalf("decision row was not persisted immutably: %+v", stored)
+	}
+	if err := f.db.Model(&model.ManjuScriptStage{}).
+		Where("run_id = ? AND key = ?", run.Run.ID, manju.ScriptStageRoundtableReview).
+		Update("input_json", `{"decision":"REFINE_OR_REWRITE"}`).Error; err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := f.service.ScriptRunDetail(f.ownerID, f.projectID, run.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reloaded.RoundtableDecisions) != 1 ||
+		reloaded.RoundtableDecisions[0].Decision != string(manju.RoundtableProceed) {
+		t.Fatalf("decision view must come from the ledger, not mutable stage input: %+v", reloaded.RoundtableDecisions)
 	}
 }
 
@@ -458,6 +580,83 @@ func TestRoundtableRefineMaterializesExactlyOneNewScriptVersion(t *testing.T) {
 	}
 	if artifact.Version != 2 || !strings.Contains(artifact.Content, "林澈停在门内") {
 		t.Fatalf("new script artifact must be v2, got %+v", artifact)
+	}
+}
+
+func TestRoundtableRegenerationRejectedWhileAwaitingDecision(t *testing.T) {
+	f := newFixture(t)
+	run := prepareRoundtableAwaitingDecision(t, f)
+
+	_, err := f.service.RegenerateScriptArtifact(
+		f.ownerID, f.projectID, run.Run.ID, manju.ScriptStageRoundtableReview,
+		manju.ScriptStageRunInput{Instruction: "试图绕过决策重生成评审"},
+	)
+	if !errors.Is(err, manju.ErrScriptStageNotReady) {
+		t.Fatalf("roundtable regeneration must be blocked while awaiting decision, got %v", err)
+	}
+}
+
+func TestRoundtableR2PromptIsBlindToPriorReviewContent(t *testing.T) {
+	const reviewPhrase = "R1_DISTINCTIVE_CONCLUSION_MUST_NOT_REACH_R2"
+	f := newFixture(t)
+	run := prepareRoundtableAwaitingDecisionWithReview(
+		t, f, "# 五席圆桌审核\ngrade: B\n"+reviewPhrase,
+	)
+	if err := f.db.Create(&model.ManjuProjectModelBinding{
+		ID: "binding-roundtable-blind-review", ProjectID: f.projectID,
+		TextChannelID: "channel-text", TextModelKey: "text-pro",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	scriptTask := &model.Task{
+		ID: "task-roundtable-refine-blind-writer", UserID: f.ownerID, ProjectID: f.projectID,
+		Type: "canvas_text", Status: model.TaskStatusQueued,
+	}
+	reviewTask := &model.Task{
+		ID: "task-roundtable-r2-blind-review", UserID: f.ownerID, ProjectID: f.projectID,
+		Type: "canvas_text", Status: model.TaskStatusQueued,
+	}
+	if err := f.db.Create(&[]model.Task{*scriptTask, *reviewTask}).Error; err != nil {
+		t.Fatal(err)
+	}
+	creator := &sequentialScriptTaskCreator{tasks: []*model.Task{scriptTask, reviewTask}}
+	f.service.SetScriptTaskCreator(creator.create)
+
+	if _, err := f.service.DecideRoundtable(
+		f.ownerID, f.projectID, run.Run.ID,
+		manju.RoundtableDecisionInput{Decision: manju.RoundtableRefine},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.RunScriptStage(
+		f.ownerID, f.projectID, run.Run.ID, manju.ScriptStageScriptDraft,
+		manju.ScriptStageRunInput{Instruction: "按 R1 返修清单精修"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if len(creator.requests) != 1 || !strings.Contains(creator.requests[0].Prompt, reviewPhrase) {
+		t.Fatalf("script_draft writer must be allowed to consume R1 feedback: %+v", creator.requests)
+	}
+	succeedManjuTask(t, f, scriptTask.ID, "# 正式剧本 v2\n林澈停在门内。")
+	if _, err := f.service.ScriptRunDetail(f.ownerID, f.projectID, run.Run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.ConfirmScriptStage(
+		f.ownerID, f.projectID, run.Run.ID, manju.ScriptStageScriptDraft,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.RunScriptStage(
+		f.ownerID, f.projectID, run.Run.ID, manju.ScriptStageRoundtableReview,
+		manju.ScriptStageRunInput{Instruction: "对 v2 做独立盲审"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if len(creator.requests) != 2 {
+		t.Fatalf("expected script writer and R2 review tasks, got %d", len(creator.requests))
+	}
+	if strings.Contains(creator.requests[1].Prompt, reviewPhrase) {
+		t.Fatalf("R2 review prompt leaked prior review conclusion:\n%s", creator.requests[1].Prompt)
 	}
 }
 
