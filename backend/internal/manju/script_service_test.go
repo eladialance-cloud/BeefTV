@@ -1,14 +1,19 @@
 package manju_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"infinite-canvas/backend/internal/manju"
 	"infinite-canvas/backend/internal/model"
 	localtask "infinite-canvas/backend/internal/task"
+
+	"github.com/google/uuid"
 )
 
 type recordingScriptTaskCreator struct {
@@ -33,6 +38,205 @@ func TestCreateScriptRunRequiresLockedP0(t *testing.T) {
 
 	if !errors.Is(err, manju.ErrP0Required) {
 		t.Fatalf("未锁定 P0 必须阻断 P1，得到 %v", err)
+	}
+}
+
+func TestP1CannotStartBeforeP0BDecisionIsLocked(t *testing.T) {
+	f := newFixture(t)
+	lock := validLock()
+	lock.Source = manju.SourceAdaptation
+	if _, err := f.service.SaveLock(f.ownerID, f.projectID, lock); err != nil {
+		t.Fatal(err)
+	}
+	run, err := f.service.CreateScriptRun(f.ownerID, f.projectID, manju.ScriptRunInput{
+		Mode: manju.ScriptModeStepwise,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if run.Stages[0].Key != "decision_anchor" {
+		t.Fatalf("first P1 stage must be P0B, got %s", run.Stages[0].Key)
+	}
+	_, err = f.service.RunScriptStage(
+		f.ownerID, f.projectID, run.Run.ID,
+		manju.ScriptStageIPDevelopment,
+		manju.ScriptStageRunInput{},
+	)
+	if !errors.Is(err, manju.ErrScriptStageNotReady) {
+		t.Fatalf("IP development must wait for P0B, got %v", err)
+	}
+}
+
+func TestP0BRejectsArtifactMissingRequiredTableBeforePersisting(t *testing.T) {
+	f := newFixture(t)
+	lock := validLock()
+	lock.Source = manju.SourceAdaptation
+	if _, err := f.service.SaveLock(f.ownerID, f.projectID, lock); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.Create(&model.ManjuProjectModelBinding{
+		ID: "binding-p0b-invalid", ProjectID: f.projectID,
+		TextChannelID: "channel-text", TextModelKey: "text-pro",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	run, err := f.service.CreateScriptRun(f.ownerID, f.projectID, manju.ScriptRunInput{
+		Mode: manju.ScriptModeStepwise,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := &model.Task{
+		ID: "task-p0b-invalid", UserID: f.ownerID, ProjectID: f.projectID,
+		Type: "canvas_text", Status: model.TaskStatusQueued, Prompt: "执行 P0B",
+	}
+	if err := f.db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	creator := &recordingScriptTaskCreator{task: task}
+	f.service.SetScriptTaskCreator(creator.create)
+	if _, err := f.service.RunScriptStage(
+		f.ownerID, f.projectID, run.Run.ID,
+		manju.ScriptStageDecisionAnchor,
+		manju.ScriptStageRunInput{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"## 情绪锚点表",
+		"## 构图雷区白名单",
+		"sd-decision-engine/SKILL.md",
+		"sd-decision-engine/references/emotion-anchor-table.md",
+	} {
+		if !strings.Contains(creator.request.Prompt, required) {
+			t.Fatalf("P0B prompt missing %q", required)
+		}
+	}
+	content := strings.Join([]string{
+		"# P0B 决策锚点",
+		"## 情绪锚点表",
+		"| 场次 | 情绪锚点 | 情境映射 | 核心机位组合 | 权重占比 |",
+		"|---|---|---|---|---|",
+		"| 场1 | 压抑试探 | E05 孤独沉思 | 长焦+大光圈+空旷留白 | 80/15/5 |",
+	}, "\n")
+	if err := f.db.Model(&model.Task{}).Where("id = ?", task.ID).Updates(map[string]any{
+		"status": model.TaskStatusSucceeded, "stage": "完成",
+		"result_json": `{"mode":"text","text":` + mustJSONString(content) + `}`,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	detail, err := f.service.ScriptRunDetail(f.ownerID, f.projectID, run.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage := findScriptStage(t, detail, manju.ScriptStageDecisionAnchor)
+	if stage.Status != manju.ScriptStageStatusBlocked || !strings.Contains(stage.Error, "构图雷区白名单") {
+		t.Fatalf("missing P0B table must block without locking: %+v", stage)
+	}
+	if stage.ArtifactID != "" {
+		t.Fatalf("invalid P0B content must not persist an artifact hash: %+v", stage)
+	}
+}
+
+func TestP0BLockAdvancesDataCompleteSourceToIPDevelopment(t *testing.T) {
+	f := newFixture(t)
+	lock := validLock()
+	lock.Source = manju.SourceAdaptation
+	if _, err := f.service.SaveLock(f.ownerID, f.projectID, lock); err != nil {
+		t.Fatal(err)
+	}
+	source, err := f.service.CreateSourceDocument(f.ownerID, f.projectID, manju.SourceDocumentInput{
+		Title: "雨夜旧宅", AuthorizationScope: "仅本项目改编",
+		Content: "第一章 雨夜\n林澈推开旧宅的门。",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.Create(&model.ManjuProjectModelBinding{
+		ID: "binding-p0b-valid", ProjectID: f.projectID,
+		TextChannelID: "channel-text", TextModelKey: "text-pro",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	run, err := f.service.CreateScriptRun(f.ownerID, f.projectID, manju.ScriptRunInput{
+		Mode:             manju.ScriptModeStepwise,
+		SourceDocumentID: source.Document.ID,
+		ChapterIDs:       []string{source.Chapters[0].ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := findScriptStage(t, run, manju.ScriptStageSourceRegistration).Status; got != manju.ScriptStageStatusLocked {
+		t.Fatalf("seeded source registration can be data-complete before P0B: %s", got)
+	}
+	if got := findScriptStage(t, run, manju.ScriptStageIPDevelopment).Status; got != manju.ScriptStageStatusNotStarted {
+		t.Fatalf("data-complete source must not advance IP before P0B: %s", got)
+	}
+
+	task := &model.Task{
+		ID: "task-p0b-valid", UserID: f.ownerID, ProjectID: f.projectID,
+		Type: "canvas_text", Status: model.TaskStatusQueued, Prompt: "执行 P0B",
+	}
+	if err := f.db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	creator := &recordingScriptTaskCreator{task: task}
+	f.service.SetScriptTaskCreator(creator.create)
+	if _, err := f.service.RunScriptStage(
+		f.ownerID, f.projectID, run.Run.ID,
+		manju.ScriptStageDecisionAnchor,
+		manju.ScriptStageRunInput{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	content := strings.Join([]string{
+		"# P0B 决策锚点",
+		"## 情绪锚点表",
+		"| 场次 | 情绪锚点 | 情境映射 | 核心机位组合 | 权重占比 |",
+		"|---|---|---|---|---|",
+		"| 场1 | 压抑试探 | E05 孤独沉思 | 长焦+大光圈+空旷留白 | 80/15/5 |",
+		"## 构图雷区白名单",
+		"| 雷区 | 允许条件 | 替代方案 | 下游约束 |",
+		"|---|---|---|---|",
+		"| A1 正面居中 | 仪式感 | 侧45度反打 | 镜行不得重复正面居中 |",
+	}, "\n")
+	if err := f.db.Model(&model.Task{}).Where("id = ?", task.ID).Updates(map[string]any{
+		"status": model.TaskStatusSucceeded, "stage": "完成",
+		"result_json": `{"mode":"text","text":` + mustJSONString(content) + `}`,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	awaiting, err := f.service.ScriptRunDetail(f.ownerID, f.projectID, run.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision := findScriptStage(t, awaiting, manju.ScriptStageDecisionAnchor)
+	if decision.Status != manju.ScriptStageStatusAwaitingConfirmation ||
+		decision.ArtifactID == "" {
+		t.Fatalf("valid P0B must persist before confirmation: %+v", decision)
+	}
+	var artifact model.ManjuScriptArtifact
+	if err := f.db.First(&artifact, "id = ?", decision.ArtifactID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if artifact.Kind != model.ManjuScriptArtifactEmotionAnchor || artifact.ContentHash == "" {
+		t.Fatalf("P0B artifact identity or hash missing: %+v", artifact)
+	}
+
+	locked, err := f.service.ConfirmScriptStage(
+		f.ownerID, f.projectID, run.Run.ID, manju.ScriptStageDecisionAnchor,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := findScriptStage(t, locked, manju.ScriptStageDecisionAnchor).Status; got != manju.ScriptStageStatusLocked {
+		t.Fatalf("P0B must lock before IP starts: %s", got)
+	}
+	if got := findScriptStage(t, locked, manju.ScriptStageIPDevelopment).Status; got != manju.ScriptStageStatusInProgress {
+		t.Fatalf("IP must start only after P0B lock: %s", got)
 	}
 }
 
@@ -128,6 +332,7 @@ func TestTrendSourceUsesExplicitResolvedRoute(t *testing.T) {
 				t.Fatalf("trend resolution did not persist: %+v", run.Run)
 			}
 			if testCase.expectedBranch == manju.ScriptBranchOriginal {
+				lockP0BForTest(t, f, run.Run.ID)
 				if _, err := f.service.RegisterScriptSource(f.ownerID, f.projectID, run.Run.ID, manju.ScriptSourceInput{
 					Title: "热点方向", Content: "复仇女主在雨夜发现真相。",
 				}); err != nil {
@@ -219,6 +424,7 @@ func TestAdaptationRunRegistersSourceRangeAndPausesStepwise(t *testing.T) {
 	if run.Run.Branch != manju.ScriptBranchAdaptation {
 		t.Fatalf("P0 adaptation 必须推导小说改编支线，得到 %q", run.Run.Branch)
 	}
+	lockP0BForTest(t, f, run.Run.ID)
 
 	const novel = "第一章 雨夜\n林澈推开旧宅的门。"
 	detail, err := f.service.RegisterScriptSource(f.ownerID, f.projectID, run.Run.ID, manju.ScriptSourceInput{
@@ -260,6 +466,50 @@ func findScriptStage(t *testing.T, detail *manju.ScriptRunDetail, key string) ma
 	return manju.ScriptStageView{}
 }
 
+func lockP0BForTest(t *testing.T, f fixture, runID string) *manju.ScriptRunDetail {
+	t.Helper()
+	stage := expectedP0BArtifact()
+	var stored model.ManjuScriptStage
+	if err := f.db.First(&stored, "run_id = ? AND key = ?", runID, manju.ScriptStageDecisionAnchor).Error; err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte(stage))
+	artifact := &model.ManjuScriptArtifact{
+		ID: uuid.NewString(), ProjectID: f.projectID, RunID: runID, StageID: stored.ID,
+		Kind: model.ManjuScriptArtifactEmotionAnchor, Version: 1, Content: stage,
+		ContentHash: hex.EncodeToString(sum[:]), CreatedBy: f.ownerID, CreatedAt: time.Now(),
+	}
+	if err := f.db.Create(artifact).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := f.db.Model(&model.ManjuScriptStage{}).Where("id = ?", stored.ID).Updates(map[string]any{
+		"status": model.ManjuScriptStageStatusAwaitingConfirm, "artifact_id": artifact.ID,
+		"version": 1, "completed_at": now, "error": "",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	detail, err := f.service.ConfirmScriptStage(f.ownerID, f.projectID, runID, manju.ScriptStageDecisionAnchor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return detail
+}
+
+func expectedP0BArtifact() string {
+	return strings.Join([]string{
+		"# P0B 决策锚点",
+		"## 情绪锚点表",
+		"| 场次 | 情绪锚点 | 情境映射 | 核心机位组合 | 权重占比 |",
+		"|---|---|---|---|---|",
+		"| 场1 | 压抑试探 | E05 孤独沉思 | 长焦+大光圈+空旷留白 | 80/15/5 |",
+		"## 构图雷区白名单",
+		"| 雷区 | 允许条件 | 替代方案 | 下游约束 |",
+		"|---|---|---|---|",
+		"| A1 正面居中 | 仪式感 | 侧45度反打 | 镜行不得重复正面居中 |",
+	}, "\n")
+}
+
 func TestStepwiseConfirmationLocksCurrentStageAndStartsNext(t *testing.T) {
 	f := newFixture(t)
 	lock := validLock()
@@ -271,6 +521,7 @@ func TestStepwiseConfirmationLocksCurrentStageAndStartsNext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	lockP0BForTest(t, f, run.Run.ID)
 	if _, err := f.service.RegisterScriptSource(f.ownerID, f.projectID, run.Run.ID, manju.ScriptSourceInput{
 		Title: "雨夜旧宅", AuthorizationScope: "本项目改编授权", RangeLabel: "第 1 章", Content: "林澈推开旧宅的门。",
 	}); err != nil {
@@ -338,6 +589,7 @@ func TestCreateScriptRunAbandonsLegacyActiveRunFromPreviousRevision(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
+	lockP0BForTest(t, f, legacy.Run.ID)
 	if _, err := f.service.RegisterScriptSource(f.ownerID, f.projectID, legacy.Run.ID, manju.ScriptSourceInput{
 		Title: "旧单元", AuthorizationScope: "授权", RangeLabel: "第 1 章", Content: "旧单元正文",
 	}); err != nil {
@@ -380,6 +632,7 @@ func TestConfirmingChangedSourceMarksDownstreamStale(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	lockP0BForTest(t, f, run.Run.ID)
 	if _, err := f.service.RegisterScriptSource(f.ownerID, f.projectID, run.Run.ID, manju.ScriptSourceInput{Title: "旧稿", AuthorizationScope: "授权", RangeLabel: "第 1 章", Content: "旧稿正文"}); err != nil {
 		t.Fatal(err)
 	}
@@ -410,11 +663,17 @@ func TestBenchmarkAndPolishBranchesUseDifferentStageFlows(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if detail.Run.Branch != manju.ScriptBranchBenchmark || detail.Stages[0].Key != manju.ScriptStageReconIntelligence {
-			t.Fatalf("对标支线必须先走情报卡: %+v", detail)
+		if detail.Run.Branch != manju.ScriptBranchBenchmark ||
+			detail.Stages[0].Key != manju.ScriptStageDecisionAnchor ||
+			detail.Stages[1].Key != manju.ScriptStageReconIntelligence {
+			t.Fatalf("对标支线必须先走 P0B，再走情报卡: %+v", detail)
 		}
 		if got := findScriptStage(t, detail, manju.ScriptStageSourceRegistration).Status; got != manju.ScriptStageStatusNotStarted {
 			t.Fatalf("情报卡未确认前来源登记不能启动，得到 %s", got)
+		}
+		locked := lockP0BForTest(t, f, detail.Run.ID)
+		if got := findScriptStage(t, locked, manju.ScriptStageReconIntelligence).Status; got != manju.ScriptStageStatusInProgress {
+			t.Fatalf("P0B 锁定后对标支线才可进入情报卡，得到 %s", got)
 		}
 	})
 
@@ -447,8 +706,15 @@ func TestBenchmarkAndPolishBranchesUseDifferentStageFlows(t *testing.T) {
 		if got := findScriptStage(t, detail, manju.ScriptStageSourceRegistration).Status; got != manju.ScriptStageStatusLocked {
 			t.Fatalf("成型剧本来源登记后必须锁定，得到 %s", got)
 		}
-		if got := findScriptStage(t, detail, manju.ScriptStagePolishDraft).Status; got != manju.ScriptStageStatusInProgress {
-			t.Fatalf("来源锁定后必须进入润色稿阶段，得到 %s", got)
+		if got := findScriptStage(t, detail, manju.ScriptStageDecisionAnchor).Status; got != manju.ScriptStageStatusInProgress {
+			t.Fatalf("成型剧本必须先做 P0B，得到 %s", got)
+		}
+		if got := findScriptStage(t, detail, manju.ScriptStagePolishDraft).Status; got != manju.ScriptStageStatusNotStarted {
+			t.Fatalf("P0B 未锁定时润色稿不得启动，得到 %s", got)
+		}
+		locked := lockP0BForTest(t, f, detail.Run.ID)
+		if got := findScriptStage(t, locked, manju.ScriptStagePolishDraft).Status; got != manju.ScriptStageStatusInProgress {
+			t.Fatalf("P0B 锁定且来源数据完备后必须进入润色稿阶段，得到 %s", got)
 		}
 	})
 }
@@ -570,6 +836,7 @@ func prepareAdaptationGeneration(t *testing.T, f fixture) *manju.ScriptRunDetail
 	if err != nil {
 		t.Fatal(err)
 	}
+	lockP0BForTest(t, f, run.Run.ID)
 	if _, err := f.service.RegisterScriptSource(f.ownerID, f.projectID, run.Run.ID, manju.ScriptSourceInput{
 		Title: "雨夜旧宅", AuthorizationScope: "仅本项目改编", RangeLabel: "第 1 章", Content: "林澈推开旧宅的门。",
 	}); err != nil {
@@ -626,6 +893,7 @@ func TestFullPipelineAutoStartsNextStageAfterSourceRegistration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	lockP0BForTest(t, f, run.Run.ID)
 	detail, err := f.service.RegisterScriptSource(f.ownerID, f.projectID, run.Run.ID, manju.ScriptSourceInput{
 		Title: "雨夜旧宅", AuthorizationScope: "仅本项目改编", RangeLabel: "第 1 章", Content: "林澈推开旧宅的门。",
 	})
@@ -676,6 +944,7 @@ func TestFullPipelineReconciliationAutoStartsFollowingStage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	lockP0BForTest(t, f, run.Run.ID)
 	if _, err := f.service.RegisterScriptSource(f.ownerID, f.projectID, run.Run.ID, manju.ScriptSourceInput{
 		Title: "雨夜旧宅", AuthorizationScope: "仅本项目改编", RangeLabel: "第 1 章", Content: "林澈推开旧宅的门。",
 	}); err != nil {

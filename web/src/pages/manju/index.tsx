@@ -1611,6 +1611,8 @@ export function ScriptPipeline({ detail, onChanged }: { detail: ManjuProjectDeta
         refetchInterval: selectedRun?.status === "ACTIVE" ? 2500 : false,
     });
     const runDetail = runQuery.data?.item;
+    const decisionAnchorStage = runDetail?.stages.find((stage) => stage.key === "decision_anchor");
+    const decisionAnchorLocked = decisionAnchorStage?.status === "LOCKED";
     const p1Loading = runsQuery.isLoading || runQuery.isLoading;
     const applyRun = (item: ManjuScriptRunDetail) => {
         queryClient.setQueryData(["manju", "script-run", detail.project.id, item.run.id], { item });
@@ -1793,11 +1795,32 @@ export function ScriptPipeline({ detail, onChanged }: { detail: ManjuProjectDeta
             ) : (
                 <>
                     <SourceLedger detail={runDetail} />
+                    {decisionAnchorStage ? (
+                        <section className="manju-script-decision-gate" aria-label="P0B 决策锚点">
+                            <header>
+                                <div>
+                                    <span className="manju-kicker">P1 前置门禁</span>
+                                    <h3>P0B 决策锚点</h3>
+                                    <p>情绪锚点表与构图雷区白名单必须先落盘并锁定，之后才开放六阶段编剧链。</p>
+                                </div>
+                                {decisionAnchorLocked ? <ShieldCheck /> : <LockKeyhole />}
+                            </header>
+                            <ScriptStageCard
+                                projectId={detail.project.id}
+                                projectName={detail.project.name}
+                                detail={runDetail}
+                                stage={decisionAnchorStage}
+                                canEdit={canEdit}
+                                decisionAnchorLocked={decisionAnchorLocked}
+                                onUpdated={applyRun}
+                            />
+                        </section>
+                    ) : null}
                     <section className="manju-script-timeline" aria-label="P1 剧本阶段">
                         <header>
                             <div>
-                                <span className="manju-kicker">真实阶段状态</span>
-                                <h3>{runDetail.run.mode === "STEPWISE" ? "逐步确认" : "完整流程"}</h3>
+                                <span className="manju-kicker">P0B 后的六阶段编剧链</span>
+                                <h3>{runDetail.run.mode === "STEPWISE" ? "逐步确认 · 真实阶段状态" : "完整流程 · 真实阶段状态"}</h3>
                             </div>
                             <div className="manju-inline-actions">
                                 {unitPackage ? (
@@ -1812,9 +1835,18 @@ export function ScriptPipeline({ detail, onChanged }: { detail: ManjuProjectDeta
                         </header>
                         <div className="manju-script-stage-stack">
                             {runDetail.stages
-                                .filter((stage) => !(stage.key === "source_registration" && runDetail.source && runDetail.run.sourceDocumentId))
+                                .filter((stage) => stage.key !== "decision_anchor" && !(stage.key === "source_registration" && runDetail.source && runDetail.run.sourceDocumentId))
                                 .map((stage) => (
-                                    <ScriptStageCard key={stage.id} projectId={detail.project.id} projectName={detail.project.name} detail={runDetail} stage={stage} canEdit={canEdit} onUpdated={applyRun} />
+                                    <ScriptStageCard
+                                        key={stage.id}
+                                        projectId={detail.project.id}
+                                        projectName={detail.project.name}
+                                        detail={runDetail}
+                                        stage={stage}
+                                        canEdit={canEdit}
+                                        decisionAnchorLocked={decisionAnchorLocked}
+                                        onUpdated={applyRun}
+                                    />
                                 ))}
                         </div>
                     </section>
@@ -1843,7 +1875,7 @@ function SourceLedger({ detail }: { detail: ManjuScriptRunDetail }) {
     );
 }
 
-function ScriptStageCard({ projectId, projectName, detail, stage, canEdit, onUpdated }: { projectId: string; projectName: string; detail: ManjuScriptRunDetail; stage: ManjuScriptStage; canEdit: boolean; onUpdated: (item: ManjuScriptRunDetail) => void }) {
+function ScriptStageCard({ projectId, projectName, detail, stage, canEdit, decisionAnchorLocked, onUpdated }: { projectId: string; projectName: string; detail: ManjuScriptRunDetail; stage: ManjuScriptStage; canEdit: boolean; decisionAnchorLocked: boolean; onUpdated: (item: ManjuScriptRunDetail) => void }) {
     const artifact = detail.artifacts?.find((item) => item.id === stage.artifactId);
     const [instruction, setInstruction] = useState("");
     const [notice, setNotice] = useState<{ tone: "error" | "success"; text: string } | null>(null);
@@ -1889,9 +1921,10 @@ function ScriptStageCard({ projectId, projectName, detail, stage, canEdit, onUpd
     const isCurrent = detail.run.currentStage === stage.key;
     const runActive = detail.run.status === "ACTIVE";
     const runReadable = runActive || detail.run.status === "COMPLETED";
+    const decisionGateBlocked = stage.key === "ip_development" && !decisionAnchorLocked;
     const canConfirm = canEdit && runActive && ["AWAITING_CONFIRMATION", "AWAITING_USER_DECISION"].includes(stage.status);
     const canRegenerateArtifact = canEdit && runReadable && Boolean(artifact) && !stage.taskId && ["LOCKED", "BLOCKED", "AWAITING_CONFIRMATION", "AWAITING_USER_DECISION"].includes(stage.status);
-    const canRun = canEdit && runActive && isCurrent && ["IN_PROGRESS", "BLOCKED", "STALE"].includes(stage.status) && !canRegenerateArtifact;
+    const canRun = canEdit && runActive && isCurrent && !decisionGateBlocked && ["IN_PROGRESS", "BLOCKED", "STALE"].includes(stage.status) && !canRegenerateArtifact;
     const canManualCorrect = canEdit && stage.status === "BLOCKED" && Boolean(stage.draft?.content);
     const stageSubtitle =
         stage.key === "source_registration" && detail.source
@@ -1956,6 +1989,12 @@ function ScriptStageCard({ projectId, projectName, detail, stage, canEdit, onUpd
                 <div className="manju-script-running">
                     <Spin size="small" />
                     <span>VisiDeep AI 文本任务已提交，积分已按画布计费规则冻结。页面每 2.5 秒读取真实状态。</span>
+                </div>
+            ) : null}
+            {decisionGateBlocked ? (
+                <div className="manju-script-input">
+                    <span>P0B 锁定后才能执行 IP 与角色开发。</span>
+                    <Button disabled icon={<LockKeyhole />}>执行 {stage.title}</Button>
                 </div>
             ) : null}
             {canRun && !stage.taskId ? (

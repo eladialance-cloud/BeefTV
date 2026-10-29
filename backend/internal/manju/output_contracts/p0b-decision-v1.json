@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "rulesVersion": "V7.4.26",
+  "artifactKind": "EMOTION_ANCHOR_TABLE.md",
+  "requiredSections": [
+    "## 情绪锚点表",
+    "## 构图雷区白名单"
+  ],
+  "requiredColumns": {
+    "## 情绪锚点表": ["场次", "情绪锚点", "情境映射", "核心机位组合", "权重占比"],
+    "## 构图雷区白名单": ["雷区", "允许条件", "替代方案", "下游约束"]
+  }
+}

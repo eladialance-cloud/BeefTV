@@ -197,6 +197,31 @@ export type ManjuScriptBranch = "original" | "adaptation" | "benchmark" | "polis
 export type ManjuScriptInputKind = "novel" | "outline" | "finished_script";
 export type ManjuTrendResolution = "" | "original" | "benchmark";
 export type ManjuScriptStageStatus = "NOT_STARTED" | "IN_PROGRESS" | "AWAITING_CONFIRMATION" | "AWAITING_USER_DECISION" | "LOCKED" | "STALE" | "BLOCKED";
+export type ManjuScriptStageKey =
+    | "decision_anchor"
+    | "source_registration"
+    | "recon_intelligence"
+    | "ip_development"
+    | "series_bible"
+    | "episode_planning"
+    | "script_draft"
+    | "roundtable_review"
+    | "polish_draft"
+    | "polish_findings"
+    | "polish_confirmation";
+export type ManjuScriptArtifactKind =
+    | "EMOTION_ANCHOR_TABLE.md"
+    | "SOURCE_MANIFEST.json"
+    | "RECON_INTELLIGENCE_CARD.md"
+    | "IP_DEVELOPMENT.md"
+    | "SERIES_BIBLE.md"
+    | "EPISODE_PLAN.md"
+    | "SCRIPT_DRAFT.md"
+    | "ROUNDTABLE_REVIEW.md"
+    | "POLISHED_SCRIPT.md"
+    | "POLISH_FINDINGS.md"
+    | "POLISH_CONFIRM_CARD.md"
+    | "STAGE_OUTPUT.md";
 
 export type ManjuScriptRun = {
     id: string;
@@ -277,7 +302,7 @@ export type ManjuScriptSource = {
 
 export type ManjuScriptStage = {
     id: string;
-    key: string;
+    key: ManjuScriptStageKey;
     title: string;
     position: number;
     status: ManjuScriptStageStatus;
@@ -307,7 +332,7 @@ export type ManjuStageDraft = {
 export type ManjuScriptArtifact = {
     id: string;
     stageId: string;
-    kind: string;
+    kind: ManjuScriptArtifactKind;
     version: number;
     content: string;
     contentHash: string;

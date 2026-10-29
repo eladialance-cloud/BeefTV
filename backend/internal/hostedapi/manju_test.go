@@ -2,6 +2,8 @@ package hostedapi
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -142,6 +144,49 @@ func confirmedManjuLockKeys(includeSeam bool) []string {
 		keys = append(keys, manjusvc.LockSeamMode)
 	}
 	return keys
+}
+
+func lockP0BThroughAPI(t *testing.T, engine *gin.Engine, db *gorm.DB, runID string) {
+	t.Helper()
+	content := strings.Join([]string{
+		"# P0B 决策锚点",
+		"## 情绪锚点表",
+		"| 场次 | 情绪锚点 | 情境映射 | 核心机位组合 | 权重占比 |",
+		"|---|---|---|---|---|",
+		"| 场1 | 压抑试探 | E05 孤独沉思 | 长焦+大光圈+空旷留白 | 80/15/5 |",
+		"## 构图雷区白名单",
+		"| 雷区 | 允许条件 | 替代方案 | 下游约束 |",
+		"|---|---|---|---|",
+		"| A1 正面居中 | 仪式感 | 侧45度反打 | 镜行不得重复正面居中 |",
+	}, "\n")
+	var stage model.ManjuScriptStage
+	if err := db.First(&stage, "run_id = ? AND key = ?", runID, manjusvc.ScriptStageDecisionAnchor).Error; err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte(content))
+	artifact := &model.ManjuScriptArtifact{
+		ID: "p0b-" + runID[:8], ProjectID: "project-secret", RunID: runID, StageID: stage.ID,
+		Kind: model.ManjuScriptArtifactEmotionAnchor, Version: 1, Content: content,
+		ContentHash: hex.EncodeToString(sum[:]), CreatedBy: testManjuOwnerID, CreatedAt: time.Now(),
+	}
+	if err := db.Create(artifact).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := db.Model(&model.ManjuScriptStage{}).Where("id = ?", stage.ID).Updates(map[string]any{
+		"status": model.ManjuScriptStageStatusAwaitingConfirm, "artifact_id": artifact.ID,
+		"version": 1, "completed_at": now, "error": "",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	confirmed := manjuRequest(
+		t, engine, http.MethodPost,
+		"/api/manju/projects/project-secret/script-runs/"+runID+"/stages/"+manjusvc.ScriptStageDecisionAnchor+"/confirm",
+		nil, "owner",
+	)
+	if confirmed.Code != http.StatusOK {
+		t.Fatalf("confirm persisted P0B artifact: %d %s", confirmed.Code, confirmed.Body.String())
+	}
 }
 
 func TestManjuRoutesRequireSession(t *testing.T) {
@@ -453,8 +498,8 @@ func TestManjuWriterCannotChangeProjectModels(t *testing.T) {
 	}
 }
 
-func TestManjuScriptRoutesCreateRegisterConfirmAndReadRun(t *testing.T) {
-	engine, _ := newManjuHTTPEnv(t)
+func TestManjuP0BDecisionGatesScriptRunCreateRegisterAndRead(t *testing.T) {
+	engine, _, db := newManjuHTTPEnvWithDB(t)
 	lockBody := map[string]any{
 		"track": "domestic", "source": "adaptation", "videoModel": "seedance-2.0",
 		"aspectRatio": "9:16", "deliveryMode": "both", "targetDurationSeconds": 60,
@@ -484,6 +529,19 @@ func TestManjuScriptRoutesCreateRegisterConfirmAndReadRun(t *testing.T) {
 	if runID == "" || createPayload.Data.Item.Run.Branch != manjusvc.ScriptBranchAdaptation {
 		t.Fatalf("P1 必须从 P0 推导小说改编支线: %+v", createPayload.Data.Item)
 	}
+	if len(createPayload.Data.Item.Stages) == 0 ||
+		createPayload.Data.Item.Stages[0].Key != manjusvc.ScriptStageDecisionAnchor {
+		t.Fatalf("P1 first stage must be P0B: %+v", createPayload.Data.Item.Stages)
+	}
+	blockedIP := manjuRequest(
+		t, engine, http.MethodPost,
+		"/api/manju/projects/project-secret/script-runs/"+runID+"/stages/"+manjusvc.ScriptStageIPDevelopment+"/run",
+		map[string]any{}, "owner",
+	)
+	if blockedIP.Code != http.StatusConflict {
+		t.Fatalf("IP stage must stay blocked before P0B: %d %s", blockedIP.Code, blockedIP.Body.String())
+	}
+	lockP0BThroughAPI(t, engine, db, runID)
 
 	sourcePath := "/api/manju/projects/project-secret/script-runs/" + runID + "/source"
 	registered := manjuRequest(t, engine, http.MethodPost, sourcePath, map[string]any{
@@ -516,6 +574,9 @@ func TestManjuScriptRoutesCreateRegisterConfirmAndReadRun(t *testing.T) {
 		t.Fatalf("读取任务必须返回来源账本: %+v", readPayload.Data.Item)
 	}
 	for _, stage := range readPayload.Data.Item.Stages {
+		if stage.Key == manjusvc.ScriptStageDecisionAnchor && stage.Status != manjusvc.ScriptStageStatusLocked {
+			t.Fatalf("P0B artifact must remain locked: %+v", stage)
+		}
 		if stage.Key == manjusvc.ScriptStageSourceRegistration && (stage.Status != manjusvc.ScriptStageStatusLocked || stage.ConfirmedBy != testManjuOwnerID) {
 			t.Fatalf("来源阶段确认状态错误: %+v", stage)
 		}
@@ -628,8 +689,8 @@ func TestManjuAssetRoutesRequireCompletedScript(t *testing.T) {
 	}
 }
 
-func TestManjuStageRunRouteStartsTextTask(t *testing.T) {
-	engine, service := newManjuHTTPEnv(t)
+func TestManjuP0BAllowsStageRunAfterDecisionLock(t *testing.T) {
+	engine, service, db := newManjuHTTPEnvWithDB(t)
 	lockBody := map[string]any{
 		"track": "domestic", "source": "adaptation", "videoModel": "seedance-2.0",
 		"aspectRatio": "9:16", "deliveryMode": "both", "targetDurationSeconds": 15,
@@ -663,6 +724,7 @@ func TestManjuStageRunRouteStartsTextTask(t *testing.T) {
 	}
 	runID := createPayload.Data.Item.Run.ID
 	base := "/api/manju/projects/project-secret/script-runs/" + runID
+	lockP0BThroughAPI(t, engine, db, runID)
 	if recorder := manjuRequest(t, engine, http.MethodPost, base+"/source", map[string]any{
 		"title": "雨夜旧宅", "authorizationScope": "仅本项目改编", "rangeLabel": "第 1 章", "content": "林澈推开旧宅的门。",
 	}, "owner"); recorder.Code != http.StatusOK {

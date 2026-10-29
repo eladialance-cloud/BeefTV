@@ -88,6 +88,7 @@ const (
 	ManjuScriptStageStatusStale            = "STALE"
 	ManjuScriptStageStatusBlocked          = "BLOCKED"
 
+	ManjuScriptStageDecisionAnchor     = "decision_anchor"
 	ManjuScriptStageSourceRegistration = "source_registration"
 	ManjuScriptStageReconIntelligence  = "recon_intelligence"
 	ManjuScriptStageIPDevelopment      = "ip_development"
@@ -99,6 +100,7 @@ const (
 	ManjuScriptStagePolishFindings     = "polish_findings"
 	ManjuScriptStagePolishConfirmation = "polish_confirmation"
 
+	ManjuScriptArtifactEmotionAnchor  = "EMOTION_ANCHOR_TABLE.md"
 	ManjuScriptArtifactSourceManifest = "SOURCE_MANIFEST.json"
 	ManjuScriptArtifactReconCard      = "RECON_INTELLIGENCE_CARD.md"
 	ManjuScriptArtifactStageOutput    = "STAGE_OUTPUT.md"
