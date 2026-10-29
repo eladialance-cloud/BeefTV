@@ -18,10 +18,11 @@ import (
 )
 
 const (
-	ProductionImageStatusQueued  = model.ManjuProductionImageStatusQueued
-	ProductionImageStatusRunning = model.ManjuProductionImageStatusRunning
-	ProductionImageStatusReady   = model.ManjuProductionImageStatusReady
-	ProductionImageStatusFailed  = model.ManjuProductionImageStatusFailed
+	ProductionImageStatusQueued     = model.ManjuProductionImageStatusQueued
+	ProductionImageStatusRunning    = model.ManjuProductionImageStatusRunning
+	ProductionImageStatusReady      = model.ManjuProductionImageStatusReady
+	ProductionImageStatusFailed     = model.ManjuProductionImageStatusFailed
+	ProductionImageStatusSuperseded = model.ManjuProductionImageStatusSuperseded
 )
 
 var storyboardAssetModifierPattern = regexp.MustCompile(`^((?:CHR|SCN|PRP)-[0-9０-９]+)(?:局部|特写|近景|中景|远景|全景|半身|面部|手部|细节|群像)$`)
@@ -36,6 +37,7 @@ const storyboardSheetAspectRatio = "16:9"
 
 type ProductionImageView struct {
 	ID          string    `json:"id"`
+	ArtifactID  string    `json:"artifactId,omitempty"`
 	Position    int       `json:"position"`
 	SegmentCode string    `json:"segmentCode"`
 	ShotLabel   string    `json:"shotLabel,omitempty"`
@@ -250,7 +252,15 @@ func (s *Service) StartProductionStoryboardImages(actorID, projectID, runID stri
 			return nil
 		}
 
-		existing, err := tx.ManjuProductionImages(runID)
+		existing, err := reconcileProductionStoryboardImageLineage(
+			tx,
+			projectID,
+			runID,
+			*stage,
+			required,
+			requirements,
+			nil,
+		)
 		if err != nil {
 			return err
 		}
@@ -266,6 +276,9 @@ func (s *Service) StartProductionStoryboardImages(actorID, projectID, runID stri
 			if image.Position >= nextPosition {
 				nextPosition = image.Position + 1
 			}
+			if image.Status == ProductionImageStatusSuperseded {
+				continue
+			}
 			key := p3SegmentKey(image.SegmentCode)
 			if !eligibleCodes[key] {
 				continue
@@ -276,6 +289,7 @@ func (s *Service) StartProductionStoryboardImages(actorID, projectID, runID stri
 			}
 			image.Attempt++
 			image.Status = ProductionImageStatusQueued
+			image.ArtifactID = stage.ArtifactID
 			image.TaskID = ""
 			image.ResourceID = ""
 			image.URL = ""
@@ -298,7 +312,8 @@ func (s *Service) StartProductionStoryboardImages(actorID, projectID, runID stri
 			prompt := buildStoryboardImagePrompt(segment, providerContext.AssetMode, providerContext.Aspect, providerContext.Style, providerContext.StyleParameters, providerContext.StyleImagePrompt)
 			image := model.ManjuProductionImage{
 				ID: uuid.NewString(), ProjectID: projectID, RunID: runID, StageID: stage.ID,
-				Position: nextPosition, SegmentCode: segment.Code, ShotLabel: storyboardShotLabel(segment),
+				ArtifactID: stage.ArtifactID, Position: nextPosition,
+				SegmentCode: segment.Code, ShotLabel: storyboardShotLabel(segment),
 				Prompt: prompt, Attempt: 1, Status: ProductionImageStatusQueued,
 				CreatedBy: actorID, CreatedAt: now, UpdatedAt: now,
 			}
@@ -530,11 +545,11 @@ func parseStoryboardImageSegments(content string) ([]storyboardImageSegment, err
 				}
 			}
 			if strings.TrimSpace(code) == "" {
-				continue
+				return nil, ErrStoryboardImageInvalid
 			}
 			key := normalizeStoryboardSegmentCode(code)
 			if key == "" {
-				continue
+				return nil, ErrStoryboardImageInvalid
 			}
 			position, exists := byCode[key]
 			if !exists {
@@ -727,6 +742,112 @@ func fallbackValue(value, fallback string) string {
 	return strings.TrimSpace(value)
 }
 
+func reconcileProductionStoryboardImageLineage(
+	tx *repository.Repository,
+	projectID, runID string,
+	stage model.ManjuProductionStage,
+	required map[string]p3RequiredSegment,
+	requirements map[string]p3DeliveryRequirement,
+	canvasImages []model.ManjuProductionImage,
+) ([]model.ManjuProductionImage, error) {
+	images, err := tx.ManjuProductionImages(runID)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	nextPosition := 1
+	for index := range images {
+		image := &images[index]
+		if image.Position >= nextPosition {
+			nextPosition = image.Position + 1
+		}
+		if image.Status == ProductionImageStatusSuperseded {
+			continue
+		}
+		key := p3SegmentKey(image.SegmentCode)
+		requirement := requirements[key]
+		staleReason := ""
+		switch {
+		case key == "" || required[key].Key == "":
+			staleReason = "segment is no longer present in current P3"
+		case requirement.Exempt:
+			staleReason = "segment is exempt in current P3"
+		case strings.TrimSpace(image.ArtifactID) == "":
+			if stage.Version > 1 {
+				staleReason = "legacy image has no current P3 artifact lineage"
+			} else {
+				image.ArtifactID = stage.ArtifactID
+				image.UpdatedAt = now
+				if err := tx.SaveManjuProductionImage(image); err != nil {
+					return nil, err
+				}
+			}
+		case image.ArtifactID != stage.ArtifactID:
+			staleReason = "P3 artifact lineage changed"
+		}
+		if staleReason == "" {
+			continue
+		}
+		image.Status = ProductionImageStatusSuperseded
+		image.Error = "SUPERSEDED: " + staleReason
+		image.UpdatedAt = now
+		if err := tx.SaveManjuProductionImage(image); err != nil {
+			return nil, err
+		}
+	}
+
+	for _, fresh := range canvasImages {
+		key := p3SegmentKey(fresh.SegmentCode)
+		segment, exists := required[key]
+		if !exists || requirements[key].Exempt || stage.ArtifactID == "" {
+			return nil, ErrStoryboardImageInvalid
+		}
+		exactMatch := -1
+		for index := range images {
+			image := &images[index]
+			if image.Status == ProductionImageStatusSuperseded ||
+				p3SegmentKey(image.SegmentCode) != key ||
+				image.ArtifactID != stage.ArtifactID {
+				continue
+			}
+			if exactMatch < 0 &&
+				image.Status == ProductionImageStatusReady &&
+				image.ResourceID == fresh.ResourceID &&
+				image.TaskID == fresh.TaskID &&
+				image.CreatedBy == fresh.CreatedBy {
+				exactMatch = index
+				continue
+			}
+			image.Status = ProductionImageStatusSuperseded
+			image.Error = "SUPERSEDED: replaced by current canvas task/resource"
+			image.UpdatedAt = now
+			if err := tx.SaveManjuProductionImage(image); err != nil {
+				return nil, err
+			}
+		}
+		if exactMatch >= 0 {
+			continue
+		}
+		image := model.ManjuProductionImage{
+			ID: uuid.NewString(), ProjectID: projectID, RunID: runID, StageID: stage.ID,
+			ArtifactID: stage.ArtifactID, Position: nextPosition,
+			SegmentCode: segment.Code, ShotLabel: "canvas",
+			Prompt: fresh.Prompt, Attempt: 1, Status: ProductionImageStatusReady,
+			TaskID: fresh.TaskID, ResourceID: fresh.ResourceID, URL: fresh.URL,
+			CreatedBy: fresh.CreatedBy, CreatedAt: now, UpdatedAt: now,
+		}
+		if strings.TrimSpace(image.CreatedBy) == "" {
+			return nil, ErrStoryboardImageInvalid
+		}
+		if err := tx.CreateManjuProductionImages([]model.ManjuProductionImage{image}); err != nil {
+			return nil, err
+		}
+		nextPosition++
+		images = append(images, image)
+	}
+	return images, nil
+}
+
 func reconcileProductionStoryboardImages(tx *repository.Repository, runID string) error {
 	images, err := tx.ManjuProductionImages(runID)
 	if err != nil {
@@ -734,6 +855,9 @@ func reconcileProductionStoryboardImages(tx *repository.Repository, runID string
 	}
 	for index := range images {
 		image := &images[index]
+		if image.Status == ProductionImageStatusSuperseded {
+			continue
+		}
 		if image.Status == ProductionImageStatusReady || image.Status == ProductionImageStatusFailed || strings.TrimSpace(image.TaskID) == "" {
 			continue
 		}
@@ -861,9 +985,14 @@ func storyboardImagesReady(tx *repository.Repository, runID string) error {
 		return err
 	}
 	if len(images) == 0 {
-		return ErrStoryboardImagesNotReady
+		return nil
 	}
+	active := 0
 	for _, image := range images {
+		if image.Status == ProductionImageStatusSuperseded {
+			continue
+		}
+		active++
 		if image.Status != ProductionImageStatusReady || strings.TrimSpace(image.ResourceID) == "" {
 			return ErrStoryboardImagesNotReady
 		}
@@ -875,12 +1004,16 @@ func storyboardImagesReady(tx *repository.Repository, runID string) error {
 			return err
 		}
 	}
+	if active == 0 {
+		return nil
+	}
 	return nil
 }
 
 func productionImageView(image model.ManjuProductionImage) ProductionImageView {
 	return ProductionImageView{
-		ID: image.ID, Position: image.Position, SegmentCode: image.SegmentCode, ShotLabel: image.ShotLabel,
+		ID: image.ID, ArtifactID: image.ArtifactID, Position: image.Position,
+		SegmentCode: image.SegmentCode, ShotLabel: image.ShotLabel,
 		Attempt: image.Attempt, Status: image.Status, TaskID: image.TaskID, ResourceID: image.ResourceID,
 		URL: image.URL, Error: image.Error, CreatedAt: image.CreatedAt, UpdatedAt: image.UpdatedAt,
 	}

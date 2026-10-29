@@ -59,15 +59,16 @@ const (
 	ManjuProductionPrevisStatusReady   = "READY"
 	ManjuProductionPrevisStatusFailed  = "FAILED"
 
-	ManjuProductionVideoStatusQueued  = "QUEUED"
-	ManjuProductionVideoStatusRunning = "RUNNING"
-	ManjuProductionVideoStatusReady   = "READY"
-	ManjuProductionVideoStatusFailed  = "FAILED"
-	ManjuProductionImageStatusQueued  = "QUEUED"
-	ManjuProductionImageStatusRunning = "RUNNING"
-	ManjuProductionImageStatusReady   = "READY"
-	ManjuProductionImageStatusFailed  = "FAILED"
-	ManjuScriptModeFullPipeline       = "FULL_SCRIPT_PIPELINE"
+	ManjuProductionVideoStatusQueued     = "QUEUED"
+	ManjuProductionVideoStatusRunning    = "RUNNING"
+	ManjuProductionVideoStatusReady      = "READY"
+	ManjuProductionVideoStatusFailed     = "FAILED"
+	ManjuProductionImageStatusQueued     = "QUEUED"
+	ManjuProductionImageStatusRunning    = "RUNNING"
+	ManjuProductionImageStatusReady      = "READY"
+	ManjuProductionImageStatusFailed     = "FAILED"
+	ManjuProductionImageStatusSuperseded = "SUPERSEDED"
+	ManjuScriptModeFullPipeline          = "FULL_SCRIPT_PIPELINE"
 
 	ManjuCanvasStageP2Assets = "p2_assets"
 	ManjuCanvasStageP3Images = "p3_images"
@@ -619,6 +620,7 @@ type ManjuProductionImage struct {
 	ProjectID   string    `json:"projectId" gorm:"size:36;index"`
 	RunID       string    `json:"runId" gorm:"size:36;index;uniqueIndex:idx_manju_production_image_position,priority:1"`
 	StageID     string    `json:"stageId" gorm:"size:36;index"`
+	ArtifactID  string    `json:"artifactId,omitempty" gorm:"size:36;index"`
 	Position    int       `json:"position" gorm:"uniqueIndex:idx_manju_production_image_position,priority:2"`
 	SegmentCode string    `json:"segmentCode" gorm:"size:48;index"`
 	ShotLabel   string    `json:"shotLabel" gorm:"size:80"`

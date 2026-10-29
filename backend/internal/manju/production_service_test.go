@@ -1767,6 +1767,155 @@ func TestP3ConfirmRevalidatesStoryboardImageResource(t *testing.T) {
 	}
 }
 
+func TestP3CanvasWorkflowMaterializesReadyStoryboardImagesForConfirmation(t *testing.T) {
+	f := newFixture(t)
+	assetRunID := prepareCompletedProductionAsset(t, f, "M1")
+	run, err := f.service.CreateProductionRun(f.ownerID, f.projectID, manju.ProductionRunInput{AssetRunID: assetRunID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockProductionP0BForTest(t, f, run.Run.ID)
+	p3Task := &model.Task{ID: "p3-canvas-workflow-text", UserID: f.ownerID, ProjectID: f.projectID, Type: "canvas_text", Status: model.TaskStatusQueued}
+	if err := f.db.Create(p3Task).Error; err != nil {
+		t.Fatal(err)
+	}
+	f.service.SetScriptTaskCreator((&sequentialScriptTaskCreator{tasks: []*model.Task{p3Task}}).create)
+	if _, err := f.service.RunProductionStage(f.ownerID, f.projectID, run.Run.ID, manju.ProductionStageStoryboard, manju.ProductionStageRunInput{}); err != nil {
+		t.Fatal(err)
+	}
+	succeedManjuTask(t, f, p3Task.ID, validStoryboardArtifactRequiringImage())
+	if _, err := f.service.ProductionRunDetail(f.ownerID, f.projectID, run.Run.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	pkg, err := f.service.CanvasPackage(f.ownerID, f.projectID, manju.CanvasPackageStageP3Images, run.Run.ID)
+	if err != nil {
+		t.Fatalf("CanvasPackage failed after P3 reconciliation: %v", err)
+	}
+	nodes := make([]map[string]any, 0, len(pkg.Tasks))
+	var storyboardTask manju.CanvasPackageTask
+	var storyboardResourceID string
+	for _, task := range pkg.Tasks {
+		resourceID := "canvas-workflow-resource-" + task.ID
+		if task.Group == "storyboard" {
+			storyboardTask = task
+			storyboardResourceID = resourceID
+		}
+		if err := f.db.Create(&model.Resource{
+			ID: resourceID, UserID: f.ownerID, Kind: task.Kind, Status: model.ResourceStatusReady,
+			MimeType: "image/png", PublicURL: "/api/resources/" + resourceID + "/file",
+			CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
+		nodes = append(nodes, map[string]any{
+			"id":    "canvas-workflow-node-" + task.ID,
+			"type":  task.Kind,
+			"title": task.Title,
+			"metadata": map[string]any{
+				"manjuStage":  manju.CanvasPackageStageP3Images,
+				"manjuTaskId": task.ID,
+				"storageKey":  "resource:" + resourceID,
+			},
+		})
+	}
+	if storyboardTask.ID == "" {
+		t.Fatal("P3 canvas package must contain a storyboard task")
+	}
+	payload, err := json.Marshal(map[string]any{"nodes": nodes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	canvas := &model.CanvasProject{
+		ID: "canvas-p3-workflow", UserID: f.ownerID, ProjectID: f.projectID,
+		Title: "P3 线上画布工作流", PayloadJSON: string(payload), Revision: 1,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := f.db.Create(canvas).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.SaveCanvasImport(f.ownerID, f.projectID, manju.CanvasImportInput{
+		Stage: manju.CanvasPackageStageP3Images, ProductionRunID: run.Run.ID,
+		CanvasID: canvas.ID, PackageHash: pkg.Hash,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := f.service.ProductionRunDetail(f.ownerID, f.projectID, run.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before.Images) != 0 {
+		t.Fatalf("test must begin without hidden production image rows: %+v", before.Images)
+	}
+
+	confirmed, err := f.service.ConfirmProductionStage(f.ownerID, f.projectID, run.Run.ID, manju.ProductionStageStoryboard, manju.ProductionConfirmInput{})
+	if err != nil {
+		t.Fatalf("a completed canvas workflow must satisfy P3 confirmation: %v", err)
+	}
+	storyboardStage := findProductionStage(t, confirmed, manju.ProductionStageStoryboard)
+	if storyboardStage.Status != model.ManjuProductionStageStatusLocked {
+		t.Fatalf("P3 must lock from the canvas workflow: %+v", confirmed.Stages)
+	}
+	if len(confirmed.Images) != 1 {
+		t.Fatalf("canvas workflow must materialize one storyboard production image: %+v", confirmed.Images)
+	}
+	image := confirmed.Images[0]
+	if image.SegmentCode != storyboardTask.Code || image.Status != manju.ProductionImageStatusReady ||
+		image.ResourceID != storyboardResourceID || image.TaskID != storyboardTask.ID ||
+		image.ArtifactID != storyboardStage.ArtifactID {
+		t.Fatalf("materialized canvas image lost task/resource lineage: %+v", image)
+	}
+}
+
+func TestP3RegenerationSupersedesStaleStoryboardImagesWithoutDeletingMedia(t *testing.T) {
+	f, runID, oldResourceID := prepareReadyP3ImageForResourceRecheck(t)
+	detail, err := f.service.ProductionRunDetail(f.ownerID, f.projectID, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldImage := detail.Images[0]
+
+	newTask := &model.Task{
+		ID: "p3-regenerated-exempt-task", UserID: f.ownerID, ProjectID: f.projectID,
+		Type: "canvas_text", Status: model.TaskStatusQueued,
+	}
+	if err := f.db.Create(newTask).Error; err != nil {
+		t.Fatal(err)
+	}
+	f.service.SetScriptTaskCreator((&sequentialScriptTaskCreator{tasks: []*model.Task{newTask}}).create)
+	if _, err := f.service.RegenerateProductionArtifact(
+		f.ownerID, f.projectID, runID, manju.ProductionStageStoryboard,
+		manju.ProductionStageRunInput{Instruction: "改为单镜过场豁免"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	succeedManjuTask(t, f, newTask.ID, validStoryboardArtifact())
+
+	confirmed, err := f.service.ConfirmProductionStage(
+		f.ownerID, f.projectID, runID, manju.ProductionStageStoryboard,
+		manju.ProductionConfirmInput{},
+	)
+	if err != nil {
+		t.Fatalf("regenerated P3 exemption must not deadlock on stale image rows: %v", err)
+	}
+	if findProductionStage(t, confirmed, manju.ProductionStageStoryboard).Status != model.ManjuProductionStageStatusLocked {
+		t.Fatalf("P3 must lock after stale image supersession: %+v", confirmed.Stages)
+	}
+	if len(confirmed.Images) != 1 || confirmed.Images[0].Status != "SUPERSEDED" {
+		t.Fatalf("stale image row must be superseded, not deleted: %+v", confirmed.Images)
+	}
+	if confirmed.Images[0].ID != oldImage.ID || confirmed.Images[0].ResourceID != oldResourceID {
+		t.Fatalf("supersession must preserve image history and media lineage: before=%+v after=%+v", oldImage, confirmed.Images[0])
+	}
+	var resourceCount int64
+	if err := f.db.Model(&model.Resource{}).Where("id = ?", oldResourceID).Count(&resourceCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resourceCount != 1 {
+		t.Fatalf("supersession must not delete the historical resource: %s", oldResourceID)
+	}
+}
+
 func succeedStoryboardImageTask(t *testing.T, f fixture, taskID, resourceID string) {
 	t.Helper()
 	if err := f.db.Model(&model.Task{}).Where("id = ?", taskID).Updates(map[string]any{

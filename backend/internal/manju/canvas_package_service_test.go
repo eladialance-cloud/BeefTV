@@ -3,7 +3,6 @@ package manju_test
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"infinite-canvas/backend/internal/manju"
 	"infinite-canvas/backend/internal/model"
@@ -255,82 +254,5 @@ func TestP3CanvasPackageResolvesOnlyCurrentSegmentStoryboardFigures(t *testing.T
 	if strings.Contains(taskByCode["段1"].Prompt, "PRP-竹简") ||
 		strings.Contains(taskByCode["段2"].Prompt, "CHR-林澈") {
 		t.Fatalf("故事板提示词不得混入其他段落的全部资产: 段1=%s\n段2=%s", taskByCode["段1"].Prompt, taskByCode["段2"].Prompt)
-	}
-}
-
-func TestCanvasImportReadinessDoesNotGateP3TextStoryboard(t *testing.T) {
-	f := newFixture(t)
-	assetRunID := prepareCompletedProductionAsset(t, f, "M1")
-	run, err := f.service.CreateProductionRun(f.ownerID, f.projectID, manju.ProductionRunInput{AssetRunID: assetRunID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	lockProductionP0BForTest(t, f, run.Run.ID)
-	task := &model.Task{ID: "canvas-package-p3-text", UserID: f.ownerID, ProjectID: f.projectID, Type: "canvas_text", Status: model.TaskStatusQueued}
-	if err := f.db.Create(task).Error; err != nil {
-		t.Fatal(err)
-	}
-	creator := &sequentialScriptTaskCreator{tasks: []*model.Task{task}}
-	f.service.SetScriptTaskCreator(creator.create)
-	if _, err := f.service.RunProductionStage(f.ownerID, f.projectID, run.Run.ID, manju.ProductionStageStoryboard, manju.ProductionStageRunInput{}); err != nil {
-		t.Fatal(err)
-	}
-	succeedManjuTask(t, f, task.ID, validStoryboardArtifactRequiringImage())
-	storyboardStage := findProductionStage(t, run, manju.ProductionStageStoryboard)
-	readyImage := &model.ManjuProductionImage{
-		ID: "canvas-package-ready-storyboard", ProjectID: f.projectID, RunID: run.Run.ID, StageID: storyboardStage.ID,
-		Position: 1, SegmentCode: "段1", Status: manju.ProductionImageStatusReady,
-		ResourceID: "canvas-package-ready-storyboard-resource", CreatedBy: f.ownerID,
-		CreatedAt: time.Now(), UpdatedAt: time.Now(),
-	}
-	if err := f.db.Create(readyImage).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := f.db.Create(&model.Resource{
-		ID: readyImage.ResourceID, UserID: f.ownerID, Kind: "image", Status: model.ResourceStatusReady,
-		MimeType: "image/png", PublicURL: "/api/resources/" + readyImage.ResourceID + "/file",
-		CreatedAt: time.Now(), UpdatedAt: time.Now(),
-	}).Error; err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.service.ProductionRunDetail(f.ownerID, f.projectID, run.Run.ID); err != nil {
-		t.Fatal(err)
-	}
-
-	pkg, err := f.service.CanvasPackage(f.ownerID, f.projectID, manju.CanvasPackageStageP3Images, run.Run.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(pkg.Tasks) < 2 {
-		t.Fatalf("P3 生产包必须同时包含故事板图与剧情分镜格任务: %+v", pkg.Tasks)
-	}
-	if pkg.Tasks[0].Kind != "image" || pkg.Tasks[0].Prompt == "" {
-		t.Fatalf("P3 任务必须是可直接执行的图片任务: %+v", pkg.Tasks[0])
-	}
-	if strings.Contains(pkg.Tasks[0].Prompt, "【STYLE｜视觉风格 · 全片锁死】") {
-		t.Fatalf("P3 任务提示词不应重复携带全局风格，风格由画布文本节点统一注入: %s", pkg.Tasks[0].Prompt)
-	}
-
-	canvas := &model.CanvasProject{
-		ID: "canvas-p3-package", UserID: f.ownerID, ProjectID: f.projectID,
-		Title: "P3 画布生产包", PayloadJSON: `{"nodes":[]}`, Revision: 1,
-		CreatedAt: time.Now(), UpdatedAt: time.Now(),
-	}
-	if err := f.db.Create(canvas).Error; err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.service.SaveCanvasImport(f.ownerID, f.projectID, manju.CanvasImportInput{
-		Stage: manju.CanvasPackageStageP3Images, ProductionRunID: run.Run.ID,
-		CanvasID: canvas.ID, PackageHash: pkg.Hash,
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	confirmed, err := f.service.ConfirmProductionStage(f.ownerID, f.projectID, run.Run.ID, manju.ProductionStageStoryboard, manju.ProductionConfirmInput{})
-	if err != nil {
-		t.Fatalf("故事板图片只是可选参考，未生成时仍应允许锁定 P3: %v", err)
-	}
-	if findProductionStage(t, confirmed, manju.ProductionStageStoryboard).Status != model.ManjuProductionStageStatusLocked {
-		t.Fatalf("P3 应按文字故事板锁定: %+v", confirmed.Stages)
 	}
 }

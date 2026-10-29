@@ -595,6 +595,7 @@ func (s *Service) RegenerateProductionStage(actorID, projectID, runID, stageKey 
 					ProjectID:   projectID,
 					RunID:       newRun.ID,
 					StageID:     newStages[storyboardNewIndex].ID,
+					ArtifactID:  artifact.ID,
 					Position:    image.Position,
 					SegmentCode: image.SegmentCode,
 					ShotLabel:   image.ShotLabel,
@@ -1714,9 +1715,12 @@ func (s *Service) ConfirmProductionStage(actorID, projectID, runID, stageKey str
 	}
 	canvasVerifiedThrough, err := s.verifyProductionCanvasImport(projectID, runID, stageKey)
 	if err != nil {
-		if stageKey == ProductionStageStoryboard && errors.Is(err, ErrCanvasImportNotReady) {
-			canvasVerifiedThrough = ""
-		} else {
+		return nil, err
+	}
+	var canvasStoryboardImages []model.ManjuProductionImage
+	if stageKey == ProductionStageStoryboard && canvasVerifiedThrough == CanvasPackageStageP3Images {
+		canvasStoryboardImages, err = s.p3CanvasStoryboardImages(projectID, runID)
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -1774,10 +1778,6 @@ func (s *Service) ConfirmProductionStage(actorID, projectID, runID, stageKey str
 			}
 		}
 		if stageKey == ProductionStageStoryboard {
-			images, err := tx.ManjuProductionImages(runID)
-			if err != nil {
-				return err
-			}
 			candidateStateJSON, err := previewManjuProjectStatePatch(
 				tx,
 				projectID,
@@ -1799,6 +1799,29 @@ func (s *Service) ConfirmProductionStage(actorID, projectID, runID, stageKey str
 					"P3_REGENERATION_REQUIRED: 当前 P3 项目状态无法读取，请只重新生成 P3；历史工件和媒体已保留: %w",
 					err,
 				)
+			}
+			required, err := p3RequiredSegments(state)
+			if err != nil {
+				return err
+			}
+			if err := validateP3StoryboardTable(content, required); err != nil {
+				return err
+			}
+			requirements, err := p3DeliveryRequirements(content, required)
+			if err != nil {
+				return err
+			}
+			images, err := reconcileProductionStoryboardImageLineage(
+				tx,
+				projectID,
+				runID,
+				*stage,
+				required,
+				requirements,
+				canvasStoryboardImages,
+			)
+			if err != nil {
+				return err
 			}
 			if err := validateP3Delivery(content, state, images); err != nil {
 				return fmt.Errorf(

@@ -399,7 +399,7 @@ func (s *Service) verifyProductionCanvasImport(projectID, runID, stageKey string
 	if err != nil {
 		return "", err
 	}
-	resources, err := canvasImportResources(canvas.PayloadJSON, pkg.Tasks)
+	resources, err := canvasImportResources(canvas.PayloadJSON, pkg.Tasks, packageStage)
 	if err != nil {
 		return "", err
 	}
@@ -416,6 +416,55 @@ func (s *Service) verifyProductionCanvasImport(projectID, runID, stageKey string
 		}
 	}
 	return packageStage, nil
+}
+
+func (s *Service) p3CanvasStoryboardImages(projectID, runID string) ([]model.ManjuProductionImage, error) {
+	item, err := s.repo.ManjuCanvasImportForRun(projectID, CanvasPackageStageP3Images, runID)
+	if err != nil || item == nil {
+		return nil, err
+	}
+	pkg, err := s.CanvasPackage(item.CreatedBy, projectID, CanvasPackageStageP3Images, runID)
+	if err != nil {
+		return nil, err
+	}
+	if item.PackageHash != pkg.Hash {
+		return nil, ErrCanvasImportStale
+	}
+	canvas, err := s.repo.CanvasProjectForUser(item.CreatedBy, item.CanvasID)
+	if errors.Is(err, gorm.ErrRecordNotFound) || canvas == nil {
+		return nil, ErrCanvasImportNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	resources, err := canvasImportResources(canvas.PayloadJSON, pkg.Tasks, CanvasPackageStageP3Images)
+	if err != nil {
+		return nil, err
+	}
+	images := make([]model.ManjuProductionImage, 0, len(pkg.Tasks))
+	position := 1
+	for index, task := range pkg.Tasks {
+		resource := resources[index]
+		live, err := s.repo.ResourceForUser(item.CreatedBy, resource.ID)
+		if errors.Is(err, gorm.ErrRecordNotFound) || live == nil ||
+			live.Kind != resource.Kind || live.Status != model.ResourceStatusReady {
+			return nil, ErrCanvasImportNotReady
+		}
+		if err != nil {
+			return nil, err
+		}
+		if task.Group != "storyboard" {
+			continue
+		}
+		images = append(images, model.ManjuProductionImage{
+			ProjectID: projectID, RunID: runID, Position: position,
+			SegmentCode: task.Code, ShotLabel: "canvas", Prompt: task.Prompt,
+			Status: ProductionImageStatusReady, TaskID: task.ID, ResourceID: resource.ID,
+			CreatedBy: item.CreatedBy,
+		})
+		position++
+	}
+	return images, nil
 }
 
 func (s *Service) p2CanvasPackage(projectID, runID string, snapshot LockSnapshot) (*CanvasPackage, error) {
@@ -478,7 +527,7 @@ func (s *Service) p3CanvasPackage(projectID, runID string, snapshot LockSnapshot
 		return nil, err
 	}
 	if stage == nil || strings.TrimSpace(stage.ArtifactID) == "" {
-		return nil, ErrCanvasPackageUnready
+		return nil, fmt.Errorf("%w: P3 stage is missing an artifact for run %s", ErrCanvasPackageUnready, runID)
 	}
 	artifact, err := productionArtifactContent(s.repo, runID, stage.ArtifactID)
 	if err != nil {
@@ -552,7 +601,12 @@ func (s *Service) p3CanvasPackage(projectID, runID string, snapshot LockSnapshot
 		})
 	}
 	if len(tasks) == 0 && len(exemptions) == 0 {
-		return nil, ErrCanvasPackageUnready
+		return nil, fmt.Errorf(
+			"%w: P3 交付清单未产生画布任务或合法豁免 (segments=%d requirements=%d)",
+			ErrCanvasPackageUnready,
+			len(segments),
+			len(requirements),
+		)
 	}
 	return &CanvasPackage{
 		Version: 1, ProjectID: projectID, Stage: CanvasPackageStageP3Images, ProductionRunID: runID,
@@ -1377,7 +1431,7 @@ type canvasImportedResource struct {
 	Kind string
 }
 
-func canvasImportResources(payload string, tasks []CanvasPackageTask) ([]canvasImportedResource, error) {
+func canvasImportResources(payload string, tasks []CanvasPackageTask, stage string) ([]canvasImportedResource, error) {
 	var document canvasPayload
 	if err := json.Unmarshal([]byte(payload), &document); err != nil {
 		return nil, ErrCanvasImportNotReady
@@ -1387,8 +1441,9 @@ func canvasImportResources(payload string, tasks []CanvasPackageTask) ([]canvasI
 		nodeType string
 	})
 	for _, node := range document.Nodes {
+		nodeStage, _ := node.Metadata["manjuStage"].(string)
 		taskID, _ := node.Metadata["manjuTaskId"].(string)
-		if strings.TrimSpace(taskID) == "" || (node.Type != "image" && node.Type != "video") {
+		if nodeStage != stage || strings.TrimSpace(taskID) == "" || (node.Type != "image" && node.Type != "video") {
 			continue
 		}
 		byTask[taskID] = struct {

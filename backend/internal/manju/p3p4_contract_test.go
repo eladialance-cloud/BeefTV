@@ -137,6 +137,12 @@ func TestP3RejectsInvalidStoryboardExemptionForms(t *testing.T) {
 		{name: "empty 理由 label", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由："},
 		{name: "empty 单镜过场 label", storyboardCell: "⛔豁免（单镜过场段）", reason: "单镜过场："},
 		{name: "placeholder reason", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：无"},
+		{name: "pending reason", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：待补"},
+		{name: "tbd reason", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：TBD"},
+		{name: "todo reason", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：todo"},
+		{name: "ellipsis reason", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：略"},
+		{name: "same as above reason", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：同上"},
+		{name: "punctuation reason", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：..."},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -158,6 +164,38 @@ func TestP3RejectsInvalidStoryboardExemptionForms(t *testing.T) {
 	if err := validateP3Delivery(content, state, nil); err != nil {
 		t.Fatalf("exact token with a substantive reason must pass: %v", err)
 	}
+}
+
+func TestP3StoryboardShotCountMustMatchArtifactTruth(t *testing.T) {
+	t.Run("artifact has more shots than state", func(t *testing.T) {
+		state := p3StateWithShotCountsForTest(t, map[string]int{"段1": 2})
+		content := validP3ArtifactForStateWithExemptions(t, state, map[string]string{
+			"段1": "理由：单镜过场，动作相位已完整列入分镜总表。",
+		})
+		segment := anyMap(anySlice(state["segments"])[0])
+		segment["shots"] = anySlice(segment["shots"])[:1]
+
+		if err := validateP3Delivery(content, state, nil); err == nil {
+			t.Fatal("artifact shot count 2 must not pass against project_state shot count 1")
+		}
+	})
+
+	t.Run("state has more shots than artifact", func(t *testing.T) {
+		state := p3StateWithShotCountsForTest(t, map[string]int{"段1": 1})
+		content := validP3ArtifactForStateWithExemptions(t, state, map[string]string{
+			"段1": "理由：单镜过场，动作相位已完整列入分镜总表。",
+		})
+		segment := anyMap(anySlice(state["segments"])[0])
+		shots := anySlice(segment["shots"])
+		segment["shots"] = append(shots, map[string]any{
+			"no": 2, "start": 1, "end": 2, "spec": "近景 · 35mm · 侧面 · 固定",
+			"action": "林澈回头", "sound": "雨声", "dialogue": "无",
+		})
+
+		if err := validateP3Delivery(content, state, nil); err == nil {
+			t.Fatal("project_state shot count 2 must not pass against artifact shot count 1")
+		}
+	})
 }
 
 func TestP3RequiredSectionsMustBeFullMarkdownHeadings(t *testing.T) {

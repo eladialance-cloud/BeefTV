@@ -312,6 +312,15 @@ func validateP3StoryboardTable(
 		if artifactRequired[segment.Key].Key == "" {
 			return fmt.Errorf("%w: 故事板表缺少 %s", ErrP3StoryboardContract, segment.Code)
 		}
+		if artifactRequired[segment.Key].ShotCount != segment.ShotCount {
+			return fmt.Errorf(
+				"%w: %s 的 project_state 镜头数 %d 与分镜总表镜头数 %d 不一致",
+				ErrP3StoryboardContract,
+				segment.Code,
+				segment.ShotCount,
+				artifactRequired[segment.Key].ShotCount,
+			)
+		}
 	}
 	for _, segment := range sortedP3RequiredSegments(artifactRequired) {
 		if required[segment.Key].Key == "" {
@@ -574,11 +583,15 @@ func p3ExemptionReasonPlaceholder(value string) bool {
 	compact := strings.NewReplacer(" ", "", "\t", "", "\r", "", "\n", "").Replace(strings.ToLower(value))
 	compact = strings.Trim(compact, "（）()：:，,。.;；-—_/\\")
 	switch compact {
-	case "", "理由", "单镜过场", "单镜过场段", "无", "暂无", "略", "同上", "按需", "不适用", "n/a", "na":
+	case "", "理由", "单镜过场", "单镜过场段", "无", "无豁免", "暂无", "略", "同上", "按需", "不适用", "待补", "待补充", "待定", "tbd", "todo", "n/a", "na":
 		return true
-	default:
-		return false
 	}
+	for _, token := range []string{"待补", "待定", "待完善", "未完成", "占位", "tbd", "todo"} {
+		if strings.Contains(compact, token) {
+			return true
+		}
+	}
+	return false
 }
 
 func validateP3StoryboardAssets(
@@ -591,6 +604,9 @@ func validateP3StoryboardAssets(
 	}
 	imageBySegment := make(map[string]model.ManjuProductionImage, len(images))
 	for _, image := range images {
+		if image.Status == ProductionImageStatusSuperseded {
+			continue
+		}
 		key := p3SegmentKey(image.SegmentCode)
 		if key == "" || required[key].Key == "" {
 			return fmt.Errorf("%w: 故事板图片出现未知段号 %q", ErrP3StoryboardContract, image.SegmentCode)

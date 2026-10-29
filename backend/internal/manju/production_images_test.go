@@ -257,6 +257,19 @@ func TestParseStoryboardImageSegmentsRejectsImplicitSequentialCode(t *testing.T)
 	}
 }
 
+func TestParseStoryboardImageSegmentsRejectsMalformedRowEvenWhenOtherRowsAreValid(t *testing.T) {
+	content := `## 故事板表
+### 第1段｜停步
+| 段号 | 面板ID | 动作相位 | 镜头信息 | 站位与视线 | 资产引用 |
+|---|---|---|---|---|---|
+| 段1 | 段1-P1 | 起始 | 中景 | 林澈停步 | CHR-林澈 |
+| 段1-extra | 段1-extra-P1 | 出口 | 中景 | 林澈回头 | CHR-林澈 |
+`
+	if _, err := parseStoryboardImageSegments(content); err == nil {
+		t.Fatal("an invalid segment row must fail the entire storyboard table")
+	}
+}
+
 func TestStoryboardCanvasReferenceCodesUsesOnlyExplicitStoryboardFigures(t *testing.T) {
 	figureAssets := parseCanvasFigureAssetMap(`> 素材形态：M1（编号占位 · 图号见接线单）
 # 资产编号册

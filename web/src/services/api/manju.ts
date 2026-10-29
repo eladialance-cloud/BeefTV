@@ -529,7 +529,7 @@ export type ManjuProductionArtifact = {
     createdAt: string;
 };
 
-export type ManjuProductionImageStatus = "QUEUED" | "RUNNING" | "READY" | "FAILED";
+export type ManjuProductionImageStatus = "QUEUED" | "RUNNING" | "READY" | "FAILED" | "SUPERSEDED";
 
 export type ManjuProductionPrevisStatus = "QUEUED" | "RUNNING" | "READY" | "FAILED";
 
@@ -547,6 +547,7 @@ export type ManjuProductionPrevis = {
 
 export type ManjuProductionImage = {
     id: string;
+    artifactId?: string;
     position: number;
     segmentCode: string;
     shotLabel?: string;
