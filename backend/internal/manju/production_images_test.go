@@ -106,6 +106,10 @@ func TestP3PlotExemptionRejectsCompositePlaceholders(t *testing.T) {
 		"理由：略；见上文",
 		"理由：待补 / 后续补充",
 		"理由：TODO；补充",
+		"理由：……",
+		"理由：略……",
+		"理由：同上……",
+		"理由：略.…",
 	}
 	for _, reason := range testCases {
 		t.Run(reason, func(t *testing.T) {

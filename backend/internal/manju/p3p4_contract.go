@@ -575,15 +575,15 @@ func p3ParseStoryboardExemption(
 
 func p3NormalizeExemptionReason(value string) string {
 	value = strings.TrimSpace(value)
-	value = strings.Trim(value, " \t\r\n|｜（）()：:，,。.;；")
+	value = strings.Trim(value, " \t\r\n|｜（）()：:，,。.;；…")
 	return strings.TrimSpace(value)
 }
 
 func p3ExemptionReasonPlaceholder(value string) bool {
-	clauses := regexp.MustCompile(`[;；,，。.、|｜/\n]+`).Split(value, -1)
+	clauses := regexp.MustCompile(`[;；,，。.、|｜/\n…]+`).Split(value, -1)
 	for _, clause := range clauses {
 		compact := strings.NewReplacer(" ", "", "\t", "", "\r", "", "\n", "").Replace(strings.ToLower(clause))
-		compact = strings.Trim(compact, "（）()：:，,。.;；-—_/\\")
+		compact = strings.Trim(compact, "（）()：:，,。.;；-—_/\\…")
 		if compact == "" {
 			continue
 		}

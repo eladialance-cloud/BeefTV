@@ -145,6 +145,11 @@ func TestP3RejectsInvalidStoryboardExemptionForms(t *testing.T) {
 		{name: "composite see above reason", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：略；见上文"},
 		{name: "same as above reason", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：同上"},
 		{name: "punctuation reason", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：..."},
+		{name: "unicode ellipsis reason", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：……"},
+		{name: "ellipsis after 略", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：略……"},
+		{name: "ellipsis after 同上", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：同上……"},
+		{name: "mixed ASCII unicode ellipsis", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：略.…"},
+		{name: "mixed double ellipsis", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：暂无...…"},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
