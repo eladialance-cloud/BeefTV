@@ -97,6 +97,133 @@ func TestP3RejectsDuplicateAndUnknownSegmentCodes(t *testing.T) {
 	}
 }
 
+func TestP3RejectsMissingOrInexactSegmentIDs(t *testing.T) {
+	t.Run("missing seg_id has no sequential fallback", func(t *testing.T) {
+		state := p3StateWithShotCountsForTest(t, map[string]int{"段1": 1})
+		content := validP3ArtifactForState(t, state)
+		segment := anyMap(anySlice(state["segments"])[0])
+		delete(segment, "seg_id")
+
+		err := validateP3Delivery(content, state, []model.ManjuProductionImage{
+			readyStoryboardImageForTest("段1"),
+		})
+		if err == nil {
+			t.Fatal("missing project_state seg_id must fail instead of falling back to 段N")
+		}
+	})
+
+	t.Run("trailing text is not parsed as segment 1", func(t *testing.T) {
+		state := p3StateWithShotCountsForTest(t, map[string]int{"段1-extra": 1})
+		content := validP3ArtifactForState(t, state)
+
+		err := validateP3Delivery(content, state, []model.ManjuProductionImage{
+			readyStoryboardImageForTest("段1"),
+		})
+		if err == nil {
+			t.Fatal("段1-extra must not be normalized to 段1")
+		}
+	})
+}
+
+func TestP3RejectsInvalidStoryboardExemptionForms(t *testing.T) {
+	testCases := []struct {
+		name           string
+		storyboardCell string
+		reason         string
+	}{
+		{name: "bare warning mark", storyboardCell: "⛔", reason: "理由：单镜过场，动作相位已列。"},
+		{name: "token contains whitespace", storyboardCell: "⛔ 豁免（单镜过场段）", reason: "理由：动作相位已列。"},
+		{name: "missing exact token", storyboardCell: "豁免（单镜过场段）", reason: "理由：动作相位已列。"},
+		{name: "empty 理由 label", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由："},
+		{name: "empty 单镜过场 label", storyboardCell: "⛔豁免（单镜过场段）", reason: "单镜过场："},
+		{name: "placeholder reason", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：无"},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			state := p3StateWithShotCountsForTest(t, map[string]int{"段1": 1})
+			content := p3ArtifactWithSingleChecklistRow(t, state, tc.storyboardCell, tc.reason)
+			if err := validateP3Delivery(content, state, nil); err == nil {
+				t.Fatalf("invalid exemption must fail: %s / %s", tc.storyboardCell, tc.reason)
+			}
+		})
+	}
+
+	state := p3StateWithShotCountsForTest(t, map[string]int{"段1": 1})
+	content := p3ArtifactWithSingleChecklistRow(
+		t,
+		state,
+		"⛔豁免（单镜过场段）",
+		"理由：动作相位已按单镜过场完整列入分镜总表。",
+	)
+	if err := validateP3Delivery(content, state, nil); err != nil {
+		t.Fatalf("exact token with a substantive reason must pass: %v", err)
+	}
+}
+
+func TestP3RequiredSectionsMustBeFullMarkdownHeadings(t *testing.T) {
+	state := p3StateWithSegmentsForTest(t, "段1")
+	content := strings.Replace(
+		validP3ArtifactForState(t, state),
+		"## 角色表演档案",
+		"说明文字提到 ## 角色表演档案，但这不是 Markdown 标题",
+		1,
+	)
+	images := []model.ManjuProductionImage{readyStoryboardImageForTest("段1")}
+	if err := validateP3Delivery(content, state, images); err == nil {
+		t.Fatal("substring mentions must not satisfy required section headings")
+	}
+}
+
+func TestP3DeliveryChecklistRequiresSingleConfiguredTable(t *testing.T) {
+	state := p3StateWithShotCountsForTest(t, map[string]int{"段1": 1})
+	exemptContent := p3ArtifactWithSingleChecklistRow(
+		t,
+		state,
+		"⛔豁免（单镜过场段）",
+		"理由：动作相位已按单镜过场完整列入分镜总表。",
+	)
+	checklist := p3SingleSegmentChecklistTable(
+		"⛔豁免（单镜过场段）",
+		"理由：动作相位已按单镜过场完整列入分镜总表。",
+	)
+
+	t.Run("loose storyboard lines do not satisfy", func(t *testing.T) {
+		content := p3ReplaceChecklistTable(
+			exemptContent,
+			"故事板图：段1 ⛔豁免（单镜过场段） 理由：动作相位已列。",
+		)
+		if err := validateP3Delivery(content, state, nil); err == nil {
+			t.Fatal("loose storyboard exemption line must not satisfy the checklist table")
+		}
+	})
+
+	t.Run("duplicate checklist tables fail", func(t *testing.T) {
+		content := strings.Replace(exemptContent, checklist, checklist+"\n\n"+checklist, 1)
+		if err := validateP3Delivery(content, state, nil); err == nil {
+			t.Fatal("duplicate checklist tables must fail")
+		}
+	})
+
+	t.Run("configured header order is exact", func(t *testing.T) {
+		content := strings.Replace(
+			validP3ArtifactForState(t, state),
+			"| 段 | 剧情分镜格/覆盖 | 故事板图格数 | 具体说明/豁免理由 |",
+			"| 剧情分镜格/覆盖 | 段 | 故事板图格数 | 具体说明/豁免理由 |",
+			1,
+		)
+		content = strings.Replace(
+			content,
+			"| 段1 | 覆盖：场1 ✅ 四宫格 | 4格(2×2 四宫格) | 无豁免；等待已就绪故事板图。 |",
+			"| 覆盖：场1 ✅ 四宫格 | 段1 | 4格(2×2 四宫格) | 无豁免；等待已就绪故事板图。 |",
+			1,
+		)
+		images := []model.ManjuProductionImage{readyStoryboardImageForTest("段1")}
+		if err := validateP3Delivery(content, state, images); err == nil {
+			t.Fatal("reordered checklist headers must fail")
+		}
+	})
+}
+
 func TestP3P4ContractsPinOfficialSources(t *testing.T) {
 	p3, err := loadP3StoryboardContract()
 	if err != nil {
@@ -628,6 +755,38 @@ func validP3ArtifactForStateWithExemptions(
 		fmt.Fprintf(&out, "| %s | 覆盖：场%d ✅ 四宫格 | %s | %s |\n", code, index+1, storyboardCell, reason)
 	}
 	return out.String()
+}
+
+func p3ArtifactWithSingleChecklistRow(
+	t *testing.T,
+	state map[string]any,
+	storyboardCell string,
+	reason string,
+) string {
+	t.Helper()
+	content := validP3ArtifactForState(t, state)
+	return p3ReplaceChecklistTable(
+		content,
+		p3SingleSegmentChecklistTable(storyboardCell, reason),
+	)
+}
+
+func p3SingleSegmentChecklistTable(storyboardCell, reason string) string {
+	return "| 段 | 剧情分镜格/覆盖 | 故事板图格数 | 具体说明/豁免理由 |\n" +
+		"|---|---|---|---|\n" +
+		"| 段1 | 覆盖：场1 ✅ 四宫格 | " + storyboardCell + " | " + reason + " |"
+}
+
+func p3ReplaceChecklistTable(content, replacement string) string {
+	start := strings.Index(content, "| 段 | 剧情分镜格/覆盖 | 故事板图格数 | 具体说明/豁免理由 |")
+	if start < 0 {
+		return content
+	}
+	end := strings.Index(content[start:], "\n\n<!-- MANJU_PROJECT_STATE_PATCH_JSON")
+	if end < 0 {
+		end = len(content) - start
+	}
+	return content[:start] + replacement + content[start+end:]
 }
 
 func readyStoryboardImageForTest(code string) model.ManjuProductionImage {

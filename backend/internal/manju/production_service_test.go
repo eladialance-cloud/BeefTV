@@ -820,7 +820,7 @@ func TestProductionChainUsesLockedUpstreamArtifactsAndHumanConfirmation(t *testi
 	if metadata["manjuProductionRunId"] != run.Run.ID || metadata["manjuProductionStageKey"] != manju.ProductionStageStoryboard {
 		t.Fatalf("P3 任务必须携带生产链追踪元数据: %+v", metadata)
 	}
-	succeedManjuTask(t, f, tasks[0].ID, validStoryboardArtifact())
+	succeedManjuTask(t, f, tasks[0].ID, validStoryboardArtifactRequiringImage())
 	detail, err := f.service.ProductionRunDetail(f.ownerID, f.projectID, run.Run.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -1456,6 +1456,104 @@ func validStoryboardArtifactRequiringImage() string {
 	)
 }
 
+func validMixedP3StoryboardArtifact() string {
+	return `# P3 分镜与故事板
+
+## 角色表演档案
+角色表演档案 · 林澈。克制的青年，肩背常紧，开口前会先看门缝。
+
+## 逐场节拍表
+| 场 | 目标 | 障碍 | 战术 | 转折 |
+| --- | --- | --- | --- | --- |
+| 场1 | 穿过雨幕 | 门锁 | 推门 | 门开 |
+| 场2 | 观察屋内 | 黑暗 | 停顿 | 灯亮 |
+
+## 导演稿
+文字平面图：门在画面右侧，林澈从左侧入画，轴线保持左林澈右门。
+
+## 分镜总表
+| 段号 | 镜号 | 时长 | 景别 | 机位 | 运镜 | 画面内容 | 台词 | 音效 | 资产引用 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 段1 | 01 | 2s | 中景 | 侧45度 | 固定 | 林澈跨过门槛 | 无 | 雨声 | CHR-林澈 |
+| 段2 | 01 | 5s | 中景 | 侧45度 | 固定 | 林澈停在门内 | 无 | 木门吱呀 | CHR-林澈 |
+
+## 故事板表
+### 第1段｜过门
+| 段号 | 面板ID | 动作相位 | 镜头信息 | 站位与视线 | 资产引用 | 面板边界备注 |
+|---|---|---|---|---|---|---|
+| 段1 | 段1-P1 | 起始 | 中景 · 侧45度 | 林澈在门外 | CHR-林澈 | 入口帧 |
+| 段1 | 段1-P2 | 过程 | 中景 · 固定 | 林澈抬脚 | CHR-林澈 | 动作连续 |
+| 段1 | 段1-P3 | 反应 | 近景 · 固定 | 视线看向屋内 | CHR-林澈 | 不剪 |
+| 段1 | 段1-P4 | 出口 | 中景 · 固定 | 林澈跨过门槛 | CHR-林澈 | 出口帧 |
+
+### 第2段｜停步
+| 段号 | 面板ID | 动作相位 | 镜头信息 | 站位与视线 | 资产引用 | 面板边界备注 |
+|---|---|---|---|---|---|---|
+| 段2 | 段2-P1 | 起始 | 中景 · 侧45度 | 林澈在门内 | CHR-林澈 | 入口帧 |
+| 段2 | 段2-P2 | 过程 | 近景 · 固定 | 右手松开门把 | CHR-林澈 | 动作连续 |
+| 段2 | 段2-P3 | 反应 | 近景 · 固定 | 视线扫过屋内 | CHR-林澈 | 不剪 |
+| 段2 | 段2-P4 | 出口 | 中景 · 固定 | 林澈站定 | CHR-林澈 | 出口帧 |
+
+## 台词精简建议清单
+本稿全量承接上游台词，无精简建议。
+
+## P3 交付清单
+| 段 | 剧情分镜格/覆盖 | 故事板图格数 | 具体说明/豁免理由 |
+|---|---|---|---|
+| 段1 | 覆盖：场1 ✅ 四宫格 | ⛔豁免（单镜过场段） | 理由：本段只有一个过门动作，动作相位已完整列入分镜总表。 |
+| 段2 | 覆盖：场2 ✅ 四宫格 | 4格(2×2 四宫格) | 无豁免；必须生成段2故事板图。 |
+
+<!-- MANJU_PROJECT_STATE_PATCH_JSON
+{
+  "segments": [
+    {
+      "seg_id": "段1",
+      "scene": "旧宅",
+      "asset_refs": {"scenes": ["旧宅"], "characters": ["林澈"], "props": []},
+      "shots": [{"no": 1, "start": 0, "end": 2, "spec": "中景 · 35mm · 侧45度 · 固定", "action": "林澈跨门", "sound": "雨声", "dialogue": "无"}]
+    },
+    {
+      "seg_id": "段2",
+      "scene": "旧宅",
+      "asset_refs": {"scenes": ["旧宅"], "characters": ["林澈"], "props": []},
+      "shots": [{"no": 1, "start": 0, "end": 5, "spec": "中景 · 35mm · 侧45度 · 固定", "action": "林澈停步", "sound": "木门吱呀", "dialogue": "无"}]
+    }
+  ]
+}
+-->`
+}
+
+func prepareReadyP3ImageForResourceRecheck(t *testing.T) (fixture, string, string) {
+	t.Helper()
+	f := newFixture(t)
+	assetRunID := prepareCompletedProductionAsset(t, f, "M1")
+	run, err := f.service.CreateProductionRun(f.ownerID, f.projectID, manju.ProductionRunInput{AssetRunID: assetRunID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockProductionP0BForTest(t, f, run.Run.ID)
+	p3Task := &model.Task{ID: "production-p3-resource-recheck", UserID: f.ownerID, ProjectID: f.projectID, Type: "canvas_text", Status: model.TaskStatusQueued}
+	imageTask := &model.Task{ID: "production-image-resource-recheck", UserID: f.ownerID, ProjectID: f.projectID, Type: "canvas_image", Status: model.TaskStatusQueued}
+	if err := f.db.Create(&[]model.Task{*p3Task, *imageTask}).Error; err != nil {
+		t.Fatal(err)
+	}
+	f.service.SetScriptTaskCreator((&sequentialScriptTaskCreator{tasks: []*model.Task{p3Task, imageTask}}).create)
+	if _, err := f.service.RunProductionStage(f.ownerID, f.projectID, run.Run.ID, manju.ProductionStageStoryboard, manju.ProductionStageRunInput{}); err != nil {
+		t.Fatal(err)
+	}
+	succeedManjuTask(t, f, p3Task.ID, validStoryboardArtifactRequiringImage())
+	started, err := f.service.StartProductionStoryboardImages(f.ownerID, f.projectID, run.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(started.Images) != 1 {
+		t.Fatalf("expected one ready-image candidate: %+v", started.Images)
+	}
+	resourceID := "resource-p3-recheck"
+	succeedStoryboardImageTask(t, f, imageTask.ID, resourceID)
+	return f, run.Run.ID, resourceID
+}
+
 func validFeedArtifact() string {
 	return `> 素材形态：M1（编号占位 · 图号见接线单）
 # P4 投喂封装
@@ -1567,6 +1665,108 @@ func TestP3CannotLockWhileStoryboardImageBatchIsRunning(t *testing.T) {
 
 }
 
+func TestP3MixedExemptionCreatesOnlyRequiredImageTaskAndLocks(t *testing.T) {
+	f := newFixture(t)
+	assetRunID := prepareCompletedProductionAsset(t, f, "M1")
+	run, err := f.service.CreateProductionRun(f.ownerID, f.projectID, manju.ProductionRunInput{AssetRunID: assetRunID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockProductionP0BForTest(t, f, run.Run.ID)
+	p3Task := &model.Task{ID: "production-p3-mixed-exemption", UserID: f.ownerID, ProjectID: f.projectID, Type: "canvas_text", Status: model.TaskStatusQueued}
+	imageTask := &model.Task{ID: "production-image-seg-2", UserID: f.ownerID, ProjectID: f.projectID, Type: "canvas_image", Status: model.TaskStatusQueued}
+	if err := f.db.Create(&[]model.Task{*p3Task, *imageTask}).Error; err != nil {
+		t.Fatal(err)
+	}
+	creator := &sequentialScriptTaskCreator{tasks: []*model.Task{p3Task, imageTask}}
+	f.service.SetScriptTaskCreator(creator.create)
+	if _, err := f.service.RunProductionStage(f.ownerID, f.projectID, run.Run.ID, manju.ProductionStageStoryboard, manju.ProductionStageRunInput{}); err != nil {
+		t.Fatal(err)
+	}
+	succeedManjuTask(t, f, p3Task.ID, validMixedP3StoryboardArtifact())
+
+	started, err := f.service.StartProductionStoryboardImages(f.ownerID, f.projectID, run.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(started.Images) != 1 || started.Images[0].SegmentCode != "段2" {
+		t.Fatalf("only the non-exempt segment may receive an image task: %+v", started.Images)
+	}
+	if len(creator.requests) != 2 {
+		t.Fatalf("mixed exemption must create exactly one image request, got %+v", creator.requests)
+	}
+
+	succeedStoryboardImageTask(t, f, imageTask.ID, "resource-mixed-seg-2")
+	confirmed, err := f.service.ConfirmProductionStage(f.ownerID, f.projectID, run.Run.ID, manju.ProductionStageStoryboard, manju.ProductionConfirmInput{})
+	if err != nil {
+		t.Fatalf("mixed exemption with the required image ready must lock: %v", err)
+	}
+	if findProductionStage(t, confirmed, manju.ProductionStageStoryboard).Status != model.ManjuProductionStageStatusLocked {
+		t.Fatalf("P3 must lock after the required image is ready: %+v", confirmed.Stages)
+	}
+}
+
+func TestP3ConfirmRevalidatesStoryboardImageResource(t *testing.T) {
+	testCases := []struct {
+		name   string
+		mutate func(t *testing.T, f fixture, resourceID string)
+	}{
+		{
+			name: "deleted resource",
+			mutate: func(t *testing.T, f fixture, resourceID string) {
+				t.Helper()
+				if err := f.db.Unscoped().Delete(&model.Resource{}, "id = ?", resourceID).Error; err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "foreign resource",
+			mutate: func(t *testing.T, f fixture, resourceID string) {
+				t.Helper()
+				if err := f.db.Model(&model.Resource{}).Where("id = ?", resourceID).Update("user_id", f.producer).Error; err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "wrong resource kind",
+			mutate: func(t *testing.T, f fixture, resourceID string) {
+				t.Helper()
+				if err := f.db.Model(&model.Resource{}).Where("id = ?", resourceID).Update("kind", "video").Error; err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "resource not ready",
+			mutate: func(t *testing.T, f fixture, resourceID string) {
+				t.Helper()
+				if err := f.db.Model(&model.Resource{}).Where("id = ?", resourceID).Update("status", model.ResourceStatusPending).Error; err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			f, runID, resourceID := prepareReadyP3ImageForResourceRecheck(t)
+			tc.mutate(t, f, resourceID)
+
+			_, err := f.service.ConfirmProductionStage(
+				f.ownerID,
+				f.projectID,
+				runID,
+				manju.ProductionStageStoryboard,
+				manju.ProductionConfirmInput{},
+			)
+			if !errors.Is(err, manju.ErrStoryboardImagesNotReady) {
+				t.Fatalf("P3 must revalidate the live resource and fail closed, got %v", err)
+			}
+		})
+	}
+}
+
 func succeedStoryboardImageTask(t *testing.T, f fixture, taskID, resourceID string) {
 	t.Helper()
 	if err := f.db.Model(&model.Task{}).Where("id = ?", taskID).Updates(map[string]any{
@@ -1644,7 +1844,7 @@ func TestStoryboardImageReconciliationRejectsTaskOwnedByAnotherUser(t *testing.T
 	if _, err := f.service.RunProductionStage(f.ownerID, f.projectID, run.Run.ID, manju.ProductionStageStoryboard, manju.ProductionStageRunInput{}); err != nil {
 		t.Fatal(err)
 	}
-	succeedManjuTask(t, f, p3Task.ID, validStoryboardArtifact())
+	succeedManjuTask(t, f, p3Task.ID, validStoryboardArtifactRequiringImage())
 	started, err := f.service.StartProductionStoryboardImages(f.ownerID, f.projectID, run.Run.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -1684,7 +1884,7 @@ func TestStoryboardImageBatchRequiresBoundImageModel(t *testing.T) {
 	if _, err := f.service.RunProductionStage(f.ownerID, f.projectID, run.Run.ID, manju.ProductionStageStoryboard, manju.ProductionStageRunInput{}); err != nil {
 		t.Fatal(err)
 	}
-	succeedManjuTask(t, f, p3Task.ID, validStoryboardArtifact())
+	succeedManjuTask(t, f, p3Task.ID, validStoryboardArtifactRequiringImage())
 	if err := f.db.Model(&model.ManjuProjectModelBinding{}).Where("project_id = ?", f.projectID).Updates(map[string]any{
 		"image_channel_id": "", "image_model_key": "",
 	}).Error; err != nil {

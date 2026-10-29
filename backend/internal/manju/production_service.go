@@ -1806,6 +1806,14 @@ func (s *Service) ConfirmProductionStage(actorID, projectID, runID, stageKey str
 					err,
 				)
 			}
+			if len(images) > 0 {
+				if err := storyboardImagesReady(tx, runID); err != nil {
+					return fmt.Errorf(
+						"P3_REGENERATION_REQUIRED: 当前 P3 故事板图资源已失效或归属不符；请重新生成或重新对账 P3 图片，历史工件和媒体已保留: %w",
+						err,
+					)
+				}
+			}
 		}
 		// P4 is compiled and machine-checked by the official V7.4.26
 		// compile_feed.py + validate_prompt.py + gate_check.py chain.

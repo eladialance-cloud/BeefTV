@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -23,9 +24,6 @@ const (
 	ProductionImageStatusFailed  = model.ManjuProductionImageStatusFailed
 )
 
-var storyboardSegmentCodePattern = regexp.MustCompile(`段\s*([0-9]+)`)
-var storyboardSegmentHeadingPattern = regexp.MustCompile(`(?:第\s*)?([0-9]+)\s*段|段\s*([0-9]+)`)
-var storyboardBareNumberPattern = regexp.MustCompile(`^[0-9]+$`)
 var storyboardAssetModifierPattern = regexp.MustCompile(`^((?:CHR|SCN|PRP)-[0-9０-９]+)(?:局部|特写|近景|中景|远景|全景|半身|面部|手部|细节|群像)$`)
 
 var (
@@ -217,50 +215,102 @@ func (s *Service) StartProductionStoryboardImages(actorID, projectID, runID stri
 		if err != nil || len(segments) == 0 {
 			return ErrStoryboardImageInvalid
 		}
+		candidateStateJSON, err := previewManjuProjectStatePatch(
+			tx,
+			projectID,
+			access.Project.Name,
+			run.LockRevision,
+			"production:director_storyboard",
+			artifactContent,
+			actorID,
+		)
+		if err != nil {
+			return fmt.Errorf("P3_REGENERATION_REQUIRED: 无法解析故事板交付清单: %w", err)
+		}
+		var state map[string]any
+		if err := json.Unmarshal([]byte(candidateStateJSON), &state); err != nil {
+			return fmt.Errorf("P3_REGENERATION_REQUIRED: 无法读取 P3 project_state: %w", err)
+		}
+		required, err := p3RequiredSegments(state)
+		if err != nil {
+			return err
+		}
+		if err := validateP3StoryboardTable(artifactContent, required); err != nil {
+			return err
+		}
+		requirements, err := p3DeliveryRequirements(artifactContent, required)
+		if err != nil {
+			return err
+		}
+		segments = slices.DeleteFunc(segments, func(segment storyboardImageSegment) bool {
+			requirement := requirements[p3SegmentKey(segment.Code)]
+			return requirement.Exempt
+		})
+		if len(segments) == 0 {
+			return nil
+		}
 
 		existing, err := tx.ManjuProductionImages(runID)
 		if err != nil {
 			return err
 		}
 		now := time.Now()
-		if len(existing) > 0 {
-			for index := range existing {
-				image := &existing[index]
-				if image.Status == ProductionImageStatusQueued || image.Status == ProductionImageStatusRunning || image.Status == ProductionImageStatusReady {
-					continue
-				}
-				image.Attempt++
-				image.Status = ProductionImageStatusQueued
-				image.TaskID = ""
-				image.ResourceID = ""
-				image.URL = ""
-				image.Error = ""
-				image.UpdatedAt = now
-				if err := tx.SaveManjuProductionImage(image); err != nil {
-					return err
-				}
-				plans = append(plans, storyboardImagePlan{
-					ID: image.ID, Position: image.Position, SegmentCode: image.SegmentCode,
-					ShotLabel: image.ShotLabel, Prompt: image.Prompt, Attempt: image.Attempt,
-				})
+		eligibleCodes := make(map[string]bool, len(segments))
+		for _, segment := range segments {
+			eligibleCodes[p3SegmentKey(segment.Code)] = true
+		}
+		existingCodes := make(map[string]bool)
+		nextPosition := 1
+		for index := range existing {
+			image := &existing[index]
+			if image.Position >= nextPosition {
+				nextPosition = image.Position + 1
 			}
-			return nil
+			key := p3SegmentKey(image.SegmentCode)
+			if !eligibleCodes[key] {
+				continue
+			}
+			existingCodes[key] = true
+			if image.Status == ProductionImageStatusQueued || image.Status == ProductionImageStatusRunning || image.Status == ProductionImageStatusReady {
+				continue
+			}
+			image.Attempt++
+			image.Status = ProductionImageStatusQueued
+			image.TaskID = ""
+			image.ResourceID = ""
+			image.URL = ""
+			image.Error = ""
+			image.UpdatedAt = now
+			if err := tx.SaveManjuProductionImage(image); err != nil {
+				return err
+			}
+			plans = append(plans, storyboardImagePlan{
+				ID: image.ID, Position: image.Position, SegmentCode: image.SegmentCode,
+				ShotLabel: image.ShotLabel, Prompt: image.Prompt, Attempt: image.Attempt,
+			})
 		}
 
 		images := make([]model.ManjuProductionImage, 0, len(segments))
-		for index, segment := range segments {
+		for _, segment := range segments {
+			if existingCodes[p3SegmentKey(segment.Code)] {
+				continue
+			}
 			prompt := buildStoryboardImagePrompt(segment, providerContext.AssetMode, providerContext.Aspect, providerContext.Style, providerContext.StyleParameters, providerContext.StyleImagePrompt)
 			image := model.ManjuProductionImage{
 				ID: uuid.NewString(), ProjectID: projectID, RunID: runID, StageID: stage.ID,
-				Position: index + 1, SegmentCode: segment.Code, ShotLabel: storyboardShotLabel(segment),
+				Position: nextPosition, SegmentCode: segment.Code, ShotLabel: storyboardShotLabel(segment),
 				Prompt: prompt, Attempt: 1, Status: ProductionImageStatusQueued,
 				CreatedBy: actorID, CreatedAt: now, UpdatedAt: now,
 			}
+			nextPosition++
 			images = append(images, image)
 			plans = append(plans, storyboardImagePlan{
 				ID: image.ID, Position: image.Position, SegmentCode: image.SegmentCode,
 				ShotLabel: image.ShotLabel, Prompt: image.Prompt, Attempt: image.Attempt,
 			})
+		}
+		if len(images) == 0 {
+			return nil
 		}
 		return tx.CreateManjuProductionImages(images)
 	})
@@ -401,18 +451,11 @@ func storyboardSheetLayout(count int) string {
 }
 
 func parseStoryboardImageSegments(content string) ([]storyboardImageSegment, error) {
-	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
-	section := -1
-	for index, line := range lines {
-		heading := strings.TrimSpace(line)
-		if heading == "## 故事板表" || heading == "## 故事板" || strings.HasPrefix(heading, "## 故事板表（") {
-			section = index + 1
-			break
-		}
-	}
-	if section < 0 {
+	section, found := p3MarkdownSection(content, "## 故事板表")
+	if !found {
 		return nil, ErrStoryboardImageInvalid
 	}
+	lines := strings.Split(strings.ReplaceAll(section, "\r\n", "\n"), "\n")
 	type tableBlock struct {
 		segmentHint  string
 		segmentTitle string
@@ -433,12 +476,8 @@ func parseStoryboardImageSegments(content string) ([]storyboardImageSegment, err
 		})
 		table = table[:0]
 	}
-	for index := section; index < len(lines); index++ {
+	for index := 0; index < len(lines); index++ {
 		line := strings.TrimSpace(lines[index])
-		if strings.HasPrefix(line, "## ") {
-			flushTable()
-			break
-		}
 		if strings.HasPrefix(line, "### ") {
 			flushTable()
 			segmentHint, segmentTitle = parseStoryboardSegmentHeading(line)
@@ -457,7 +496,7 @@ func parseStoryboardImageSegments(content string) ([]storyboardImageSegment, err
 
 	result := make([]storyboardImageSegment, 0)
 	byCode := make(map[string]int)
-	for blockIndex, block := range blocks {
+	for _, block := range blocks {
 		if len(block.lines) < 3 {
 			continue
 		}
@@ -489,12 +528,6 @@ func parseStoryboardImageSegments(content string) ([]storyboardImageSegment, err
 				if value := markdownCell(cells, segmentIndex); value != "" {
 					code = value
 				}
-			}
-			if strings.TrimSpace(code) == "" {
-				code = fmt.Sprintf("段%d", blockIndex+1)
-			}
-			if strings.TrimSpace(code) == "" || isMarkdownSeparator(code) {
-				code = storyboardSegmentCodePattern.FindString(markdownCell(cells, 0))
 			}
 			if strings.TrimSpace(code) == "" {
 				continue
@@ -556,43 +589,24 @@ func parseStoryboardImageSegments(content string) ([]storyboardImageSegment, err
 }
 
 func normalizeStoryboardSegmentCode(value string) string {
-	value = strings.TrimSpace(value)
-	match := storyboardSegmentHeadingPattern.FindStringSubmatch(value)
-	if len(match) >= 3 {
-		if match[1] != "" {
-			return "段" + match[1]
-		}
-		if match[2] != "" {
-			return "段" + match[2]
-		}
+	key := p3SegmentKey(value)
+	if key == "" {
+		return ""
 	}
-	if storyboardBareNumberPattern.MatchString(value) {
-		return "段" + value
-	}
-	return value
+	return "段" + key
 }
 
 func parseStoryboardSegmentHeading(line string) (string, string) {
-	value := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "### "))
-	location := storyboardSegmentHeadingPattern.FindStringSubmatchIndex(value)
+	value := strings.TrimSpace(line)
+	location := p3ExactStoryboardHeading.FindStringSubmatchIndex(value)
 	if len(location) < 6 {
 		return "", ""
 	}
-	number := ""
-	if location[2] >= 0 {
-		number = strings.TrimSpace(value[location[2]:location[3]])
-	} else if location[4] >= 0 {
-		number = strings.TrimSpace(value[location[4]:location[5]])
-	}
-	if number == "" {
+	if location[2] < 0 || location[4] < 0 {
 		return "", ""
 	}
-	code := "段" + number
-	title := strings.TrimSpace(value[location[1]:])
-	title = strings.TrimLeft(title, "｜|:：-—· ")
-	if title == "" || strings.HasPrefix(title, "故事板") || strings.HasPrefix(title, "分镜") {
-		return code, ""
-	}
+	code := "段" + value[location[2]:location[3]]
+	title := strings.TrimSpace(value[location[4]:location[5]])
 	return code, title
 }
 

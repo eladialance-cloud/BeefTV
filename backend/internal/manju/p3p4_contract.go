@@ -212,11 +212,26 @@ type p3RequiredSegment struct {
 }
 
 type p3DeliveryRequirement struct {
-	Segment   p3RequiredSegment
-	Text      string
-	Exempt    bool
-	Exemption string
+	Segment p3RequiredSegment
+	Text    string
+	Exempt  bool
+	Reason  string
 }
+
+type p3DeliveryChecklistRow struct {
+	Segment            p3RequiredSegment
+	PlotCoverage       string
+	StoryboardDelivery string
+	Explanation        string
+	Exempt             bool
+	ExemptionReason    string
+}
+
+var (
+	p3ExactSegmentCodePattern = regexp.MustCompile(`^(?:段([1-9][0-9]*)|第([1-9][0-9]*)段|SEG([1-9][0-9]*)|([1-9][0-9]*))$`)
+	p3ExactStoryboardHeading  = regexp.MustCompile(`^###\s+第([1-9][0-9]*)段[｜|]\s*(\S.*)$`)
+	p3ExemptionReasonPattern  = regexp.MustCompile(`(?:理由|单镜过场(?:段)?)\s*[:：]\s*([^|｜\n]+)`)
+)
 
 func validateP3Delivery(
 	stageArtifact string,
@@ -233,7 +248,8 @@ func validateP3Delivery(
 	contract := mustLoadP3StoryboardContract()
 	sectionIssues := make([]string, 0)
 	for _, heading := range contract.RequiredSections {
-		if strings.TrimSpace(markdownSection(stageArtifact, heading)) == "" {
+		section, found := p3MarkdownSection(stageArtifact, heading)
+		if !found || strings.TrimSpace(section) == "" {
 			message := contract.RequiredSectionMessages[heading]
 			if message == "" {
 				message = "P3 成果缺少必需章节 " + heading
@@ -252,7 +268,7 @@ func validateP3Delivery(
 	if err := validateP3StoryboardTable(stageArtifact, required); err != nil {
 		return err
 	}
-	requirements, err := parseP3DeliveryRequirements(stageArtifact, required)
+	requirements, err := p3DeliveryRequirements(stageArtifact, required)
 	if err != nil {
 		return err
 	}
@@ -263,7 +279,10 @@ func p3RequiredSegments(state map[string]any) (map[string]p3RequiredSegment, err
 	required := make(map[string]p3RequiredSegment)
 	for index, raw := range anySlice(state["segments"]) {
 		segment := anyMap(raw)
-		code := fallbackValue(anyString(segment["seg_id"]), fmt.Sprintf("段%d", index+1))
+		code := anyString(segment["seg_id"])
+		if code == "" {
+			return nil, fmt.Errorf("%w: project_state 第 %d 段缺少 seg_id", ErrP3StoryboardContract, index+1)
+		}
 		key := p3SegmentKey(code)
 		if key == "" {
 			return nil, fmt.Errorf("%w: project_state 第 %d 段段号无效 %q", ErrP3StoryboardContract, index+1, code)
@@ -273,7 +292,7 @@ func p3RequiredSegments(state map[string]any) (map[string]p3RequiredSegment, err
 		}
 		shots := len(anySlice(segment["shots"]))
 		required[key] = p3RequiredSegment{
-			Code:      fallbackValue(anyString(segment["seg_id"]), "段"+key),
+			Code:      code,
 			Key:       key,
 			ShotCount: shots,
 		}
@@ -285,150 +304,281 @@ func validateP3StoryboardTable(
 	stageArtifact string,
 	required map[string]p3RequiredSegment,
 ) error {
-	section := markdownSection(stageArtifact, "## 故事板表")
-	headingCounts := make(map[string]int)
-	for _, line := range strings.Split(section, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, "### ") {
-			continue
-		}
-		code, _ := parseStoryboardSegmentHeading(trimmed)
-		if code == "" {
-			continue
-		}
-		key := p3SegmentKey(code)
-		if key == "" || required[key].Key == "" {
-			return fmt.Errorf("%w: 故事板表出现未知段号 %q", ErrP3StoryboardContract, code)
-		}
-		headingCounts[key]++
-	}
-	for _, segment := range sortedP3RequiredSegments(required) {
-		switch headingCounts[segment.Key] {
-		case 0:
-			return fmt.Errorf("%w: 故事板表缺少 ### 第%s段", ErrP3StoryboardContract, segment.Key)
-		case 1:
-		default:
-			return fmt.Errorf("%w: 故事板表段号重复 %s", ErrP3StoryboardContract, segment.Code)
-		}
-	}
-	for key, count := range headingCounts {
-		if count > 1 {
-			return fmt.Errorf("%w: 故事板表段号重复 段%s", ErrP3StoryboardContract, key)
-		}
-	}
-
-	segments, err := parseStoryboardImageSegments(stageArtifact)
+	artifactRequired, err := p3ArtifactRequiredSegments(stageArtifact)
 	if err != nil {
-		return fmt.Errorf("%w: 故事板表无法解析: %v", ErrP3StoryboardContract, err)
-	}
-	tableCodes := make(map[string]bool, len(segments))
-	for _, segment := range segments {
-		key := p3SegmentKey(segment.Code)
-		if key == "" || required[key].Key == "" {
-			return fmt.Errorf("%w: 故事板表出现未知段号 %q", ErrP3StoryboardContract, segment.Code)
-		}
-		if tableCodes[key] {
-			return fmt.Errorf("%w: 故事板表段号重复 %s", ErrP3StoryboardContract, segment.Code)
-		}
-		tableCodes[key] = true
+		return err
 	}
 	for _, segment := range sortedP3RequiredSegments(required) {
-		if !tableCodes[segment.Key] {
-			return fmt.Errorf("%w: 故事板表缺少 %s 的分格数据", ErrP3StoryboardContract, segment.Code)
+		if artifactRequired[segment.Key].Key == "" {
+			return fmt.Errorf("%w: 故事板表缺少 %s", ErrP3StoryboardContract, segment.Code)
+		}
+	}
+	for _, segment := range sortedP3RequiredSegments(artifactRequired) {
+		if required[segment.Key].Key == "" {
+			return fmt.Errorf("%w: 故事板表出现未知段号 %s", ErrP3StoryboardContract, segment.Code)
 		}
 	}
 	return nil
 }
 
-func parseP3DeliveryRequirements(
-	stageArtifact string,
-	required map[string]p3RequiredSegment,
-) (map[string]p3DeliveryRequirement, error) {
-	section := markdownSection(stageArtifact, "## P3 交付清单")
-	lines := strings.Split(strings.ReplaceAll(section, "\r\n", "\n"), "\n")
-	table, found, err := p0bMarkdownTable(lines)
+func p3ArtifactRequiredSegments(stageArtifact string) (map[string]p3RequiredSegment, error) {
+	segments, err := parseStoryboardImageSegments(stageArtifact)
 	if err != nil {
-		return nil, fmt.Errorf("%w: P3 交付清单表格无效: %v", ErrP3StoryboardContract, err)
+		return nil, fmt.Errorf("%w: 故事板表无法解析: %v", ErrP3StoryboardContract, err)
 	}
-	requirements := make(map[string]p3DeliveryRequirement)
+	required := make(map[string]p3RequiredSegment, len(segments))
+	for _, segment := range segments {
+		key := p3SegmentKey(segment.Code)
+		if key == "" {
+			return nil, fmt.Errorf("%w: 故事板表段号无效 %q", ErrP3StoryboardContract, segment.Code)
+		}
+		if required[key].Key != "" {
+			return nil, fmt.Errorf("%w: 故事板表段号重复 %s", ErrP3StoryboardContract, segment.Code)
+		}
+		required[key] = p3RequiredSegment{Code: segment.Code, Key: key}
+	}
+
+	section, found := p3MarkdownSection(stageArtifact, "## 故事板表")
 	if !found {
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if !strings.Contains(line, "故事板") {
-				continue
-			}
-			match := storyboardSegmentCodePattern.FindStringSubmatch(line)
-			if len(match) < 2 {
-				continue
-			}
-			key := p3SegmentKey("段" + match[1])
-			segment, ok := required[key]
-			if !ok {
-				return nil, fmt.Errorf("%w: P3 交付清单出现未知段号 %q", ErrP3StoryboardContract, "段"+match[1])
-			}
-			if _, exists := requirements[key]; exists {
-				return nil, fmt.Errorf("%w: P3 交付清单段号重复 %s", ErrP3StoryboardContract, segment.Code)
-			}
-			requirements[key] = p3DeliveryRequirement{
-				Segment: segment,
-				Text:    line,
-			}
+		return nil, fmt.Errorf("%w: 缺少 ## 故事板表", ErrP3StoryboardContract)
+	}
+	headingCounts := make(map[string]int)
+	for _, line := range strings.Split(section, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "###") {
+			continue
 		}
-	} else {
-		segmentIndex := storyboardColumnIndex(table.Headers, "段", "段号", "段落", "段落号")
-		storyboardIndex := storyboardColumnIndex(table.Headers, "故事板图格数", "故事板图", "故事板")
-		reasonIndex := storyboardColumnIndex(
-			table.Headers,
-			"具体说明/豁免理由",
-			"具体说明",
-			"豁免理由",
-			"说明",
-		)
-		if segmentIndex < 0 || storyboardIndex < 0 || reasonIndex < 0 {
-			return nil, fmt.Errorf(
-				"%w: P3 交付清单必须包含段、故事板图和具体说明/豁免理由列",
-				ErrP3StoryboardContract,
-			)
+		key := p3ExactStoryboardHeadingKey(trimmed)
+		if key == "" {
+			return nil, fmt.Errorf("%w: 故事板段标题格式无效 %q", ErrP3StoryboardContract, trimmed)
 		}
-		for _, row := range table.Rows {
-			code := p0bTableCell(row, segmentIndex)
-			key := p3SegmentKey(code)
-			segment, ok := required[key]
-			if key == "" || !ok {
-				return nil, fmt.Errorf("%w: P3 交付清单出现未知段号 %q", ErrP3StoryboardContract, code)
-			}
-			if _, exists := requirements[key]; exists {
-				return nil, fmt.Errorf("%w: P3 交付清单段号重复 %s", ErrP3StoryboardContract, code)
-			}
-			requirements[key] = p3DeliveryRequirement{
-				Segment: segment,
-				Text: strings.Join([]string{
-					p0bTableCell(row, storyboardIndex),
-					p0bTableCell(row, reasonIndex),
-				}, " | "),
-			}
+		if required[key].Key == "" {
+			return nil, fmt.Errorf("%w: 故事板表出现未知段号 %q", ErrP3StoryboardContract, trimmed)
+		}
+		headingCounts[key]++
+		if headingCounts[key] > 1 {
+			return nil, fmt.Errorf("%w: 故事板表段号重复 段%s", ErrP3StoryboardContract, key)
 		}
 	}
 	for _, segment := range sortedP3RequiredSegments(required) {
-		requirement, ok := requirements[segment.Key]
-		if !ok {
+		if headingCounts[segment.Key] != 1 {
+			return nil, fmt.Errorf("%w: 故事板表缺少 ### 第%s段", ErrP3StoryboardContract, segment.Key)
+		}
+	}
+
+	shotCounts, err := p3ShotCountsFromArtifact(stageArtifact, required)
+	if err != nil {
+		return nil, err
+	}
+	for key, segment := range required {
+		segment.ShotCount = shotCounts[key]
+		if segment.ShotCount == 0 {
+			return nil, fmt.Errorf("%w: 分镜总表缺少 %s 的镜头", ErrP3StoryboardContract, segment.Code)
+		}
+		required[key] = segment
+	}
+	return required, nil
+}
+
+func p3ShotCountsFromArtifact(
+	stageArtifact string,
+	required map[string]p3RequiredSegment,
+) (map[string]int, error) {
+	section, found := p3MarkdownSection(stageArtifact, "## 分镜总表")
+	if !found {
+		return nil, fmt.Errorf("%w: 缺少 ## 分镜总表", ErrP3StoryboardContract)
+	}
+	tables, err := p3MarkdownTables(strings.Split(section, "\n"))
+	if err != nil {
+		return nil, fmt.Errorf("%w: 分镜总表表格无效: %v", ErrP3StoryboardContract, err)
+	}
+	if len(tables) != 1 {
+		return nil, fmt.Errorf("%w: 分镜总表必须且只能包含一张表", ErrP3StoryboardContract)
+	}
+	table := tables[0]
+	segmentIndex := storyboardColumnIndex(table.Headers, "段", "段号", "段落", "段落号")
+	shotIndex := storyboardColumnIndex(table.Headers, "镜号", "镜头号", "镜头", "no")
+	if segmentIndex < 0 || shotIndex < 0 {
+		return nil, fmt.Errorf("%w: 分镜总表必须包含段号和镜号列", ErrP3StoryboardContract)
+	}
+	counts := make(map[string]int, len(required))
+	for _, row := range table.Rows {
+		code := p0bTableCell(row, segmentIndex)
+		key := p3SegmentKey(code)
+		if key == "" || required[key].Key == "" {
+			return nil, fmt.Errorf("%w: 分镜总表出现未知段号 %q", ErrP3StoryboardContract, code)
+		}
+		if strings.TrimSpace(p0bTableCell(row, shotIndex)) == "" {
+			return nil, fmt.Errorf("%w: 分镜总表 %s 行缺少镜号", ErrP3StoryboardContract, code)
+		}
+		counts[key]++
+	}
+	return counts, nil
+}
+
+func p3DeliveryRequirements(
+	stageArtifact string,
+	required map[string]p3RequiredSegment,
+) (map[string]p3DeliveryRequirement, error) {
+	rows, err := p3DeliveryChecklistRows(stageArtifact, required)
+	if err != nil {
+		return nil, err
+	}
+	requirements := make(map[string]p3DeliveryRequirement, len(rows))
+	for _, row := range rows {
+		requirements[row.Segment.Key] = p3DeliveryRequirement{
+			Segment: row.Segment,
+			Text:    row.StoryboardDelivery + " | " + row.Explanation,
+			Exempt:  row.Exempt,
+			Reason:  row.ExemptionReason,
+		}
+	}
+	return requirements, nil
+}
+
+func p3DeliveryChecklistRows(
+	stageArtifact string,
+	required map[string]p3RequiredSegment,
+) ([]p3DeliveryChecklistRow, error) {
+	section, found := p3MarkdownSection(stageArtifact, "## P3 交付清单")
+	if !found {
+		return nil, fmt.Errorf("%w: 缺少 ## P3 交付清单", ErrP3StoryboardContract)
+	}
+	tables, err := p3MarkdownTables(strings.Split(section, "\n"))
+	if err != nil {
+		return nil, fmt.Errorf("%w: P3 交付清单表格无效: %v", ErrP3StoryboardContract, err)
+	}
+	if len(tables) != 1 {
+		return nil, fmt.Errorf("%w: P3 交付清单必须且只能包含一张表", ErrP3StoryboardContract)
+	}
+	table := tables[0]
+	expectedHeaders := mustLoadP3StoryboardContract().Storyboard.DeliveryChecklistFields
+	if !p3HeadersMatch(table.Headers, expectedHeaders) {
+		return nil, fmt.Errorf(
+			"%w: P3 交付清单表头必须严格为 %s",
+			ErrP3StoryboardContract,
+			strings.Join(expectedHeaders, " | "),
+		)
+	}
+	if len(table.Rows) == 0 {
+		return nil, fmt.Errorf("%w: P3 交付清单不能为空", ErrP3StoryboardContract)
+	}
+	rows := make([]p3DeliveryChecklistRow, 0, len(table.Rows))
+	seen := make(map[string]bool, len(table.Rows))
+	for _, cells := range table.Rows {
+		code := strings.TrimSpace(p0bTableCell(cells, 0))
+		key := p3SegmentKey(code)
+		segment, ok := required[key]
+		if key == "" || !ok {
+			return nil, fmt.Errorf("%w: P3 交付清单出现未知段号 %q", ErrP3StoryboardContract, code)
+		}
+		if seen[key] {
+			return nil, fmt.Errorf("%w: P3 交付清单段号重复 %s", ErrP3StoryboardContract, code)
+		}
+		seen[key] = true
+		plotCoverage := strings.TrimSpace(p0bTableCell(cells, 1))
+		storyboardDelivery := strings.TrimSpace(p0bTableCell(cells, 2))
+		explanation := strings.TrimSpace(p0bTableCell(cells, 3))
+		if plotCoverage == "" || storyboardDelivery == "" || explanation == "" {
+			return nil, fmt.Errorf("%w: P3 交付清单 %s 行存在空字段", ErrP3StoryboardContract, code)
+		}
+		exempt, reason, err := p3ParseStoryboardExemption(storyboardDelivery, explanation, segment)
+		if err != nil {
+			return nil, err
+		}
+		rows = append(rows, p3DeliveryChecklistRow{
+			Segment:            segment,
+			PlotCoverage:       plotCoverage,
+			StoryboardDelivery: storyboardDelivery,
+			Explanation:        explanation,
+			Exempt:             exempt,
+			ExemptionReason:    reason,
+		})
+	}
+	for _, segment := range sortedP3RequiredSegments(required) {
+		if !seen[segment.Key] {
 			return nil, fmt.Errorf("%w: P3 交付清单缺少 %s", ErrP3StoryboardContract, segment.Code)
 		}
-		if !hasExplicitP3Exemption(requirement.Text) {
-			continue
+	}
+	return rows, nil
+}
+
+func p3ParseStoryboardExemption(
+	storyboardDelivery string,
+	explanation string,
+	segment p3RequiredSegment,
+) (bool, string, error) {
+	compactDelivery := strings.NewReplacer(" ", "", "\t", "", "\r", "", "\n", "").Replace(storyboardDelivery)
+	negative := false
+	for _, token := range []string{"无豁免", "无需豁免", "未豁免", "不豁免", "没有豁免"} {
+		if strings.Contains(compactDelivery, token) {
+			negative = true
+			break
 		}
-		if !p3StoryboardExemptionValid(requirement.Text, segment) {
-			return nil, fmt.Errorf(
-				"%w: %s 的豁免不符合 V7.4.26，仅单镜过场段可豁免且必须写明理由",
+	}
+	if !strings.Contains(storyboardDelivery, "⛔豁免") {
+		if !negative && (strings.Contains(compactDelivery, "豁免") || strings.Contains(compactDelivery, "⛔")) {
+			return false, "", fmt.Errorf(
+				"%w: %s 的豁免必须使用完整 token ⛔豁免",
 				ErrP3StoryboardContract,
 				segment.Code,
 			)
 		}
-		requirement.Exempt = true
-		requirement.Exemption = requirement.Text
-		requirements[segment.Key] = requirement
+		return false, "", nil
 	}
-	return requirements, nil
+	if negative {
+		return false, "", fmt.Errorf("%w: %s 的豁免同时包含否定表述", ErrP3StoryboardContract, segment.Code)
+	}
+	combined := storyboardDelivery + " | " + explanation
+	compactCombined := strings.NewReplacer(" ", "", "\t", "", "\r", "", "\n", "").Replace(combined)
+	if segment.ShotCount != 1 || !strings.Contains(compactCombined, "单镜过场") {
+		return false, "", fmt.Errorf(
+			"%w: %s 仅单镜过场段可豁免",
+			ErrP3StoryboardContract,
+			segment.Code,
+		)
+	}
+	match := p3ExemptionReasonPattern.FindStringSubmatch(combined)
+	if len(match) < 2 {
+		return false, "", fmt.Errorf(
+			"%w: %s 的豁免必须写明非空理由",
+			ErrP3StoryboardContract,
+			segment.Code,
+		)
+	}
+	reason := p3NormalizeExemptionReason(match[1])
+	if p3ExemptionReasonPlaceholder(reason) {
+		return false, "", fmt.Errorf(
+			"%w: %s 的豁免理由为空或占位",
+			ErrP3StoryboardContract,
+			segment.Code,
+		)
+	}
+	if strings.Contains(reason, "无需图片") || strings.Contains(reason, "图片可选") {
+		return false, "", fmt.Errorf(
+			"%w: %s 不得用无需图片或图片可选绕过故事板交付",
+			ErrP3StoryboardContract,
+			segment.Code,
+		)
+	}
+	return true, reason, nil
+}
+
+func p3NormalizeExemptionReason(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.Trim(value, " \t\r\n|｜（）()：:，,。.;；")
+	return strings.TrimSpace(value)
+}
+
+func p3ExemptionReasonPlaceholder(value string) bool {
+	compact := strings.NewReplacer(" ", "", "\t", "", "\r", "", "\n", "").Replace(strings.ToLower(value))
+	compact = strings.Trim(compact, "（）()：:，,。.;；-—_/\\")
+	switch compact {
+	case "", "理由", "单镜过场", "单镜过场段", "无", "暂无", "略", "同上", "按需", "不适用", "n/a", "na":
+		return true
+	default:
+		return false
+	}
 }
 
 func validateP3StoryboardAssets(
@@ -480,43 +630,116 @@ func sortedP3RequiredSegments(required map[string]p3RequiredSegment) []p3Require
 		result = append(result, segment)
 	}
 	sort.Slice(result, func(i, j int) bool {
-		return result[i].Key < result[j].Key
+		left, _ := strconv.Atoi(result[i].Key)
+		right, _ := strconv.Atoi(result[j].Key)
+		return left < right
 	})
 	return result
 }
 
 func p3SegmentKey(value string) string {
-	value = strings.TrimSpace(value)
-	if match := storyboardSegmentHeadingPattern.FindStringSubmatch(value); len(match) >= 3 {
-		switch {
-		case match[1] != "":
-			value = "段" + match[1]
-		case match[2] != "":
-			value = "段" + match[2]
+	match := p3ExactSegmentCodePattern.FindStringSubmatch(strings.TrimSpace(value))
+	if len(match) != 5 {
+		return ""
+	}
+	for index := 1; index < len(match); index++ {
+		if match[index] != "" {
+			return match[index]
 		}
 	}
-	key := normalizeProductionSegmentCode(value)
-	if key == "" || key == "0" {
-		return ""
-	}
-	if _, err := strconv.Atoi(key); err != nil {
-		return ""
-	}
-	return key
+	return ""
 }
 
-func p3StoryboardExemptionValid(text string, segment p3RequiredSegment) bool {
-	if segment.ShotCount != 1 {
+func p3ExactStoryboardHeadingKey(line string) string {
+	match := p3ExactStoryboardHeading.FindStringSubmatch(strings.TrimSpace(line))
+	if len(match) != 3 {
+		return ""
+	}
+	return match[1]
+}
+
+func p3MarkdownSection(content, heading string) (string, bool) {
+	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+	level := p3MarkdownHeadingLevel(heading)
+	start := -1
+	for index, line := range lines {
+		if strings.TrimSpace(line) == heading {
+			start = index
+			break
+		}
+	}
+	if start < 0 || level == 0 {
+		return "", false
+	}
+	for index := start + 1; index < len(lines); index++ {
+		nextLevel := p3MarkdownHeadingLevel(lines[index])
+		if nextLevel > 0 && nextLevel <= level {
+			return strings.Join(lines[start+1:index], "\n"), true
+		}
+	}
+	return strings.Join(lines[start+1:], "\n"), true
+}
+
+func p3MarkdownHeadingLevel(line string) int {
+	line = strings.TrimSpace(line)
+	count := 0
+	for count < len(line) && line[count] == '#' {
+		count++
+	}
+	if count == 0 || count >= len(line) || line[count] != ' ' {
+		return 0
+	}
+	return count
+}
+
+func p3MarkdownTables(lines []string) ([]p0bMarkdownTableData, error) {
+	tables := make([]p0bMarkdownTableData, 0)
+	for index := 0; index+1 < len(lines); index++ {
+		line := strings.TrimSpace(lines[index])
+		if !strings.Contains(line, "|") {
+			continue
+		}
+		headers, ok := p0bMarkdownRow(line)
+		if !ok || !p0bMarkdownSeparator(strings.TrimSpace(lines[index+1]), len(headers)) {
+			continue
+		}
+		rows := make([][]string, 0)
+		rowIndex := index + 2
+		for ; rowIndex < len(lines); rowIndex++ {
+			rowLine := strings.TrimSpace(lines[rowIndex])
+			if rowLine == "" || !strings.Contains(rowLine, "|") {
+				break
+			}
+			row, ok := p0bMarkdownRow(rowLine)
+			if !ok {
+				break
+			}
+			if len(row) != len(headers) {
+				return nil, fmt.Errorf(
+					"Markdown 表格第 %d 行列数为 %d，表头列数为 %d",
+					rowIndex+1,
+					len(row),
+					len(headers),
+				)
+			}
+			rows = append(rows, row)
+		}
+		tables = append(tables, p0bMarkdownTableData{Headers: headers, Rows: rows})
+		index = rowIndex - 1
+	}
+	return tables, nil
+}
+
+func p3HeadersMatch(got, want []string) bool {
+	if len(got) != len(want) {
 		return false
 	}
-	compact := strings.NewReplacer(" ", "", "\t", "", "\r", "", "\n", "").Replace(text)
-	if !strings.Contains(compact, "单镜") || !strings.Contains(compact, "过场") {
-		return false
+	for index := range want {
+		if normalizeStoryboardColumn(got[index]) != normalizeStoryboardColumn(want[index]) {
+			return false
+		}
 	}
-	if !strings.Contains(compact, "理由") && !strings.Contains(compact, "：") && !strings.Contains(compact, ":") {
-		return false
-	}
-	return !strings.Contains(compact, "无需图片")
+	return true
 }
 
 func stringList(value any) []string {
