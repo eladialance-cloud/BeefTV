@@ -577,6 +577,7 @@ type ManjuDeliverable struct {
 	MimeType        string    `json:"mimeType" gorm:"size:128"`
 	Content         string    `json:"content" gorm:"type:text"`
 	ContentHash     string    `json:"contentHash" gorm:"size:64"`
+	ContractVersion string    `json:"contractVersion" gorm:"size:64;index"`
 	CreatedAt       time.Time `json:"createdAt"`
 }
 

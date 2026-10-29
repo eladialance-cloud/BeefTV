@@ -76,6 +76,14 @@ test("P5 deliverables render only persisted backend rows", () => {
     expect(page).toContain("downloadManjuDeliverable(deliverable)");
 });
 
+test("P5 can switch to an older completed current-lock production run", () => {
+    expect(page).toContain("const completedProductionRuns");
+    expect(page).toContain("setSelectedProductionRunId(runId)");
+    expect(page).toContain("历史生产链");
+    expect(page).toContain("P0 revision ${run.lockRevision}");
+    expect(page).toContain("getManjuProductionRunDeliverables(projectId, detail.run.id)");
+});
+
 test("M2 compile explains the missing reference gate instead of silently hiding the button", () => {
     expect(page).toContain("const compileBlocked");
     expect(page).toContain("M2 资产交付编译被参考图门禁暂停");

@@ -20,6 +20,7 @@ func TestDeliveryModeBoardProducesMarkdownSourceAndHTMLBoard(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertDeliverableKinds(t, deliverables, "markdown", "board", "previs", "manifest")
+	assertDeliverableContract(t, deliverables, "V7.4.26-DELIVERY-V2", "COMPLIANT")
 	assertDeliverableContent(t, deliverables, "board", "<!doctype html>")
 	assertDeliverableContent(t, deliverables, "markdown", "## 资产提示词")
 	assertDeliverableContent(t, deliverables, "markdown", "## 分镜提示词")
@@ -187,6 +188,70 @@ func TestDeliveryRowsRemainImmutableWhenSameRunIsConfirmedAgain(t *testing.T) {
 		if before[index] != after[index] {
 			t.Fatalf("reconfirm rewrote immutable deliverable:\nbefore=%+v\nafter=%+v", before[index], after[index])
 		}
+	}
+}
+
+func TestLegacyBaseCommitDeliverablesRemainCompliantAndHealPrevisIdempotently(t *testing.T) {
+	for _, mode := range []string{manju.DeliveryMarkdown, manju.DeliveryBoard} {
+		t.Run(mode, func(t *testing.T) {
+			f := newFixture(t)
+			detail := completeProjectThroughP5ForTest(t, f, mode)
+			if err := f.db.Where("production_run_id = ?", detail.Run.ID).Delete(&model.ManjuDeliverable{}).Error; err != nil {
+				t.Fatal(err)
+			}
+			legacy := legacyDeliverableRows(f, detail, mode)
+			if err := f.db.Create(&legacy).Error; err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := f.service.ConfirmProductionStage(
+				f.ownerID,
+				f.projectID,
+				detail.Run.ID,
+				manju.ProductionStageQC,
+				manju.ProductionConfirmInput{Note: "base-2251460e backfill"},
+			); err != nil {
+				t.Fatalf("legacy base-commit rows must remain re-confirmable: %v", err)
+			}
+			rows, err := f.service.ProductionRunDeliverables(f.ownerID, f.projectID, detail.Run.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertDeliverableContract(t, rows, "V7.4.26-DELIVERY-V1", "LEGACY_COMPLIANT")
+			if got := len(rows); got != len(legacy)+1 {
+				t.Fatalf("healed legacy row count = %d, want %d: %+v", got, len(legacy)+1, rows)
+			}
+			for _, old := range legacy {
+				current := findDeliverable(t, rows, old.Kind)
+				if current.ID != old.ID || current.Content != old.Content || current.ContentHash != old.ContentHash {
+					t.Fatalf("legacy %s row was rewritten:\nold=%+v\nnew=%+v", old.Kind, old, current)
+				}
+			}
+			previs := findDeliverable(t, rows, "previs")
+			if previs.FileName != "线上漫剧项目-预演故事板.md" {
+				t.Fatalf("healed previs file = %+v", previs)
+			}
+
+			if _, err := f.service.ConfirmProductionStage(
+				f.ownerID,
+				f.projectID,
+				detail.Run.ID,
+				manju.ProductionStageQC,
+				manju.ProductionConfirmInput{Note: "repeat backfill"},
+			); err != nil {
+				t.Fatalf("healed legacy run must remain idempotent: %v", err)
+			}
+			repeated, err := f.service.ProductionRunDeliverables(f.ownerID, f.projectID, detail.Run.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(repeated) != len(rows) {
+				t.Fatalf("repeat backfill duplicated rows: before=%d after=%d", len(rows), len(repeated))
+			}
+			if findDeliverable(t, repeated, "previs").ID != previs.ID {
+				t.Fatal("repeat backfill replaced the immutable previs row")
+			}
+		})
 	}
 }
 
@@ -486,6 +551,57 @@ func assertHasDeliverableRun(t *testing.T, deliverables []manju.UserDeliverableV
 		}
 	}
 	t.Fatalf("missing deliverables for production run %s: %+v", runID, deliverables)
+}
+
+func assertDeliverableContract(t *testing.T, deliverables []manju.UserDeliverableView, version, status string) {
+	t.Helper()
+	if len(deliverables) == 0 {
+		t.Fatal("cannot validate an empty deliverable contract")
+	}
+	for _, deliverable := range deliverables {
+		if deliverable.ContentContractVersion != version || deliverable.ComplianceStatus != status {
+			t.Fatalf(
+				"deliverable %s contract = %s/%s, want %s/%s",
+				deliverable.Kind,
+				deliverable.ContentContractVersion,
+				deliverable.ComplianceStatus,
+				version,
+				status,
+			)
+		}
+	}
+}
+
+func legacyDeliverableRows(f fixture, detail *manju.ProductionRunDetail, mode string) []model.ManjuDeliverable {
+	kinds := []string{"markdown"}
+	if mode == manju.DeliveryBoard || mode == manju.DeliveryBoth {
+		kinds = append(kinds, "board")
+	}
+	kinds = append(kinds, "manifest")
+	rows := make([]model.ManjuDeliverable, 0, len(kinds))
+	for _, kind := range kinds {
+		content := "# VisiDeep AI 漫剧全流程交付归档\nLEGACY_" + kind
+		fileName := "base-2251460e-" + kind
+		mimeType := "text/plain"
+		if kind == "board" {
+			content = "<!DOCTYPE html>LEGACY_BOARD"
+			fileName = "base-2251460e-board.html"
+			mimeType = "text/html; charset=utf-8"
+		}
+		if kind == "manifest" {
+			content = `{"legacy":true}`
+			fileName = "base-2251460e-manifest.json"
+			mimeType = "application/json; charset=utf-8"
+		}
+		sum := sha256.Sum256([]byte(content))
+		rows = append(rows, model.ManjuDeliverable{
+			ID: "legacy-" + mode + "-" + kind, ProjectID: f.projectID,
+			LockRevision: detail.Run.LockRevision, ProductionRunID: detail.Run.ID,
+			Kind: kind, FileName: fileName, MimeType: mimeType,
+			Content: content, ContentHash: fmtHash(sum), CreatedAt: time.Now(),
+		})
+	}
+	return rows
 }
 
 func fmtHash(sum [sha256.Size]byte) string {

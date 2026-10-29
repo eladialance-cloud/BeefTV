@@ -1818,7 +1818,7 @@ func (s *Service) ConfirmProductionStage(actorID, projectID, runID, stageKey str
 					return ErrProductionDeliverablesNotReady
 				}
 				if !deliveryPlan.AlreadyReady {
-					if err := persistProductionDeliveryRows(tx, projectID, runID, deliveryPlan.Rows); err != nil {
+					if err := persistProductionDeliveryRows(tx, projectID, runID, deliveryPlan.Mode, deliveryPlan.Rows); err != nil {
 						return err
 					}
 				}
@@ -1960,7 +1960,7 @@ func (s *Service) ConfirmProductionStage(actorID, projectID, runID, stageKey str
 			if deliveryPlan == nil || deliveryPlan.ArtifactID != stage.ArtifactID {
 				return ErrProductionDeliverablesNotReady
 			}
-			if err := persistProductionDeliveryRows(tx, projectID, runID, deliveryPlan.Rows); err != nil {
+			if err := persistProductionDeliveryRows(tx, projectID, runID, deliveryPlan.Mode, deliveryPlan.Rows); err != nil {
 				return err
 			}
 		}

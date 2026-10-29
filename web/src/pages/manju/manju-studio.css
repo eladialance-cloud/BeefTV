@@ -3556,6 +3556,30 @@
     background: var(--manju-surface-muted);
 }
 
+.manju-production-run-selector {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 14px;
+    border: 1px solid #d9ded7;
+    border-radius: 8px;
+    background: #fbfcf8;
+}
+
+.manju-production-run-selector > div {
+    display: grid;
+    gap: 3px;
+}
+
+.manju-production-run-selector small {
+    color: #697269;
+}
+
+.manju-production-run-selector .ant-select {
+    width: min(420px, 48vw);
+}
+
 .manju-production-runbar > div {
     display: grid;
     min-width: 0;
@@ -3938,6 +3962,15 @@
 @media (max-width: 900px) {
     .manju-production-runbar {
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    .manju-production-run-selector {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .manju-production-run-selector .ant-select {
+        width: 100%;
     }
 
     .manju-production-contract {

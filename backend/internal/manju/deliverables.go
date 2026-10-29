@@ -19,22 +19,33 @@ import (
 
 var ErrProductionDeliverablesNotReady = errors.New("manju production deliverables are not ready")
 
+const (
+	productionDeliveryContractV1             = "V7.4.26-DELIVERY-V1"
+	productionDeliveryContractV2             = "V7.4.26-DELIVERY-V2"
+	productionDeliveryComplianceCurrent      = "COMPLIANT"
+	productionDeliveryComplianceLegacy       = "LEGACY_COMPLIANT"
+	productionDeliveryComplianceUnrecognized = "UNRECOGNIZED"
+)
+
 type UserDeliverableView struct {
-	ID              string    `json:"id"`
-	ProjectID       string    `json:"projectId"`
-	LockRevision    int64     `json:"lockRevision"`
-	ProductionRunID string    `json:"productionRunId"`
-	Kind            string    `json:"kind"`
-	FileName        string    `json:"fileName"`
-	MimeType        string    `json:"mimeType"`
-	Content         string    `json:"content"`
-	ContentHash     string    `json:"contentHash"`
-	CreatedAt       time.Time `json:"createdAt"`
+	ID                     string    `json:"id"`
+	ProjectID              string    `json:"projectId"`
+	LockRevision           int64     `json:"lockRevision"`
+	ProductionRunID        string    `json:"productionRunId"`
+	Kind                   string    `json:"kind"`
+	FileName               string    `json:"fileName"`
+	MimeType               string    `json:"mimeType"`
+	Content                string    `json:"content"`
+	ContentHash            string    `json:"contentHash"`
+	ContentContractVersion string    `json:"contentContractVersion"`
+	ComplianceStatus       string    `json:"complianceStatus"`
+	CreatedAt              time.Time `json:"createdAt"`
 }
 
 type productionDeliveryPlan struct {
 	AlreadyReady bool
 	ArtifactID   string
+	Mode         string
 	Rows         []model.ManjuDeliverable
 }
 
@@ -97,19 +108,39 @@ func userDeliverableViews(items []model.ManjuDeliverable) []UserDeliverableView 
 	sort.SliceStable(items, func(i, j int) bool {
 		return productionDeliverableKindOrder(items[i].Kind) < productionDeliverableKindOrder(items[j].Kind)
 	})
+	grouped := make(map[string][]model.ManjuDeliverable)
+	for _, item := range items {
+		grouped[item.ProductionRunID] = append(grouped[item.ProductionRunID], item)
+	}
+	type contractState struct {
+		Version string
+		Status  string
+	}
+	contracts := make(map[string]contractState, len(grouped))
+	for runID, rows := range grouped {
+		version, status, ok := classifyProductionDeliveryRows(rows)
+		if !ok {
+			version = ""
+			status = productionDeliveryComplianceUnrecognized
+		}
+		contracts[runID] = contractState{Version: version, Status: status}
+	}
 	views := make([]UserDeliverableView, 0, len(items))
 	for _, item := range items {
+		contract := contracts[item.ProductionRunID]
 		views = append(views, UserDeliverableView{
-			ID:              item.ID,
-			ProjectID:       item.ProjectID,
-			LockRevision:    item.LockRevision,
-			ProductionRunID: item.ProductionRunID,
-			Kind:            item.Kind,
-			FileName:        item.FileName,
-			MimeType:        item.MimeType,
-			Content:         item.Content,
-			ContentHash:     item.ContentHash,
-			CreatedAt:       item.CreatedAt,
+			ID:                     item.ID,
+			ProjectID:              item.ProjectID,
+			LockRevision:           item.LockRevision,
+			ProductionRunID:        item.ProductionRunID,
+			Kind:                   item.Kind,
+			FileName:               item.FileName,
+			MimeType:               item.MimeType,
+			Content:                item.Content,
+			ContentHash:            item.ContentHash,
+			ContentContractVersion: contract.Version,
+			ComplianceStatus:       contract.Status,
+			CreatedAt:              item.CreatedAt,
 		})
 	}
 	return views
@@ -162,14 +193,15 @@ func (s *Service) prepareProductionDelivery(actorID, projectID, runID string) (*
 		if err != nil {
 			return nil, err
 		}
-		expected := productionDeliveryExpectedKinds(mode)
-		if productionDeliveryKindsMatch(existing, expected) {
+		_, status, valid := productionDeliveryContractForMode(mode, existing)
+		if valid && status == productionDeliveryComplianceCurrent {
 			return &productionDeliveryPlan{
 				AlreadyReady: true,
 				ArtifactID:   stage.ArtifactID,
+				Mode:         mode,
 			}, nil
 		}
-		if len(existing) > 0 {
+		if len(existing) > 0 && !valid {
 			return nil, ErrProductionDeliverablesNotReady
 		}
 	}
@@ -217,6 +249,7 @@ func (s *Service) prepareProductionDelivery(actorID, projectID, runID string) (*
 	}
 	return &productionDeliveryPlan{
 		ArtifactID: stage.ArtifactID,
+		Mode:       mode,
 		Rows:       rows,
 	}, nil
 }
@@ -436,6 +469,7 @@ func newProductionDeliverable(
 		MimeType:        mimeType,
 		Content:         content,
 		ContentHash:     hex.EncodeToString(sum[:]),
+		ContractVersion: productionDeliveryContractV2,
 		CreatedAt:       createdAt,
 	}
 }
@@ -485,7 +519,7 @@ func productionDeliverableKindOrder(kind string) int {
 	}
 }
 
-func productionDeliveryExpectedKinds(mode string) []string {
+func productionDeliveryCurrentKinds(mode string) []string {
 	if mode == DeliveryBoard || mode == DeliveryBoth {
 		return []string{
 			model.ManjuDeliverableKindMarkdown,
@@ -499,6 +533,82 @@ func productionDeliveryExpectedKinds(mode string) []string {
 		model.ManjuDeliverableKindPrevis,
 		model.ManjuDeliverableKindManifest,
 	}
+}
+
+func productionDeliveryLegacyKinds(mode string) []string {
+	if mode == DeliveryBoard || mode == DeliveryBoth {
+		return []string{
+			model.ManjuDeliverableKindMarkdown,
+			model.ManjuDeliverableKindBoard,
+			model.ManjuDeliverableKindManifest,
+		}
+	}
+	return []string{
+		model.ManjuDeliverableKindMarkdown,
+		model.ManjuDeliverableKindManifest,
+	}
+}
+
+func classifyProductionDeliveryRows(items []model.ManjuDeliverable) (string, string, bool) {
+	currentSets := [][]string{
+		{
+			model.ManjuDeliverableKindMarkdown,
+			model.ManjuDeliverableKindBoard,
+			model.ManjuDeliverableKindPrevis,
+			model.ManjuDeliverableKindManifest,
+		},
+		{
+			model.ManjuDeliverableKindMarkdown,
+			model.ManjuDeliverableKindPrevis,
+			model.ManjuDeliverableKindManifest,
+		},
+	}
+	legacySets := [][]string{
+		{
+			model.ManjuDeliverableKindMarkdown,
+			model.ManjuDeliverableKindBoard,
+			model.ManjuDeliverableKindManifest,
+		},
+		{
+			model.ManjuDeliverableKindMarkdown,
+			model.ManjuDeliverableKindManifest,
+		},
+	}
+	currentSet := false
+	for _, expected := range currentSets {
+		if productionDeliveryKindsMatch(items, expected) {
+			currentSet = true
+			break
+		}
+	}
+	if currentSet {
+		for _, item := range items {
+			version := strings.TrimSpace(item.ContractVersion)
+			if version == "" || version == productionDeliveryContractV1 {
+				return productionDeliveryContractV1, productionDeliveryComplianceLegacy, true
+			}
+			if version != productionDeliveryContractV2 {
+				return "", "", false
+			}
+		}
+		return productionDeliveryContractV2, productionDeliveryComplianceCurrent, true
+	}
+	for _, expected := range legacySets {
+		if productionDeliveryKindsMatch(items, expected) {
+			return productionDeliveryContractV1, productionDeliveryComplianceLegacy, true
+		}
+	}
+	return "", "", false
+}
+
+func productionDeliveryContractForMode(mode string, items []model.ManjuDeliverable) (string, string, bool) {
+	currentKinds := productionDeliveryCurrentKinds(mode)
+	legacyKinds := productionDeliveryLegacyKinds(mode)
+	if !productionDeliveryKindsMatch(items, currentKinds) &&
+		!productionDeliveryKindsMatch(items, legacyKinds) {
+		return "", "", false
+	}
+	return classifyProductionDeliveryRows(items)
 }
 
 func productionDeliveryKindsMatch(items []model.ManjuDeliverable, expected []string) bool {
@@ -522,7 +632,7 @@ func productionDeliveryKindsMatch(items []model.ManjuDeliverable, expected []str
 
 func persistProductionDeliveryRows(
 	tx *repository.Repository,
-	projectID, runID string,
+	projectID, runID, mode string,
 	rows []model.ManjuDeliverable,
 ) error {
 	existing, err := tx.ManjuDeliverablesForRun(projectID, runID)
@@ -538,11 +648,52 @@ func persistProductionDeliveryRows(
 			return err
 		}
 	}
-	if len(existing) != len(rows) {
+	if len(existing) == 0 {
 		return ErrProductionDeliverablesNotReady
 	}
-	expected := make(map[string]model.ManjuDeliverable, len(rows))
+	_, status, valid := productionDeliveryContractForMode(mode, existing)
+	if !valid {
+		return ErrProductionDeliverablesNotReady
+	}
+	if status == productionDeliveryComplianceCurrent {
+		return verifyProductionDeliveryRows(existing, rows)
+	}
+
+	currentKinds := productionDeliveryCurrentKinds(mode)
+	if !productionDeliveryKindsMatch(rows, currentKinds) {
+		return ErrProductionDeliverablesNotReady
+	}
+	existingKinds := make(map[string]bool, len(existing))
+	for _, row := range existing {
+		existingKinds[row.Kind] = true
+	}
+	missing := make([]model.ManjuDeliverable, 0, len(currentKinds))
 	for _, row := range rows {
+		if !existingKinds[row.Kind] {
+			missing = append(missing, row)
+		}
+	}
+	if len(missing) > 0 {
+		if err := tx.CreateManjuDeliverables(missing); err != nil {
+			return err
+		}
+		existing, err = tx.ManjuDeliverablesForRun(projectID, runID)
+		if err != nil {
+			return err
+		}
+	}
+	if !productionDeliveryKindsMatch(existing, currentKinds) {
+		return ErrProductionDeliverablesNotReady
+	}
+	return nil
+}
+
+func verifyProductionDeliveryRows(existing, expectedRows []model.ManjuDeliverable) error {
+	if len(existing) != len(expectedRows) {
+		return ErrProductionDeliverablesNotReady
+	}
+	expected := make(map[string]model.ManjuDeliverable, len(expectedRows))
+	for _, row := range expectedRows {
 		expected[row.Kind] = row
 	}
 	for _, row := range existing {

@@ -192,6 +192,8 @@ export type ManjuUserDeliverable = {
     mimeType: string;
     content: string;
     contentHash: string;
+    contentContractVersion: string;
+    complianceStatus: "COMPLIANT" | "LEGACY_COMPLIANT" | "UNRECOGNIZED";
     createdAt: string;
 };
 

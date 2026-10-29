@@ -3172,6 +3172,11 @@ function ProductionPipeline({ detail, activeStage, onChanged }: { detail: ManjuP
         queryFn: () => getManjuRuleLibrary(detail.project.id),
     });
     const productionRuns = useMemo(() => (productionRunsQuery.data?.items || []).filter((run) => isCurrentLockRevision(run.lockRevision, detail.lock?.revision)), [productionRunsQuery.data?.items, detail.lock?.revision]);
+    const completedProductionRuns = useMemo(() => productionRuns.filter((run) => run.status === "COMPLETED"), [productionRuns]);
+    const selectableProductionRuns = useMemo(
+        () => productionRuns.filter((run) => run.status === "ACTIVE" || completedProductionRuns.some((completed) => completed.id === run.id)),
+        [completedProductionRuns, productionRuns],
+    );
     const hasActiveProduction = productionRuns.some((run) => run.status === "ACTIVE");
 
     useEffect(() => {
@@ -3243,6 +3248,23 @@ function ProductionPipeline({ detail, activeStage, onChanged }: { detail: ManjuP
             {!detail.models?.text.modelKey ? <InlineNotice tone="info">P0B、P3 与 P5 需要项目文本模型；P4 使用官方 compile_feed.py，不调用文本模型。请先在“模型”页选择文本模型。</InlineNotice> : null}
             {notice ? <InlineNotice tone={notice.tone}>{notice.text}</InlineNotice> : null}
             {assetRunsQuery.isError || productionRunsQuery.isError || productionRunQuery.isError ? <InlineNotice tone="error">生产链状态读取失败，请刷新后重试。</InlineNotice> : null}
+            {activeStage === "p5" && selectableProductionRuns.length > 1 ? (
+                <section className="manju-production-run-selector" aria-label="历史生产链选择">
+                    <div>
+                        <span>历史生产链</span>
+                        <small>切换只读查看相同 P0 revision 下已完成的旧生产链。</small>
+                    </div>
+                    <Select
+                        aria-label="选择生产链版本"
+                        value={selectedProductionRunId}
+                        options={selectableProductionRuns.map((run) => ({
+                            value: run.id,
+                            label: `${run.status === "COMPLETED" ? "已完成" : "进行中"} · ${run.id.slice(0, 8)} · P0 revision ${run.lockRevision}`,
+                        }))}
+                        onChange={(runId) => setSelectedProductionRunId(runId)}
+                    />
+                </section>
+            ) : null}
 
             {!completedAssetRuns.length ? (
                 <section className="manju-production-gate">
@@ -3699,7 +3721,11 @@ function ProductionStageCard({
                         <Download />
                         <span>
                             <strong>最终交付物</strong>
-                            <small>以下文件均来自服务端已锁定的交付记录。</small>
+                            <small>
+                                {deliverables[0]?.complianceStatus === "LEGACY_COMPLIANT"
+                                    ? "历史基础交付集已兼容；原有不可变行保持不动，缺失的预演故事板会单独补齐。"
+                                    : "以下文件均来自服务端已锁定的交付记录。"}
+                            </small>
                         </span>
                     </header>
                     {deliverablesQuery.isLoading ? <span>正在读取交付清单...</span> : null}
