@@ -490,10 +490,20 @@ func TestValidateDialogueIntegrityTimeoutFailsClosed(t *testing.T) {
 
 func TestP4ExitZeroRequiresValidatorJSON(t *testing.T) {
 	tests := map[string]bool{
-		"":                            false,
-		"validator finished":          false,
-		"{}":                          false,
-		`{"issues":[],"warnings":[]}`: true,
+		"":                                false,
+		"validator finished":              false,
+		"{}":                              false,
+		`{"issues":[]}`:                   false,
+		`{"warnings":[]}`:                 false,
+		`{"issues":null,"warnings":[]}`:   false,
+		`{"issues":[],"warnings":null}`:   false,
+		`{"issues":[1],"warnings":[]}`:    false,
+		`{"issues":[],"warnings":[1]}`:    false,
+		`{"issues":[],"warnings":[]}junk`: false,
+		`{"issues":[],"warnings":[]}{"issues":["x"],"warnings":[]}`: false,
+		`{"issues":[],"warnings":[]}`:                               true,
+		" \n{\"issues\":[],\"warnings\":[]}\t":                      true,
+		`{"issues":["x"],"warnings":["y"]}`:                         true,
 	}
 	for output, want := range tests {
 		if got := validP4ValidatorOutput(output); got != want {

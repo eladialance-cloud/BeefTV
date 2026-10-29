@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"slices"
 	"sort"
@@ -871,6 +872,11 @@ type P4DeferredContractIssues struct {
 type p4ValidationOutput struct {
 	Issues   []string `json:"issues"`
 	Warnings []string `json:"warnings"`
+}
+
+type p4ValidationOutputPayload struct {
+	Issues   json.RawMessage `json:"issues"`
+	Warnings json.RawMessage `json:"warnings"`
 }
 
 type styleLensRange struct {
@@ -1934,25 +1940,40 @@ func splitP4DeferredContractIssues(issues []string) (active, deferred []string) 
 }
 
 func decodeP4ValidationOutput(output string) (p4ValidationOutput, bool) {
-	var result p4ValidationOutput
-	found := false
-	searchFrom := 0
-	for searchFrom < len(output) {
-		offset := strings.IndexByte(output[searchFrom:], '{')
-		if offset < 0 {
-			break
-		}
-		start := searchFrom + offset
-		var candidate p4ValidationOutput
-		decoder := json.NewDecoder(strings.NewReader(output[start:]))
-		if err := decoder.Decode(&candidate); err == nil &&
-			(candidate.Issues != nil || candidate.Warnings != nil) {
-			result = candidate
-			found = true
-		}
-		searchFrom = start + 1
+	trimmed := strings.TrimSpace(output)
+	if trimmed == "" {
+		return p4ValidationOutput{}, false
 	}
-	return result, found
+	start := strings.IndexByte(trimmed, '{')
+	if start < 0 {
+		return p4ValidationOutput{}, false
+	}
+	decoder := json.NewDecoder(strings.NewReader(trimmed[start:]))
+	var payload p4ValidationOutputPayload
+	if err := decoder.Decode(&payload); err != nil {
+		return p4ValidationOutput{}, false
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return p4ValidationOutput{}, false
+	}
+	issues, issuesOK := decodeP4ValidationStringArray(payload.Issues)
+	warnings, warningsOK := decodeP4ValidationStringArray(payload.Warnings)
+	if !issuesOK || !warningsOK {
+		return p4ValidationOutput{}, false
+	}
+	return p4ValidationOutput{Issues: issues, Warnings: warnings}, true
+}
+
+func decodeP4ValidationStringArray(raw json.RawMessage) ([]string, bool) {
+	if len(raw) == 0 || strings.TrimSpace(string(raw)) == "null" {
+		return nil, false
+	}
+	var values []string
+	if err := json.Unmarshal(raw, &values); err != nil || values == nil {
+		return nil, false
+	}
+	return values, true
 }
 
 func p4RepairRouteInstruction(issues ...string) string {
