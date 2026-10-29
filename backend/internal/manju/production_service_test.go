@@ -878,6 +878,7 @@ func TestProductionChainUsesLockedUpstreamArtifactsAndHumanConfirmation(t *testi
 		t.Fatal(err)
 	}
 	feedStage := findProductionStage(t, detail, manju.ProductionStageFeed)
+	setP4MachineCheckProofForTest(t, f, run.Run.ID, lockedP3ArtifactIDForTest(t, f, run.Run.ID))
 	previsArtifact := &model.ManjuProductionArtifact{
 		ID: "production-previs-ready", ProjectID: f.projectID, RunID: run.Run.ID, StageID: feedStage.ID,
 		Kind: model.ManjuProductionArtifactPrevis, Version: 1, Content: validP45Artifact(),
@@ -1147,8 +1148,58 @@ func TestP4RetainsDialogueIntegrityWarnings(t *testing.T) {
 	if stage.MachineCheckStatus != model.ManjuProductionMachineCheckStatusPass {
 		t.Fatalf("P4 硬门通过后应保留 PASS 状态: %+v", stage)
 	}
+	if !stage.MachineCheckProofVerified {
+		t.Fatalf("P4 四段机检凭证必须通过验证: %+v", stage)
+	}
 	if len(stage.MachineCheckWarnings) == 0 {
 		t.Fatalf("台词部分覆盖警告必须保留在 P4 阶段: %+v", stage)
+	}
+}
+
+func TestP4ConfirmationRejectsMissingMachineCheckProof(t *testing.T) {
+	f := newFixture(t)
+	run := prepareP4AwaitingConfirmation(t, f)
+
+	if err := f.db.Model(&model.ManjuProductionStage{}).
+		Where("run_id = ? AND key = ?", run.Run.ID, manju.ProductionStageFeed).
+		Update("input_json", "").Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err := f.service.ConfirmProductionStage(
+		f.ownerID, f.projectID, run.Run.ID, manju.ProductionStageFeed,
+		manju.ProductionConfirmInput{Note: "尝试无凭证锁定"},
+	)
+	if err == nil || !strings.Contains(err.Error(), "机检凭证") {
+		t.Fatalf("P4 缺少四段机检凭证时必须拒绝确认，得到 %v", err)
+	}
+}
+
+func TestP4ConfirmationRejectsProofForDifferentP3Baseline(t *testing.T) {
+	f := newFixture(t)
+	run := prepareP4AwaitingConfirmation(t, f)
+
+	setP4MachineCheckProofForTest(t, f, run.Run.ID, "p3-artifact-from-another-revision")
+	_, err := f.service.ConfirmProductionStage(
+		f.ownerID, f.projectID, run.Run.ID, manju.ProductionStageFeed,
+		manju.ProductionConfirmInput{Note: "尝试使用错配凭证锁定"},
+	)
+	if err == nil || !strings.Contains(err.Error(), "机检凭证") {
+		t.Fatalf("P4 机检凭证必须绑定当前锁定 P3，得到 %v", err)
+	}
+}
+
+func TestP4RunDetailDoesNotDisplayUnboundProofAsPass(t *testing.T) {
+	f := newFixture(t)
+	run := prepareP4AwaitingConfirmation(t, f)
+
+	setP4MachineCheckProofForTest(t, f, run.Run.ID, "p3-artifact-from-another-revision")
+	detail, err := f.service.ProductionRunDetail(f.ownerID, f.projectID, run.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage := findProductionStage(t, detail, manju.ProductionStageFeed)
+	if stage.MachineCheckStatus == model.ManjuProductionMachineCheckStatusPass || stage.MachineCheckProofVerified {
+		t.Fatalf("错绑当前 P3 的机检凭证不得显示 PASS: %+v", stage)
 	}
 }
 
@@ -1205,6 +1256,47 @@ func TestGenerateProductionPrevisUsesNewOperationKeyPerAttempt(t *testing.T) {
 func prepareP4WithUpstreamDialogue(t *testing.T, f fixture, dialogue string) *manju.ProductionRunDetail {
 	t.Helper()
 	return prepareP4WithDialogueComparison(t, f, dialogue, "无")
+}
+
+func setP4MachineCheckProofForTest(t *testing.T, f fixture, runID, baselineArtifactID string) {
+	t.Helper()
+	payload, err := json.Marshal(map[string]any{
+		"machineCheckProof": map[string]any{
+			"version":                    "V7.4.26",
+			"pipeline":                   "compile_feed.py -> validate_prompt.py -> gate_check.py -> script_feed_diff.py",
+			"compiler":                   "V7.4.26 compile_feed.py",
+			"validator":                  "V7.4.26 validate_prompt.py",
+			"gate":                       "V7.4.26 gate_check.py",
+			"dialogueDiff":               "V7.4.26 script_feed_diff.py",
+			"dialogueBaselineArtifactId": baselineArtifactID,
+			"status":                     "PASS",
+			"warnings":                   []string{},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := f.db.Model(&model.ManjuProductionStage{}).
+		Where("run_id = ? AND key = ?", runID, manju.ProductionStageFeed).
+		Update("input_json", string(payload))
+	if result.Error != nil {
+		t.Fatal(result.Error)
+	}
+	if result.RowsAffected != 1 {
+		t.Fatalf("P4 stage proof update affected %d rows", result.RowsAffected)
+	}
+}
+
+func lockedP3ArtifactIDForTest(t *testing.T, f fixture, runID string) string {
+	t.Helper()
+	var stage model.ManjuProductionStage
+	if err := f.db.First(&stage, "run_id = ? AND key = ?", runID, manju.ProductionStageStoryboard).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stage.Status != model.ManjuProductionStageStatusLocked || strings.TrimSpace(stage.ArtifactID) == "" {
+		t.Fatalf("P3 is not locked with an artifact: %+v", stage)
+	}
+	return stage.ArtifactID
 }
 
 func prepareP4WithDialogueComparison(t *testing.T, f fixture, upstreamDialogue, compiledDialogue string) *manju.ProductionRunDetail {
@@ -1320,6 +1412,7 @@ func prepareP4AwaitingConfirmation(t *testing.T, f fixture) *manju.ProductionRun
 	if got := findProductionStage(t, detail, manju.ProductionStageFeed); got.Status != model.ManjuProductionStageStatusAwaitingConfirmation {
 		t.Fatalf("P4 应等待确认: %+v", got)
 	}
+	setP4MachineCheckProofForTest(t, f, run.Run.ID, lockedP3ArtifactIDForTest(t, f, run.Run.ID))
 	return detail
 }
 

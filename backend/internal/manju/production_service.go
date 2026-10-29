@@ -32,14 +32,42 @@ const (
 )
 
 var (
-	ErrProductionRunNotFound     = errors.New("manju production run not found")
-	ErrProductionStageNotFound   = errors.New("manju production stage not found")
-	ErrProductionAssetNotReady   = errors.New("manju P2 asset run is not completed and locked")
-	ErrProductionStageNotReady   = errors.New("manju production stage is not ready")
-	ErrInvalidProductionRun      = errors.New("invalid manju production run")
-	ErrProductionArtifactInvalid = errors.New("invalid manju production artifact")
-	ErrProductionPrevisRequired  = errors.New("manju P4.5 previs storyboard is required")
+	ErrProductionRunNotFound              = errors.New("manju production run not found")
+	ErrProductionStageNotFound            = errors.New("manju production stage not found")
+	ErrProductionAssetNotReady            = errors.New("manju P2 asset run is not completed and locked")
+	ErrProductionStageNotReady            = errors.New("manju production stage is not ready")
+	ErrInvalidProductionRun               = errors.New("invalid manju production run")
+	ErrProductionArtifactInvalid          = errors.New("invalid manju production artifact")
+	ErrProductionPrevisRequired           = errors.New("manju P4.5 previs storyboard is required")
+	ErrProductionMachineCheckProofInvalid = errors.New("manju P4 machine check proof is invalid")
 )
+
+const (
+	ManjuProductionMachineCheckProofVersion = "V7.4.26"
+	ManjuProductionMachineCheckPipeline     = "compile_feed.py -> validate_prompt.py -> gate_check.py -> script_feed_diff.py"
+	ManjuProductionMachineCheckCompiler     = "V7.4.26 compile_feed.py"
+	ManjuProductionMachineCheckValidator    = "V7.4.26 validate_prompt.py"
+	ManjuProductionMachineCheckGate         = "V7.4.26 gate_check.py"
+	ManjuProductionMachineCheckDialogueDiff = "V7.4.26 script_feed_diff.py"
+	manjuProductionLegacyMachineCheckNote   = "历史非合规状态：未通过 V7.4.26 机检，不能作为当前锁定依据。"
+)
+
+type ManjuProductionMachineCheckProof struct {
+	Version                    string   `json:"version"`
+	Pipeline                   string   `json:"pipeline"`
+	Compiler                   string   `json:"compiler"`
+	Validator                  string   `json:"validator"`
+	Gate                       string   `json:"gate"`
+	DialogueDiff               string   `json:"dialogueDiff"`
+	DialogueBaselineArtifactID string   `json:"dialogueBaselineArtifactId"`
+	Status                     string   `json:"status"`
+	Warnings                   []string `json:"warnings"`
+}
+
+type productionStageRuntimeMetadata struct {
+	MachineCheckProof *ManjuProductionMachineCheckProof `json:"machineCheckProof,omitempty"`
+	MachineCheckNote  string                            `json:"machineCheckNote,omitempty"`
+}
 
 type ProductionRunInput struct {
 	AssetRunID string `json:"assetRunId"`
@@ -66,24 +94,25 @@ type ProductionRunView struct {
 }
 
 type ProductionStageView struct {
-	ID                   string               `json:"id"`
-	Key                  string               `json:"key"`
-	Title                string               `json:"title"`
-	Position             int                  `json:"position"`
-	Status               string               `json:"status"`
-	Version              int64                `json:"version"`
-	TaskID               string               `json:"taskId,omitempty"`
-	ArtifactID           string               `json:"artifactId,omitempty"`
-	Error                string               `json:"error,omitempty"`
-	ConfirmedBy          string               `json:"confirmedBy,omitempty"`
-	ConfirmedAt          *time.Time           `json:"confirmedAt,omitempty"`
-	StartedAt            *time.Time           `json:"startedAt,omitempty"`
-	CompletedAt          *time.Time           `json:"completedAt,omitempty"`
-	UpdatedAt            time.Time            `json:"updatedAt"`
-	Draft                *ManjuStageDraftView `json:"draft,omitempty"`
-	MachineCheckStatus   string               `json:"machineCheckStatus,omitempty"`
-	MachineCheckNote     string               `json:"machineCheckNote,omitempty"`
-	MachineCheckWarnings []string             `json:"machineCheckWarnings,omitempty"`
+	ID                        string               `json:"id"`
+	Key                       string               `json:"key"`
+	Title                     string               `json:"title"`
+	Position                  int                  `json:"position"`
+	Status                    string               `json:"status"`
+	Version                   int64                `json:"version"`
+	TaskID                    string               `json:"taskId,omitempty"`
+	ArtifactID                string               `json:"artifactId,omitempty"`
+	Error                     string               `json:"error,omitempty"`
+	ConfirmedBy               string               `json:"confirmedBy,omitempty"`
+	ConfirmedAt               *time.Time           `json:"confirmedAt,omitempty"`
+	StartedAt                 *time.Time           `json:"startedAt,omitempty"`
+	CompletedAt               *time.Time           `json:"completedAt,omitempty"`
+	UpdatedAt                 time.Time            `json:"updatedAt"`
+	Draft                     *ManjuStageDraftView `json:"draft,omitempty"`
+	MachineCheckStatus        string               `json:"machineCheckStatus,omitempty"`
+	MachineCheckNote          string               `json:"machineCheckNote,omitempty"`
+	MachineCheckWarnings      []string             `json:"machineCheckWarnings,omitempty"`
+	MachineCheckProofVerified bool                 `json:"machineCheckProofVerified,omitempty"`
 }
 
 type ProductionArtifactView struct {
@@ -1001,18 +1030,24 @@ func (s *Service) runOfficialProductionFeedCompiler(actorID, projectID, runID st
 		stage.Status = model.ManjuProductionStageStatusAwaitingConfirmation
 		stage.TaskID = ""
 		stage.Error = ""
-		machineCheckStatus := model.ManjuProductionMachineCheckStatusPass
 		machineCheckNote := "V7.4.26 compile_feed.py、validate_prompt.py、gate_check.py 与 script_feed_diff.py 已通过。"
 		if len(validation.DialogueWarnings) > 0 {
 			machineCheckNote = "V7.4.26 P4 硬门已通过；台词完整性存在需人工核对的部分覆盖警告。"
 		}
-		runtimeMeta, err := json.Marshal(map[string]any{
-			"compiler":                   "V7.4.26 compile_feed.py",
-			"pipeline":                   "compile_feed.py -> validate_prompt.py -> gate_check.py -> script_feed_diff.py",
-			"dialogueBaselineArtifactId": upstreamArtifactID,
-			"machineCheckStatus":         machineCheckStatus,
-			"machineCheckNote":           machineCheckNote,
-			"machineCheckWarnings":       validation.DialogueWarnings,
+		proof := &ManjuProductionMachineCheckProof{
+			Version:                    ManjuProductionMachineCheckProofVersion,
+			Pipeline:                   ManjuProductionMachineCheckPipeline,
+			Compiler:                   ManjuProductionMachineCheckCompiler,
+			Validator:                  ManjuProductionMachineCheckValidator,
+			Gate:                       ManjuProductionMachineCheckGate,
+			DialogueDiff:               ManjuProductionMachineCheckDialogueDiff,
+			DialogueBaselineArtifactID: upstreamArtifactID,
+			Status:                     model.ManjuProductionMachineCheckStatusPass,
+			Warnings:                   append([]string{}, validation.DialogueWarnings...),
+		}
+		runtimeMeta, err := json.Marshal(productionStageRuntimeMetadata{
+			MachineCheckProof: proof,
+			MachineCheckNote:  machineCheckNote,
 		})
 		if err != nil {
 			return err
@@ -1779,6 +1814,20 @@ func (s *Service) ConfirmProductionStage(actorID, projectID, runID, stageKey str
 			strings.TrimSpace(stage.ArtifactID) == "" {
 			return ErrProductionStageNotReady
 		}
+		if stageKey == ProductionStageFeed {
+			p3Stage, err := tx.ManjuProductionStage(runID, ProductionStageStoryboard)
+			if err != nil {
+				return err
+			}
+			if p3Stage == nil ||
+				p3Stage.Status != model.ManjuProductionStageStatusLocked ||
+				strings.TrimSpace(p3Stage.ArtifactID) == "" {
+				return ErrProductionStageNotReady
+			}
+			if err := validateProductionStageMachineCheckProof(*stage, p3Stage.ArtifactID); err != nil {
+				return err
+			}
+		}
 		assetRun, err := tx.ManjuAssetRun(projectID, run.AssetRunID)
 		if err != nil {
 			return err
@@ -2023,8 +2072,17 @@ func (s *Service) ProductionRunDetail(actorID, projectID, runID string) (*Produc
 		view := productionPrevisView(*previs)
 		detail.Previs = &view
 	}
+	p3ArtifactID := ""
 	for _, stage := range stages {
-		view := productionStageView(stage)
+		if stage.Key == ProductionStageStoryboard &&
+			stage.Status == model.ManjuProductionStageStatusLocked &&
+			strings.TrimSpace(stage.ArtifactID) != "" {
+			p3ArtifactID = stage.ArtifactID
+			break
+		}
+	}
+	for _, stage := range stages {
+		view := productionStageView(stage, p3ArtifactID)
 		if stage.Status == model.ManjuProductionStageStatusBlocked {
 			draft, draftErr := s.repo.LatestManjuStageDraft(runID, stage.ID)
 			if draftErr != nil {
@@ -2538,7 +2596,7 @@ func productionRunView(run model.ManjuProductionRun) ProductionRunView {
 	}
 }
 
-func productionStageView(stage model.ManjuProductionStage) ProductionStageView {
+func productionStageView(stage model.ManjuProductionStage, expectedP3ArtifactID string) ProductionStageView {
 	view := ProductionStageView{
 		ID: stage.ID, Key: stage.Key, Title: stage.Title, Position: stage.Position,
 		Status: stage.Status, Version: stage.Version, TaskID: stage.TaskID,
@@ -2547,29 +2605,77 @@ func productionStageView(stage model.ManjuProductionStage) ProductionStageView {
 		CompletedAt: stage.CompletedAt, UpdatedAt: stage.UpdatedAt,
 	}
 	if stage.Key == ProductionStageFeed {
-		var meta struct {
-			MachineCheckStatus   string   `json:"machineCheckStatus"`
-			MachineCheckNote     string   `json:"machineCheckNote"`
-			MachineCheckWarnings []string `json:"machineCheckWarnings"`
-		}
-		if strings.TrimSpace(stage.InputJSON) == "" || json.Unmarshal([]byte(stage.InputJSON), &meta) == nil {
-			switch strings.TrimSpace(meta.MachineCheckStatus) {
-			case model.ManjuProductionMachineCheckStatusPass:
-				view.MachineCheckStatus = model.ManjuProductionMachineCheckStatusPass
-				view.MachineCheckNote = strings.TrimSpace(meta.MachineCheckNote)
-			case "SKIPPED_BY_USER":
-				view.MachineCheckStatus = model.ManjuProductionMachineCheckStatusLegacyNonCompliant
-				view.MachineCheckNote = "历史非合规状态：未通过 V7.4.26 机检，不能作为当前锁定依据。"
-			default:
-				view.MachineCheckStatus = strings.TrimSpace(meta.MachineCheckStatus)
-				view.MachineCheckNote = strings.TrimSpace(meta.MachineCheckNote)
-			}
-			view.MachineCheckWarnings = append([]string(nil), meta.MachineCheckWarnings...)
-		}
-		if view.MachineCheckStatus == "" && strings.TrimSpace(stage.ArtifactID) != "" {
+		meta, parseErr := parseProductionStageRuntimeMetadata(stage.InputJSON)
+		if parseErr == nil &&
+			strings.TrimSpace(expectedP3ArtifactID) != "" &&
+			validateManjuProductionMachineCheckProof(meta.MachineCheckProof, expectedP3ArtifactID) == nil {
+			view.MachineCheckStatus = model.ManjuProductionMachineCheckStatusPass
+			view.MachineCheckProofVerified = true
+			view.MachineCheckNote = strings.TrimSpace(meta.MachineCheckNote)
+			view.MachineCheckWarnings = append([]string(nil), meta.MachineCheckProof.Warnings...)
+		} else if strings.TrimSpace(stage.ArtifactID) != "" {
 			view.MachineCheckStatus = model.ManjuProductionMachineCheckStatusLegacyNonCompliant
-			view.MachineCheckNote = "历史非合规状态：未通过 V7.4.26 机检，不能作为当前锁定依据。"
+			view.MachineCheckNote = manjuProductionLegacyMachineCheckNote
 		}
 	}
 	return view
+}
+
+func parseProductionStageRuntimeMetadata(inputJSON string) (productionStageRuntimeMetadata, error) {
+	if strings.TrimSpace(inputJSON) == "" {
+		return productionStageRuntimeMetadata{}, ErrProductionMachineCheckProofInvalid
+	}
+	var meta productionStageRuntimeMetadata
+	if err := json.Unmarshal([]byte(inputJSON), &meta); err != nil {
+		return productionStageRuntimeMetadata{}, fmt.Errorf("%w: %v", ErrProductionMachineCheckProofInvalid, err)
+	}
+	return meta, nil
+}
+
+func validateProductionStageMachineCheckProof(stage model.ManjuProductionStage, expectedBaselineArtifactID string) error {
+	meta, err := parseProductionStageRuntimeMetadata(stage.InputJSON)
+	if err != nil {
+		return fmt.Errorf("%w: 机检凭证缺失或格式错误", ErrProductionMachineCheckProofInvalid)
+	}
+	return validateManjuProductionMachineCheckProof(meta.MachineCheckProof, expectedBaselineArtifactID)
+}
+
+func validateManjuProductionMachineCheckProof(proof *ManjuProductionMachineCheckProof, expectedBaselineArtifactID string) error {
+	if proof == nil {
+		return fmt.Errorf("%w: 机检凭证缺失", ErrProductionMachineCheckProofInvalid)
+	}
+	checks := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{"version", proof.Version, ManjuProductionMachineCheckProofVersion},
+		{"pipeline", proof.Pipeline, ManjuProductionMachineCheckPipeline},
+		{"compiler", proof.Compiler, ManjuProductionMachineCheckCompiler},
+		{"validator", proof.Validator, ManjuProductionMachineCheckValidator},
+		{"gate", proof.Gate, ManjuProductionMachineCheckGate},
+		{"dialogueDiff", proof.DialogueDiff, ManjuProductionMachineCheckDialogueDiff},
+		{"status", proof.Status, model.ManjuProductionMachineCheckStatusPass},
+	}
+	for _, check := range checks {
+		if check.value != check.want {
+			return fmt.Errorf("%w: 机检凭证 %s 不匹配", ErrProductionMachineCheckProofInvalid, check.name)
+		}
+	}
+	if proof.Warnings == nil {
+		return fmt.Errorf("%w: 机检凭证 warnings 缺失", ErrProductionMachineCheckProofInvalid)
+	}
+	for _, warning := range proof.Warnings {
+		if strings.TrimSpace(warning) == "" {
+			return fmt.Errorf("%w: 机检凭证 warnings 含空项", ErrProductionMachineCheckProofInvalid)
+		}
+	}
+	baselineArtifactID := strings.TrimSpace(proof.DialogueBaselineArtifactID)
+	if baselineArtifactID == "" {
+		return fmt.Errorf("%w: 机检凭证 dialogueBaselineArtifactId 缺失", ErrProductionMachineCheckProofInvalid)
+	}
+	if expectedBaselineArtifactID != "" && baselineArtifactID != expectedBaselineArtifactID {
+		return fmt.Errorf("%w: 机检凭证 dialogueBaselineArtifactId 与当前锁定 P3 不一致", ErrProductionMachineCheckProofInvalid)
+	}
+	return nil
 }

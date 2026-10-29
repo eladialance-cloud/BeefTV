@@ -46,6 +46,8 @@ test("P4 validation cannot be skipped", () => {
     expect(page).toContain("script_feed_diff.py");
     expect(page).toContain("历史非合规状态：未通过 V7.4.26 机检，不能作为当前锁定依据。");
     expect(page).toContain("未记录完整四步机检，不能作为 PASS");
+    expect(api).toContain("machineCheckProofVerified?: boolean");
+    expect(page).toContain('stage.machineCheckStatus === "PASS" && stage.machineCheckProofVerified === true');
 });
 
 test("P4.5 is an independent P4 gate backed by check_p45.py", () => {

@@ -221,6 +221,7 @@ func (r *ManjuSkillRuntime) ValidateP4(content string, options ManjuSkillValidat
 	validateOutput, validateCode, validateErr := r.runPython(filepath.FromSlash(contract.Validator.Script), validateArgs, timeout)
 	result := ManjuSkillValidationResult{Output: validateOutput, ExitCode: validateCode}
 	parsed, parsedOK := decodeP4ValidationOutput(validateOutput)
+	validatorOutputOK := strings.TrimSpace(validateOutput) != "" && validP4ValidatorOutput(validateOutput)
 	if parsedOK {
 		result.Issues, result.DeferredIssues = splitP4DeferredContractIssues(parsed.Issues)
 		result.Warnings = parsed.Warnings
@@ -231,11 +232,14 @@ func (r *ManjuSkillRuntime) ValidateP4(content string, options ManjuSkillValidat
 			)
 		}
 	}
-	onlyDeferredIssues := parsedOK &&
+	onlyDeferredIssues := validatorOutputOK &&
 		len(parsed.Issues) > 0 &&
 		len(result.Issues) == 0 &&
 		len(result.DeferredIssues) > 0
-	if (validateErr != nil || validateCode != 0 || len(result.Issues) > 0) && !onlyDeferredIssues {
+	if !validatorOutputOK && validateCode == 0 {
+		result.Issues = append(result.Issues, "validate_prompt.py exit 0 未返回有效 JSON 结果")
+	}
+	if (validateErr != nil || validateCode != 0 || !validatorOutputOK || len(result.Issues) > 0) && !onlyDeferredIssues {
 		result.Output = strings.TrimSpace(validateOutput)
 		if result.Output == "" {
 			if validateErr != nil {
@@ -262,7 +266,11 @@ func (r *ManjuSkillRuntime) ValidateP4(content string, options ManjuSkillValidat
 	result.Output = strings.TrimSpace(strings.Join([]string{strings.TrimSpace(validateOutput), strings.TrimSpace(gateOutput)}, "\n\n"))
 	result.ExitCode = gateCode
 	result.Output = strings.TrimSpace(gateOutput)
-	if gateErr != nil || gateCode != 0 {
+	gateOutputOK := validP4GateOutput(gateOutput)
+	if gateErr != nil || gateCode != 0 || !gateOutputOK {
+		if !gateOutputOK && gateCode == 0 {
+			result.Issues = append(result.Issues, "gate_check.py exit 0 未返回含 FAIL=0 的标准汇总")
+		}
 		if gateOutput != "" {
 			result.Issues = append(result.Issues, firstFailureLines(gateOutput)...)
 		}
@@ -279,6 +287,27 @@ func (r *ManjuSkillRuntime) ValidateP4(content string, options ManjuSkillValidat
 	}
 	result.Passed = true
 	return result, nil
+}
+
+func validP4ValidatorOutput(output string) bool {
+	if strings.TrimSpace(output) == "" {
+		return false
+	}
+	_, ok := decodeP4ValidationOutput(output)
+	return ok
+}
+
+func validP4GateOutput(output string) bool {
+	for _, rawLine := range strings.Split(output, "\n") {
+		line := strings.TrimSpace(rawLine)
+		const prefix = "汇总：FAIL="
+		if !strings.HasPrefix(line, prefix) {
+			continue
+		}
+		fields := strings.Fields(strings.TrimPrefix(line, prefix))
+		return len(fields) > 0 && fields[0] == "0"
+	}
+	return false
 }
 
 func (r *ManjuSkillRuntime) ValidateAssetBlocks(content string) (ManjuSkillValidationResult, error) {

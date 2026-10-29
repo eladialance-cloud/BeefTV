@@ -3323,7 +3323,7 @@ function ProductionStageCard({
     const sourceP3ArtifactId = detail.stages.find((item) => item.key === "director_storyboard")?.artifactId || "";
     const isOfficialCompiler = stage.key === "feed_package";
     const legacyNonCompliant = stage.machineCheckStatus === "LEGACY_NON_COMPLIANT";
-    const machineCheckPassed = stage.machineCheckStatus === "PASS";
+    const machineCheckPassed = stage.machineCheckStatus === "PASS" && stage.machineCheckProofVerified === true;
     const machineCheckProofMissing = isOfficialCompiler && Boolean(artifact) && !legacyNonCompliant && !machineCheckPassed;
     const machineCheckWarnings = stage.machineCheckWarnings || [];
     const officialAuditLabel = isOfficialCompiler

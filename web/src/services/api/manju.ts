@@ -495,6 +495,7 @@ export type ManjuProductionStage = {
     machineCheckStatus?: "PASS" | "LEGACY_NON_COMPLIANT";
     machineCheckNote?: string;
     machineCheckWarnings?: string[];
+    machineCheckProofVerified?: boolean;
 };
 
 export type ManjuCompiledSegmentPreview = {

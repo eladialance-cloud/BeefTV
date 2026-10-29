@@ -3,6 +3,7 @@ package hostedapi
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
@@ -16,7 +17,16 @@ import (
 func bindStrictJSON(c *gin.Context, target any) error {
 	decoder := json.NewDecoder(c.Request.Body)
 	decoder.DisallowUnknownFields()
-	return decoder.Decode(target)
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("JSON body must contain exactly one value")
+		}
+		return err
+	}
+	return nil
 }
 
 // ManjuService is the hosted project surface used by the manju studio. Session
@@ -514,6 +524,8 @@ func writeManjuError(c *gin.Context, err error) {
 		writeError(c, kernel.NotFound("P3-P5 生产阶段不存在"))
 	case errors.Is(err, manju.ErrProductionStageNotReady):
 		writeError(c, kernel.NewAppError(kernel.CodeConflict, "当前生产阶段尚不可执行或确认，请先完成并锁定上一阶段"))
+	case errors.Is(err, manju.ErrProductionMachineCheckProofInvalid):
+		writeError(c, kernel.NewAppError(kernel.CodeConflict, "P4 缺少与当前锁定 P3 绑定的完整四段机检凭证，不能确认锁定"))
 	case errors.Is(err, manju.ErrStoryboardImagesNotReady):
 		writeError(c, kernel.NewAppError(kernel.CodeConflict, "故事板图片尚未全部生成并取得真实资源，P3 不能锁定"))
 	case errors.Is(err, manju.ErrStoryboardImageInvalid):

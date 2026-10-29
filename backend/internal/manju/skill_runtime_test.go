@@ -488,6 +488,34 @@ func TestValidateDialogueIntegrityTimeoutFailsClosed(t *testing.T) {
 	}
 }
 
+func TestP4ExitZeroRequiresValidatorJSON(t *testing.T) {
+	tests := map[string]bool{
+		"":                            false,
+		"validator finished":          false,
+		"{}":                          false,
+		`{"issues":[],"warnings":[]}`: true,
+	}
+	for output, want := range tests {
+		if got := validP4ValidatorOutput(output); got != want {
+			t.Fatalf("validP4ValidatorOutput(%q) = %v, want %v", output, got, want)
+		}
+	}
+}
+
+func TestP4ExitZeroRequiresCanonicalGateSummary(t *testing.T) {
+	tests := map[string]bool{
+		"":                  false,
+		"gate finished":     false,
+		"汇总：FAIL=1  WARN=0": false,
+		"汇总：FAIL=0  WARN=2": true,
+	}
+	for output, want := range tests {
+		if got := validP4GateOutput(output); got != want {
+			t.Fatalf("validP4GateOutput(%q) = %v, want %v", output, got, want)
+		}
+	}
+}
+
 func TestCompileFeedDoesNotOverrideStateAspectFromOptions(t *testing.T) {
 	rawState, err := defaultManjuSkillRuntime.DefaultProjectStateTemplate()
 	if err != nil {

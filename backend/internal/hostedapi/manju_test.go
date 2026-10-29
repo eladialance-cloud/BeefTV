@@ -1229,6 +1229,24 @@ func TestP4RequestRejectsObsoleteSkipValidationField(t *testing.T) {
 	}
 }
 
+func TestP4RequestRejectsTrailingJSONValue(t *testing.T) {
+	engine, _ := newManjuHTTPEnv(t)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/manju/projects/project-secret/production-runs/run-1/stages/feed_package/run",
+		strings.NewReader(`{"instruction":""}{"skipValidation":true}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Test-Manju-User", "owner")
+	recorder := httptest.NewRecorder()
+
+	engine.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("trailing JSON must be rejected, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestManjuProductionRoutesDoNotLeakForeignProject(t *testing.T) {
 	engine, _ := newManjuHTTPEnv(t)
 
