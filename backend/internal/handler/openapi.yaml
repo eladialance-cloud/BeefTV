@@ -231,7 +231,7 @@ paths:
     put:
       tags: [manju]
       summary: 保存项目级文本、图片、视频模型路由
-      description: 仅主理人或制片可写。每个槽位必须引用画布后台已启用且 capability 匹配的系统渠道模型；不支持音频槽位。
+      description: 仅主理人或制片可写。text、image、video 可单独选择，但至少选择一个非空槽位。每个已选槽位必须引用画布后台已启用且 capability 匹配的系统渠道模型；不支持音频槽位。
       parameters:
         - in: path
           name: projectId
@@ -243,7 +243,10 @@ paths:
           application/json:
             schema:
               type: object
-              required: [text, image, video]
+              anyOf:
+                - required: [text]
+                - required: [image]
+                - required: [video]
               properties:
                 text: { $ref: "#/components/schemas/ManjuModelSelection" }
                 image: { $ref: "#/components/schemas/ManjuModelSelection" }
@@ -252,7 +255,7 @@ paths:
         "200":
           description: 信封 data.item 为已保存的模型路由
         "400":
-          description: 槽位缺失、模型停用或能力不匹配
+          description: 三个槽位均为空、槽位值不完整、模型停用或能力不匹配
         "403":
           description: 当前成员角色不能修改模型路由
   /manju/projects/{projectId}/members:
@@ -1365,8 +1368,8 @@ components:
       type: object
       required: [channelId, modelKey]
       properties:
-        channelId: { type: string }
-        modelKey: { type: string }
+        channelId: { type: string, minLength: 1, pattern: '\S' }
+        modelKey: { type: string, minLength: 1, pattern: '\S' }
     Envelope:
       type: object
       required: [code, msg]

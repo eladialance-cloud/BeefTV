@@ -724,6 +724,33 @@ func TestManjuRoundtableDecisionRequiresExplicitChoice(t *testing.T) {
 	}
 }
 
+func TestManjuRoundtableDecisionRejectsStrictJSONViolations(t *testing.T) {
+	path := "/api/manju/projects/project-secret/script-runs/run-roundtable/stages/roundtable_review/decide"
+	testCases := []struct {
+		name string
+		body string
+	}{
+		{name: "unknown field", body: `{"decision":"PROCEED_CURRENT","bypass":true}`},
+		{name: "trailing value", body: `{"decision":"PROCEED_CURRENT"}{"bypass":true}`},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			engine, _ := newManjuHTTPEnv(t)
+			request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(testCase.body))
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("X-Test-Manju-User", "owner")
+			recorder := httptest.NewRecorder()
+
+			engine.ServeHTTP(recorder, request)
+
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("strict roundtable JSON violation must return 400, got %d: %s", recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}
+
 func TestManjuRoundtableDecisionRejectsNonAwaitingReviewAsConflict(t *testing.T) {
 	engine, _, db := newManjuHTTPEnvWithDB(t)
 	runID := prepareManjuRoundtableAwaitingDecision(t, db)
@@ -1194,6 +1221,84 @@ func TestManjuProductionP0BDecisionLocksBeforeStoryboard(t *testing.T) {
 			t.Fatalf("P0B 锁定后必须开放 P3: %+v", stage)
 		}
 	}
+}
+
+func TestManjuProductionConfirmAcceptsOptionalBody(t *testing.T) {
+	testCases := []struct {
+		name     string
+		omitBody bool
+		body     string
+		wantCode int
+	}{
+		{name: "omitted body", omitBody: true, wantCode: http.StatusOK},
+		{name: "empty body", body: "", wantCode: http.StatusOK},
+		{name: "whitespace-only body", body: " \n\t", wantCode: http.StatusOK},
+		{name: "malformed JSON", body: `{"note":`, wantCode: http.StatusBadRequest},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			engine, _, db := newManjuHTTPEnvWithDB(t)
+			base := prepareManjuProductionP0BConfirmation(t, engine, db)
+			path := base + "/stages/" + manjusvc.ProductionStageDecisionAnchor + "/confirm"
+
+			var request *http.Request
+			if testCase.omitBody {
+				request = httptest.NewRequest(http.MethodPost, path, nil)
+			} else {
+				request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(testCase.body))
+				request.Header.Set("Content-Type", "application/json")
+			}
+			request.Header.Set("X-Test-Manju-User", "owner")
+			recorder := httptest.NewRecorder()
+
+			engine.ServeHTTP(recorder, request)
+
+			if recorder.Code != testCase.wantCode {
+				t.Fatalf("production confirm body case %q must return %d, got %d: %s", testCase.name, testCase.wantCode, recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func prepareManjuProductionP0BConfirmation(t *testing.T, engine *gin.Engine, db *gorm.DB) string {
+	t.Helper()
+	seedProductionReadyProject(t, db)
+	created := manjuRequest(t, engine, http.MethodPost, "/api/manju/projects/project-secret/production-runs", map[string]any{
+		"assetRunId": "asset-production",
+	}, "owner")
+	if created.Code != http.StatusOK {
+		t.Fatalf("创建生产链失败: %d %s", created.Code, created.Body.String())
+	}
+	var payload struct {
+		Data struct {
+			Item manjusvc.ProductionRunDetail `json:"item"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	runID := payload.Data.Item.Run.ID
+	var stage model.ManjuProductionStage
+	if err := db.First(&stage, "run_id = ? AND key = ?", runID, manjusvc.ProductionStageDecisionAnchor).Error; err != nil {
+		t.Fatal(err)
+	}
+	artifact := &model.ManjuProductionArtifact{
+		ID: "p0b-confirm-http-" + runID[:8], ProjectID: "project-secret", RunID: runID, StageID: stage.ID,
+		Kind: model.ManjuProductionArtifactEmotionAnchor, Version: 1, Content: validProductionP0BArtifact(),
+		ContentHash: "optional-body-p0b-hash", CreatedBy: testManjuOwnerID, CreatedAt: time.Now(),
+	}
+	if err := db.Create(artifact).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := db.Model(&model.ManjuProductionStage{}).Where("id = ?", stage.ID).Updates(map[string]any{
+		"status": model.ManjuProductionStageStatusAwaitingConfirmation, "artifact_id": artifact.ID,
+		"version": 1, "completed_at": now, "error": "",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	return "/api/manju/projects/project-secret/production-runs/" + runID
 }
 
 func validProductionP0BArtifact() string {

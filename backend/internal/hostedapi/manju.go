@@ -1,6 +1,7 @@
 package hostedapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -27,6 +28,20 @@ func bindStrictJSON(c *gin.Context, target any) error {
 		return err
 	}
 	return nil
+}
+
+func bindOptionalJSON(c *gin.Context, target any) error {
+	if c.Request.Body == nil {
+		return nil
+	}
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		return err
+	}
+	if len(bytes.TrimSpace(body)) == 0 {
+		return nil
+	}
+	return json.Unmarshal(body, target)
 }
 
 // ManjuService is the hosted project surface used by the manju studio. Session
@@ -443,7 +458,7 @@ func RegisterManjuRoutes(r *gin.RouterGroup, svc ManjuService, resolve ActorReso
 			return
 		}
 		var input manju.RoundtableDecisionInput
-		if err := c.ShouldBindJSON(&input); err != nil {
+		if err := bindStrictJSON(c, &input); err != nil {
 			writeError(c, kernel.BadAuthRequest("圆桌决策参数格式错误"))
 			return
 		}

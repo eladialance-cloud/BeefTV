@@ -212,7 +212,7 @@ func registerManjuProductionRoutes(group *gin.RouterGroup, svc ManjuService, res
 			return
 		}
 		var input manju.ProductionConfirmInput
-		if err := c.ShouldBindJSON(&input); err != nil {
+		if err := bindOptionalJSON(c, &input); err != nil {
 			writeError(c, kernel.BadAuthRequest("生产阶段确认参数格式错误"))
 			return
 		}

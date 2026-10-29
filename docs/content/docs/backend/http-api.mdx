@@ -159,7 +159,7 @@ Windows 的运行地址描述文件位于用户目录的 `.beeftv/runtime/`，�
 | GET | `/api/manju/projects` | 列出当前账号可访问的漫剧项目，只返回项目摘要与当前角色 |
 | GET | `/api/manju/projects/:projectId` | 读取项目、P0 当前回执、项目模型路由；主理人额外读取成员列表 |
 | PUT | `/api/manju/projects/:projectId/lock` | 主理人或制片保存 P0；硬锁必须逐项出现在 `confirmedLocks`，每次保存创建新 revision，旧回执标记 `superseded` |
-| PUT | `/api/manju/projects/:projectId/models` | 主理人或制片保存文本、图片、视频三个项目级模型槽位 |
+| PUT | `/api/manju/projects/:projectId/models` | 主理人或制片单独或同时保存文本、图片、视频项目级模型槽位 |
 | POST | `/api/manju/projects/:projectId/members` | 主理人按已有活动用户 ID 邀请成员；重复邀请更新角色 |
 | DELETE | `/api/manju/projects/:projectId/members/:memberId` | 主理人移除协作者 |
 | POST | `/api/manju/projects/:projectId/script-runs` | 按 P0 来源创建 P1；`inputKind` 区分小说、大纲和成型剧本，热点速成必须显式提交 `trendResolution` |
@@ -177,7 +177,7 @@ Windows 的运行地址描述文件位于用户目录的 `.beeftv/runtime/`，�
 | GET | `/api/manju/projects/:projectId/deliverables` | 返回该项目所有生产链版本已持久化的用户交付文件，不能从工件临时拼造 |
 | GET | `/api/manju/projects/:projectId/production-runs/:runId/deliverables` | 按生产链读取对应的不可变 Markdown、看板、P4.5 和交付清单，供历史版本切换 |
 
-P0 的视频业务模型、画幅、目标时长、画风卡和多段段缝规则由服务端重新校验；目标时长超过所选模型的单段上限时，缺少 `seamMode` 返回 400。单段任务必须明确确认 `track`、`source`、`videoModel`、`aspectRatio`、`deliveryMode` 和 `styleCard`，多段任务还必须确认 `seamMode`；有值但没有进入 `confirmedLocks` 不构成用户选择。四个素材来源仍是 `original`、`adaptation`、`benchmark`、`trend`；`polish` 不是第五个来源，只有 `adaptation + finished_script` 才进入润色分支。`trend` 必须先选择 `original` 或 `benchmark` 的解析路线。项目模型路由只能引用画布管理后台已启用且 capability 匹配的 system channel model，不支持音频槽位，也不在漫剧工作室重复配置模型计费、支付渠道或对象存储。
+P0 的视频业务模型、画幅、目标时长、画风卡和多段段缝规则由服务端重新校验；目标时长超过所选模型的单段上限时，缺少 `seamMode` 返回 400。单段任务必须明确确认 `track`、`source`、`videoModel`、`aspectRatio`、`deliveryMode` 和 `styleCard`，多段任务还必须确认 `seamMode`；有值但没有进入 `confirmedLocks` 不构成用户选择。四个素材来源仍是 `original`、`adaptation`、`benchmark`、`trend`；`polish` 不是第五个来源，只有 `adaptation + finished_script` 才进入润色分支。`trend` 必须先选择 `original` 或 `benchmark` 的解析路线。项目模型路由的 `text`、`image`、`video` 可分别省略，但至少要提交一个非空槽位；每个已选槽位只能引用画布管理后台已启用且 capability 匹配的 system channel model，不支持音频槽位，也不在漫剧工作室重复配置模型计费、支付渠道或对象存储。
 
 P1 的圆桌审核固定进入 `AWAITING_USER_DECISION`，不能用普通确认、重新生成或人工修正绕过。缺少或非法的 `decision` 返回 400；审核不在该状态、等级缺失/冲突或使用旁路接口返回 409。`PROCEED_CURRENT` 锁定本轮审核；`B` / `NOT_READY` 接受当前稿还必须带 `acceptQualityRisk: true`。`REFINE_OR_REWRITE` 将本轮审核标为 `STALE`，保留原评审工件，并把 `script_draft` 重新打开到下一版本。每次有效决策都写入独立不可变台账，记录审核工件 ID、哈希、等级、风险确认和操作者。
 
