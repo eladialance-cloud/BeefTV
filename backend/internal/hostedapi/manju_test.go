@@ -712,6 +712,64 @@ func TestManjuRoundtableRegenerationRejectedWhileAwaitingDecision(t *testing.T) 
 	}
 }
 
+func TestManjuRoundtableManualCorrectionRejectedWhileAwaitingDecision(t *testing.T) {
+	engine, _, db := newManjuHTTPEnvWithDB(t)
+	runID := prepareManjuRoundtableAwaitingDecision(t, db)
+	path := "/api/manju/projects/project-secret/script-runs/" + runID + "/stages/roundtable_review/manual-correct"
+
+	recorder := manjuRequest(t, engine, http.MethodPost, path, map[string]any{
+		"content": "# 人工改写圆桌审核\ngrade: A",
+		"note":    "attempt to bypass decision",
+	}, "owner")
+
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("manual roundtable correction while awaiting decision must map to 409, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestManjuRoundtableGenericConfirmRejectsBypassState(t *testing.T) {
+	engine, _, db := newManjuHTTPEnvWithDB(t)
+	runID := prepareManjuRoundtableAwaitingDecision(t, db)
+	if err := db.Model(&model.ManjuScriptStage{}).
+		Where("run_id = ? AND key = ?", runID, manjusvc.ScriptStageRoundtableReview).
+		Update("status", manjusvc.ScriptStageStatusAwaitingConfirm).Error; err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/manju/projects/project-secret/script-runs/" + runID + "/stages/roundtable_review/confirm"
+
+	recorder := manjuRequest(t, engine, http.MethodPost, path, map[string]any{}, "owner")
+
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("generic roundtable confirmation must map to 409, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestManjuRoundtableDecisionRejectsNonAuthoritativeGrade(t *testing.T) {
+	testCases := []struct {
+		name    string
+		content string
+	}{
+		{name: "missing", content: "# 五席圆桌审核\n等待用户选择。"},
+		{name: "conflicting", content: "# 五席圆桌审核\ngrade: A\n最终等级：B\n等待用户选择。"},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			engine, _, db := newManjuHTTPEnvWithDB(t)
+			runID := prepareManjuRoundtableAwaitingDecisionWithReview(t, db, testCase.content)
+			path := "/api/manju/projects/project-secret/script-runs/" + runID + "/stages/roundtable_review/decide"
+
+			recorder := manjuRequest(t, engine, http.MethodPost, path, map[string]any{
+				"decision":          manjusvc.RoundtableProceed,
+				"acceptQualityRisk": true,
+			}, "owner")
+
+			if recorder.Code != http.StatusConflict {
+				t.Fatalf("non-authoritative grade must map to 409, got %d: %s", recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}
+
 func TestManjuRoundtableDecisionReturnsDownstreamState(t *testing.T) {
 	testCases := []struct {
 		name            string

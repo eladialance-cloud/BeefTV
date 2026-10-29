@@ -331,6 +331,103 @@ func TestRoundtableCannotLockWithoutExplicitDecision(t *testing.T) {
 	}
 }
 
+func TestRoundtableManualCorrectionCannotBypassDecision(t *testing.T) {
+	t.Run("awaiting decision", func(t *testing.T) {
+		f := newFixture(t)
+		run := prepareRoundtableAwaitingDecision(t, f)
+
+		_, err := f.service.ManualCorrectScriptArtifact(
+			f.ownerID, f.projectID, run.Run.ID, manju.ScriptStageRoundtableReview,
+			manju.ManualArtifactCorrectionInput{Content: "# 人工改写圆桌审核\ngrade: A"},
+		)
+		if !errors.Is(err, manju.ErrRoundtableDecisionEndpointRequired) {
+			t.Fatalf("roundtable manual correction must require the decision endpoint, got %v", err)
+		}
+		detail, detailErr := f.service.ScriptRunDetail(f.ownerID, f.projectID, run.Run.ID)
+		if detailErr != nil {
+			t.Fatal(detailErr)
+		}
+		review := findScriptStage(t, detail, manju.ScriptStageRoundtableReview)
+		if review.Status != manju.ScriptStageStatusAwaitingDecision ||
+			review.ArtifactID != "artifact-roundtable-v1" ||
+			review.Version != 1 {
+			t.Fatalf("rejected manual correction must not mutate the review: %+v", review)
+		}
+	})
+
+	t.Run("locked by decision ledger", func(t *testing.T) {
+		f := newFixture(t)
+		run := prepareRoundtableAwaitingDecision(t, f)
+		if _, err := f.service.DecideRoundtable(
+			f.ownerID, f.projectID, run.Run.ID,
+			manju.RoundtableDecisionInput{Decision: manju.RoundtableProceed, Note: "accept"},
+		); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := f.service.ManualCorrectScriptArtifact(
+			f.ownerID, f.projectID, run.Run.ID, manju.ScriptStageRoundtableReview,
+			manju.ManualArtifactCorrectionInput{Content: "# 人工改写已锁定圆桌审核\ngrade: A"},
+		)
+		if !errors.Is(err, manju.ErrRoundtableDecisionEndpointRequired) {
+			t.Fatalf("locked roundtable review must remain immutable, got %v", err)
+		}
+	})
+}
+
+func TestRoundtableGenericConfirmRequiresDecisionLedger(t *testing.T) {
+	t.Run("rejects legacy awaiting confirmation state", func(t *testing.T) {
+		f := newFixture(t)
+		run := prepareRoundtableAwaitingDecision(t, f)
+		if err := f.db.Model(&model.ManjuScriptStage{}).
+			Where("run_id = ? AND key = ?", run.Run.ID, manju.ScriptStageRoundtableReview).
+			Update("status", manju.ScriptStageStatusAwaitingConfirm).Error; err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := f.service.ConfirmScriptStage(
+			f.ownerID, f.projectID, run.Run.ID, manju.ScriptStageRoundtableReview,
+		)
+		if !errors.Is(err, manju.ErrRoundtableDecisionEndpointRequired) {
+			t.Fatalf("generic roundtable confirmation must be rejected without a ledger row, got %v", err)
+		}
+	})
+
+	t.Run("rejects locked state without ledger", func(t *testing.T) {
+		f := newFixture(t)
+		run := prepareRoundtableAwaitingDecision(t, f)
+		if err := f.db.Model(&model.ManjuScriptStage{}).
+			Where("run_id = ? AND key = ?", run.Run.ID, manju.ScriptStageRoundtableReview).
+			Update("status", manju.ScriptStageStatusLocked).Error; err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := f.service.ConfirmScriptStage(
+			f.ownerID, f.projectID, run.Run.ID, manju.ScriptStageRoundtableReview,
+		)
+		if !errors.Is(err, manju.ErrRoundtableDecisionEndpointRequired) {
+			t.Fatalf("generic confirmation of a forged locked review must be rejected, got %v", err)
+		}
+	})
+
+	t.Run("allows idempotent confirmation after ledger decision", func(t *testing.T) {
+		f := newFixture(t)
+		run := prepareRoundtableAwaitingDecision(t, f)
+		if _, err := f.service.DecideRoundtable(
+			f.ownerID, f.projectID, run.Run.ID,
+			manju.RoundtableDecisionInput{Decision: manju.RoundtableProceed, Note: "accept"},
+		); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := f.service.ConfirmScriptStage(
+			f.ownerID, f.projectID, run.Run.ID, manju.ScriptStageRoundtableReview,
+		); err != nil {
+			t.Fatalf("idempotent confirmation after a ledger decision must remain valid: %v", err)
+		}
+	})
+}
+
 func TestRoundtableDecisionRequiresAllowedValue(t *testing.T) {
 	for _, decision := range []manju.RoundtableDecision{"", "CONFIRM"} {
 		t.Run(string(decision), func(t *testing.T) {
@@ -352,6 +449,74 @@ func TestRoundtableDecisionRequiresAllowedValue(t *testing.T) {
 				t.Fatalf("invalid decision must not mutate review status, got %s", got)
 			}
 		})
+	}
+}
+
+func TestRoundtableGradeMustBeSingleAndAuthoritative(t *testing.T) {
+	testCases := []struct {
+		name    string
+		content string
+	}{
+		{name: "missing", content: "# 五席圆桌审核\n等待用户选择。"},
+		{name: "conflicting", content: "# 五席圆桌审核\ngrade: A\n综合等级：B\n等待用户选择。"},
+		{name: "unsupported", content: "# 五席圆桌审核\ngrade: B+\n等待用户选择。"},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			f := newFixture(t)
+			run := prepareRoundtableAwaitingDecisionWithReview(t, f, testCase.content)
+
+			_, err := f.service.DecideRoundtable(
+				f.ownerID, f.projectID, run.Run.ID,
+				manju.RoundtableDecisionInput{
+					Decision: manju.RoundtableProceed, AcceptQualityRisk: true,
+				},
+			)
+			if !errors.Is(err, manju.ErrRoundtableGradeInvalid) {
+				t.Fatalf("ambiguous roundtable grade must fail closed, got %v", err)
+			}
+			detail, detailErr := f.service.ScriptRunDetail(f.ownerID, f.projectID, run.Run.ID)
+			if detailErr != nil {
+				t.Fatal(detailErr)
+			}
+			review := findScriptStage(t, detail, manju.ScriptStageRoundtableReview)
+			if review.Status != manju.ScriptStageStatusAwaitingDecision ||
+				review.ReviewGrade != manju.RoundtableGradeUnknown {
+				t.Fatalf("invalid grade must not advance or invent a grade: %+v", review)
+			}
+			if len(detail.RoundtableDecisions) != 0 {
+				t.Fatalf("invalid grade must not create a decision ledger row: %+v", detail.RoundtableDecisions)
+			}
+		})
+	}
+}
+
+func TestRoundtableChineseGradeLabelStillRequiresRiskAcceptance(t *testing.T) {
+	f := newFixture(t)
+	run := prepareRoundtableAwaitingDecisionWithReview(
+		t, f, "# 五席圆桌审核\n等级：B\n等待用户选择。",
+	)
+
+	_, err := f.service.DecideRoundtable(
+		f.ownerID, f.projectID, run.Run.ID,
+		manju.RoundtableDecisionInput{Decision: manju.RoundtableProceed},
+	)
+	if !errors.Is(err, manju.ErrRoundtableQualityRiskRequired) {
+		t.Fatalf("Chinese grade label must preserve the B risk gate, got %v", err)
+	}
+
+	detail, err := f.service.DecideRoundtable(
+		f.ownerID, f.projectID, run.Run.ID,
+		manju.RoundtableDecisionInput{
+			Decision: manju.RoundtableProceed, AcceptQualityRisk: true,
+			Note: "USER_ACCEPTED_QUALITY_RISK",
+		},
+	)
+	if err != nil {
+		t.Fatalf("explicit risk acceptance must allow an authoritative B grade: %v", err)
+	}
+	if len(detail.RoundtableDecisions) != 1 || detail.RoundtableDecisions[0].Grade != "B" {
+		t.Fatalf("Chinese grade label must persist the authoritative grade: %+v", detail.RoundtableDecisions)
 	}
 }
 

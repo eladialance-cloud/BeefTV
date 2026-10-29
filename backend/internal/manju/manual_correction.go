@@ -87,6 +87,11 @@ func (s *Service) ManualCorrectScriptArtifact(
 		if stageKey == ScriptStageSourceRegistration {
 			return ErrScriptStageNotReady
 		}
+		if stageKey == ScriptStageRoundtableReview &&
+			(target.Status == model.ManjuScriptStageStatusAwaitingDecision ||
+				target.Status == model.ManjuScriptStageStatusLocked) {
+			return ErrRoundtableDecisionEndpointRequired
+		}
 		switch target.Status {
 		case model.ManjuScriptStageStatusBlocked,
 			model.ManjuScriptStageStatusAwaitingConfirm,

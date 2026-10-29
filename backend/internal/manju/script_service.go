@@ -56,27 +56,33 @@ const (
 )
 
 var (
-	ErrP0Required                    = errors.New("manju P0 lock is required")
-	ErrScriptRunNotFound             = errors.New("manju script run not found")
-	ErrScriptStageNotFound           = errors.New("manju script stage not found")
-	ErrInvalidScriptRun              = errors.New("invalid manju script run")
-	ErrTrendResolutionRequired       = errors.New("manju trend resolution is required")
-	ErrInvalidScriptSource           = errors.New("invalid manju script source")
-	ErrScriptSourceNotFound          = errors.New("manju script source not found")
-	ErrScriptUnitInProgress          = errors.New("manju script adaptation unit is still in progress")
-	ErrSourceLibraryChanged          = errors.New("manju source library changed since the base unit")
-	ErrScriptStageNotReady           = errors.New("manju script stage is not ready")
-	ErrRoundtableDecisionRequired    = errors.New("manju roundtable decision is required")
-	ErrRoundtableQualityRiskRequired = errors.New("manju roundtable quality risk acceptance is required")
-	ErrScriptTaskUnavailable         = errors.New("manju script task service is unavailable")
+	ErrP0Required                         = errors.New("manju P0 lock is required")
+	ErrScriptRunNotFound                  = errors.New("manju script run not found")
+	ErrScriptStageNotFound                = errors.New("manju script stage not found")
+	ErrInvalidScriptRun                   = errors.New("invalid manju script run")
+	ErrTrendResolutionRequired            = errors.New("manju trend resolution is required")
+	ErrInvalidScriptSource                = errors.New("invalid manju script source")
+	ErrScriptSourceNotFound               = errors.New("manju script source not found")
+	ErrScriptUnitInProgress               = errors.New("manju script adaptation unit is still in progress")
+	ErrSourceLibraryChanged               = errors.New("manju source library changed since the base unit")
+	ErrScriptStageNotReady                = errors.New("manju script stage is not ready")
+	ErrRoundtableDecisionRequired         = errors.New("manju roundtable decision is required")
+	ErrRoundtableDecisionEndpointRequired = errors.New("manju roundtable decision must use the dedicated decision endpoint")
+	ErrRoundtableGradeInvalid             = errors.New("manju roundtable grade is missing, unsupported, or conflicting")
+	ErrRoundtableQualityRiskRequired      = errors.New("manju roundtable quality risk acceptance is required")
+	ErrScriptTaskUnavailable              = errors.New("manju script task service is unavailable")
 
 	scriptInputKindValues = valueSet(ScriptInputNovel, ScriptInputOutline, ScriptInputFinished)
 	trendResolutionValues = valueSet(TrendResolutionOriginal, TrendResolutionBenchmark)
 
+	roundtableGradeJSONPattern  = regexp.MustCompile(`(?mi)["']?grade["']?\s*:\s*["']([^"'\r\n]+)["']`)
+	roundtableGradeFieldPattern = regexp.MustCompile(`(?mi)^\s*(?:[-*]\s*)?(?:\*\*)?(?:grade|等级|综合等级|最终等级|评审等级)(?:\*\*)?\s*[:：]\s*(.*?)\s*$`)
+	roundtableGradeTablePattern = regexp.MustCompile(`(?mi)^\s*\|\s*(?:\*\*)?(?:grade|综合等级|最终等级|评审等级)(?:\*\*)?\s*\|\s*([^|\r\n]+)\s*\|`)
+
 	roundtableGradePatterns = []*regexp.Regexp{
-		regexp.MustCompile(`(?mi)"grade"\s*:\s*"(NOT[_ ]READY|S|A|B)"`),
-		regexp.MustCompile(`(?mi)^\s*(?:[-*]\s*)?(?:\*\*)?(?:grade|综合等级|最终等级|评审等级)(?:\*\*)?\s*[:：]\s*(?:\*\*)?\s*(NOT[_ ]READY|S|A|B)\b`),
-		regexp.MustCompile(`(?mi)\|\s*(?:grade|综合等级|最终等级|评审等级)\s*\|\s*(?:\*\*)?\s*(NOT[_ ]READY|S|A|B)\s*\|`),
+		roundtableGradeJSONPattern,
+		roundtableGradeFieldPattern,
+		roundtableGradeTablePattern,
 	}
 )
 
@@ -1404,20 +1410,49 @@ func scriptArtifactByID(tx *repository.Repository, runID, artifactID string) (*m
 	return nil, nil
 }
 
-func roundtableReviewGrade(content string) string {
+func roundtableReviewGrade(content string) (string, error) {
+	rawGrades := make([]string, 0)
 	for _, pattern := range roundtableGradePatterns {
-		matches := pattern.FindStringSubmatch(content)
-		if len(matches) < 2 {
-			continue
-		}
-		grade := strings.ToUpper(strings.TrimSpace(matches[1]))
-		grade = strings.ReplaceAll(grade, " ", "_")
-		switch grade {
-		case RoundtableGradeS, RoundtableGradeA, RoundtableGradeB, RoundtableGradeNotReady:
-			return grade
+		for _, matches := range pattern.FindAllStringSubmatch(content, -1) {
+			if len(matches) >= 2 {
+				rawGrades = append(rawGrades, matches[1])
+			}
 		}
 	}
-	return RoundtableGradeUnknown
+	if len(rawGrades) == 0 {
+		return RoundtableGradeUnknown, ErrRoundtableGradeInvalid
+	}
+	grades := make(map[string]struct{}, len(rawGrades))
+	for _, raw := range rawGrades {
+		grade, ok := exactRoundtableGrade(raw)
+		if !ok {
+			return RoundtableGradeUnknown, ErrRoundtableGradeInvalid
+		}
+		grades[grade] = struct{}{}
+	}
+	if len(grades) != 1 {
+		return RoundtableGradeUnknown, ErrRoundtableGradeInvalid
+	}
+	for grade := range grades {
+		return grade, nil
+	}
+	return RoundtableGradeUnknown, ErrRoundtableGradeInvalid
+}
+
+func exactRoundtableGrade(raw string) (string, bool) {
+	value := strings.TrimSpace(raw)
+	value = strings.Trim(value, "\"'`")
+	value = strings.TrimSpace(value)
+	value = strings.Trim(value, "*")
+	value = strings.ToUpper(strings.Join(strings.Fields(value), " "))
+	switch value {
+	case RoundtableGradeS, RoundtableGradeA, RoundtableGradeB, RoundtableGradeNotReady:
+		return value, true
+	case "NOT READY":
+		return RoundtableGradeNotReady, true
+	default:
+		return "", false
+	}
 }
 
 func blockScriptStageRecord(tx *repository.Repository, stage *model.ManjuScriptStage, message string) error {
@@ -1431,6 +1466,22 @@ func blockScriptStageRecord(tx *repository.Repository, stage *model.ManjuScriptS
 		return err
 	}
 	return tx.SaveManjuScriptStage(stage)
+}
+
+func scriptRoundtableLockedByDecision(tx *repository.Repository, projectID, runID string, stage model.ManjuScriptStage) (bool, error) {
+	decisions, err := tx.ManjuRoundtableDecisionsForRun(projectID, runID)
+	if err != nil {
+		return false, err
+	}
+	for _, decision := range decisions {
+		if decision.StageID == stage.ID &&
+			decision.Round == stage.Version &&
+			decision.ReviewArtifactID == stage.ArtifactID &&
+			decision.Decision == string(RoundtableProceed) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func scriptStageIndex(stages []model.ManjuScriptStage, key string) int {
@@ -1477,12 +1528,24 @@ func (s *Service) ConfirmScriptStage(actorID, projectID, runID, stageKey string)
 		if stage == nil {
 			return ErrScriptStageNotFound
 		}
+		if stage.Key == ScriptStageRoundtableReview {
+			if stage.Status == model.ManjuScriptStageStatusLocked {
+				lockedByDecision, err := scriptRoundtableLockedByDecision(tx, projectID, runID, *stage)
+				if err != nil {
+					return err
+				}
+				if lockedByDecision {
+					return nil
+				}
+				return ErrRoundtableDecisionEndpointRequired
+			}
+			if stage.Status == model.ManjuScriptStageStatusAwaitingDecision {
+				return ErrRoundtableDecisionRequired
+			}
+			return ErrRoundtableDecisionEndpointRequired
+		}
 		if stage.Status == model.ManjuScriptStageStatusLocked {
 			return nil
-		}
-		if stage.Key == ScriptStageRoundtableReview &&
-			stage.Status == model.ManjuScriptStageStatusAwaitingDecision {
-			return ErrRoundtableDecisionRequired
 		}
 		if stage.Status != model.ManjuScriptStageStatusAwaitingConfirm {
 			return ErrScriptStageNotReady
@@ -1576,7 +1639,10 @@ func (s *Service) DecideRoundtable(actorID, projectID, runID string, input Round
 		if reviewArtifact == nil {
 			return ErrScriptStageNotReady
 		}
-		grade := roundtableReviewGrade(reviewArtifact.Content)
+		grade, err := roundtableReviewGrade(reviewArtifact.Content)
+		if err != nil {
+			return err
+		}
 		riskRequired := grade == RoundtableGradeB || grade == RoundtableGradeNotReady
 		riskAccepted := input.Decision == RoundtableProceed && input.AcceptQualityRisk
 		if input.Decision == RoundtableProceed && riskRequired && !riskAccepted {
@@ -1784,7 +1850,12 @@ func (s *Service) ScriptRunDetail(actorID, projectID, runID string) (*ScriptRunD
 		view := scriptStageView(stage)
 		if stage.Key == ScriptStageRoundtableReview && stage.ArtifactID != "" {
 			if artifact, ok := artifactByID[stage.ArtifactID]; ok {
-				view.ReviewGrade = roundtableReviewGrade(artifact.Content)
+				grade, gradeErr := roundtableReviewGrade(artifact.Content)
+				if gradeErr == nil {
+					view.ReviewGrade = grade
+				} else {
+					view.ReviewGrade = RoundtableGradeUnknown
+				}
 			}
 		}
 		if stage.Status == model.ManjuScriptStageStatusBlocked {

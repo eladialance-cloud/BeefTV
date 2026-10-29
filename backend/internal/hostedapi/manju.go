@@ -477,6 +477,10 @@ func writeManjuError(c *gin.Context, err error) {
 		writeError(c, kernel.BadAuthRequest("请明确选择接受当前稿或精修重写，圆桌不能直接锁定"))
 	case errors.Is(err, manju.ErrRoundtableQualityRiskRequired):
 		writeError(c, kernel.BadAuthRequest("圆桌等级为 B/NOT_READY，接受当前稿必须明确确认质量风险"))
+	case errors.Is(err, manju.ErrRoundtableDecisionEndpointRequired):
+		writeError(c, kernel.NewAppError(kernel.CodeConflict, "圆桌审核只能通过专用决策接口处理"))
+	case errors.Is(err, manju.ErrRoundtableGradeInvalid):
+		writeError(c, kernel.NewAppError(kernel.CodeConflict, "圆桌审核等级缺失、冲突或格式不受支持，请重新生成审核"))
 	case errors.Is(err, manju.ErrScriptStageNotReady):
 		writeError(c, kernel.NewAppError(kernel.CodeConflict, "当前阶段尚不可确认或启动"))
 	case errors.Is(err, manju.ErrScriptTaskUnavailable):
