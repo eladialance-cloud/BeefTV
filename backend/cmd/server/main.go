@@ -73,6 +73,10 @@ func registerHostedRoutes(hosted bootstrap.HostedContext) error {
 	})
 	hostedapi.RegisterManjuRoutes(hosted.API, manjuService, creditActor)
 
+	// 创作模板：工作流、提示词和画风由服务端目录统一提供，后台负责启停与编辑。
+	hostedapi.RegisterCreationCatalogAdminRoutes(hosted.API, hosted.Service, creditActor, hosted.Service.RequireAdmin)
+	hostedapi.RegisterCreationCatalogPublicRoutes(hosted.API, hosted.Service)
+
 	// 价格：三张价格规则表统一走后台 CRUD，运行时按生效区间报价。
 	pricingService := credits.NewPricing(hosted.Repository, credits.Config{})
 	hostedapi.RegisterPricingAdminRoutes(hosted.API, pricingService, creditActor, hosted.Service.RequireAdmin)
