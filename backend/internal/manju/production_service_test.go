@@ -274,6 +274,24 @@ func TestP0BRejectsMalformedAndAuthorityViolations(t *testing.T) {
 			expected: "必须引用官方白名单选项",
 		},
 		{
+			name: "negated official A2 straight-quote reason",
+			content: strings.Replace(validP0BArtifact(),
+				"- A1 正面居中：A类；解锁；白名单理由为仪式感；配套强对称构图、静态运镜与长焦压缩。",
+				"- A2 头顶贴边：A类；解锁；白名单理由为非表现\"被天花板压住\" / 牢笼感；配套广角、压迫感。",
+				1,
+			),
+			expected: "必须引用官方白名单选项",
+		},
+		{
+			name: "negated official A5 exact reason",
+			content: strings.Replace(validP0BArtifact(),
+				"- A1 正面居中：A类；解锁；白名单理由为仪式感；配套强对称构图、静态运镜与长焦压缩。",
+				"- A5 断关节：A类；解锁；白名单理由为非强调局部（手 / 脚 / 嘴）= 微距 / 特写镜头；配套微距、长焦。",
+				1,
+			),
+			expected: "必须引用官方白名单选项",
+		},
+		{
 			name: "negated A class whitelist reason and constraint",
 			content: strings.Replace(validP0BArtifact(),
 				"白名单理由为仪式感；配套强对称构图、静态运镜与长焦压缩。",
@@ -370,6 +388,68 @@ func TestP0BRejectsMalformedAndAuthorityViolations(t *testing.T) {
 				stage.ArtifactID != "" ||
 				!strings.Contains(stage.Error, testCase.expected) {
 				t.Fatalf("invalid P0B must block before persistence: %+v", stage)
+			}
+		})
+	}
+}
+
+func TestP0BAcceptsCarriedOfficialA2AndA5WhitelistOptions(t *testing.T) {
+	testCases := []struct {
+		name        string
+		hazard      string
+		reason      string
+		constraints string
+	}{
+		{
+			name:        "A2 authoritative straight quotes",
+			hazard:      "A2 头顶贴边",
+			reason:      `表现"被天花板压住" / 牢笼感`,
+			constraints: "广角、压迫感",
+		},
+		{
+			name:        "A5 authoritative full option",
+			hazard:      "A5 断关节",
+			reason:      "强调局部（手 / 脚 / 嘴）= 微距 / 特写镜头",
+			constraints: "微距、长焦",
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			f := newFixture(t)
+			assetRunID := prepareCompletedProductionAsset(t, f, "M1")
+			run, err := f.service.CreateProductionRun(f.ownerID, f.projectID, manju.ProductionRunInput{AssetRunID: assetRunID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			task := &model.Task{
+				ID:     "task-p0b-carried-" + strings.ReplaceAll(strings.ToLower(testCase.name), " ", "-"),
+				UserID: f.ownerID, ProjectID: f.projectID, Type: "canvas_text", Status: model.TaskStatusQueued,
+			}
+			if err := f.db.Create(task).Error; err != nil {
+				t.Fatal(err)
+			}
+			f.service.SetScriptTaskCreator((&sequentialScriptTaskCreator{tasks: []*model.Task{task}}).create)
+			if _, err := f.service.RunProductionStage(
+				f.ownerID, f.projectID, run.Run.ID,
+				manju.ProductionStageDecisionAnchor,
+				manju.ProductionStageRunInput{},
+			); err != nil {
+				t.Fatal(err)
+			}
+			content := strings.Replace(
+				validP0BArtifact(),
+				"- A1 正面居中：A类；解锁；白名单理由为仪式感；配套强对称构图、静态运镜与长焦压缩。",
+				"- "+testCase.hazard+"：A类；解锁；白名单理由为"+testCase.reason+"；配套"+testCase.constraints+"。",
+				1,
+			)
+			succeedManjuTask(t, f, task.ID, content)
+			detail, err := f.service.ProductionRunDetail(f.ownerID, f.projectID, run.Run.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stage := findProductionStage(t, detail, manju.ProductionStageDecisionAnchor)
+			if stage.Status != model.ManjuProductionStageStatusAwaitingConfirmation || stage.ArtifactID == "" {
+				t.Fatalf("official carried whitelist option must pass validation: %+v", stage)
 			}
 		})
 	}

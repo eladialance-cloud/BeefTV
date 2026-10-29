@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const page = readFileSync(resolve(import.meta.dir, "../src/pages/manju/index.tsx"), "utf8");
+const api = readFileSync(resolve(import.meta.dir, "../src/services/api/manju.ts"), "utf8");
 const styles = readFileSync(resolve(import.meta.dir, "../src/pages/manju/manju-studio.css"), "utf8");
 const sourceLibraryPanel = readFileSync(resolve(import.meta.dir, "../src/pages/manju/source-library-steps-panel.tsx"), "utf8");
 
@@ -88,4 +89,15 @@ test("P0B decision artifact renders inside P3 and gates storyboard", () => {
     expect(page).toContain('stage.key === "director_storyboard" && !decisionAnchorLocked');
     expect(page).toContain("P0B 锁定后才能执行 P3 分镜");
     expect(page).not.toContain("manju-script-decision-gate");
+});
+
+test("roundtable review requires two explicit user decisions", () => {
+    expect(api).toContain("export type ManjuRoundtableDecision");
+    expect(api).toContain("PROCEED_CURRENT");
+    expect(api).toContain("REFINE_OR_REWRITE");
+    expect(api).toContain("decideManjuRoundtable");
+    expect(page).toContain("decideRoundtableMutation");
+    expect(page).toContain("接受当前稿");
+    expect(page).toContain("精修并重写");
+    expect(page).not.toContain("提交圆桌决策并锁定");
 });

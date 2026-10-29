@@ -196,6 +196,7 @@ export type ManjuScriptMode = "STEPWISE" | "FULL_SCRIPT_PIPELINE";
 export type ManjuScriptBranch = "original" | "adaptation" | "benchmark" | "polish";
 export type ManjuScriptInputKind = "novel" | "outline" | "finished_script";
 export type ManjuTrendResolution = "" | "original" | "benchmark";
+export type ManjuRoundtableDecision = "PROCEED_CURRENT" | "REFINE_OR_REWRITE";
 export type ManjuScriptStageStatus = "NOT_STARTED" | "IN_PROGRESS" | "AWAITING_CONFIRMATION" | "AWAITING_USER_DECISION" | "LOCKED" | "STALE" | "BLOCKED";
 export type ManjuScriptStageKey =
     | "source_registration"
@@ -738,6 +739,13 @@ export function manualCorrectManjuScriptArtifact(projectId: string, runId: strin
 
 export function confirmManjuScriptStage(projectId: string, runId: string, stageKey: string) {
     return http.post<{ item: ManjuScriptRunDetail }>(`/manju/projects/${encodeURIComponent(projectId)}/script-runs/${encodeURIComponent(runId)}/stages/${encodeURIComponent(stageKey)}/confirm`, {});
+}
+
+export function decideManjuRoundtable(projectId: string, runId: string, decision: ManjuRoundtableDecision, note = "") {
+    return http.post<{ item: ManjuScriptRunDetail }>(
+        `/manju/projects/${encodeURIComponent(projectId)}/script-runs/${encodeURIComponent(runId)}/stages/roundtable_review/decide`,
+        { decision, note },
+    );
 }
 
 export function createManjuProject(input: { name: string; aspectRatio: ManjuAspectRatio; sourceType: Exclude<ManjuSource, ""> }) {

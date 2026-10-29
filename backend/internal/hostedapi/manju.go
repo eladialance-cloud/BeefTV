@@ -33,6 +33,7 @@ type ManjuService interface {
 	ScriptRuns(actorID, projectID string) ([]manju.ScriptRunView, error)
 	RegisterScriptSource(actorID, projectID, runID string, input manju.ScriptSourceInput) (*manju.ScriptRunDetail, error)
 	ConfirmScriptStage(actorID, projectID, runID, stageKey string) (*manju.ScriptRunDetail, error)
+	DecideRoundtable(actorID, projectID, runID string, input manju.RoundtableDecisionInput) (*manju.ScriptRunDetail, error)
 	RunScriptStage(actorID, projectID, runID, stageKey string, input manju.ScriptStageRunInput) (*manju.ScriptRunDetail, error)
 	RegenerateScriptArtifact(actorID, projectID, runID, stageKey string, input manju.ScriptStageRunInput) (*manju.ScriptRunDetail, error)
 	ManualCorrectScriptArtifact(actorID, projectID, runID, stageKey string, input manju.ManualArtifactCorrectionInput) (*manju.ScriptRunDetail, error)
@@ -403,6 +404,24 @@ func RegisterManjuRoutes(r *gin.RouterGroup, svc ManjuService, resolve ActorReso
 		writeOK(c, gin.H{"item": item})
 	})
 
+	group.POST("/projects/:projectId/script-runs/:runId/stages/roundtable_review/decide", func(c *gin.Context) {
+		user, ok := actor(c)
+		if !ok {
+			return
+		}
+		var input manju.RoundtableDecisionInput
+		if err := c.ShouldBindJSON(&input); err != nil {
+			writeError(c, kernel.BadAuthRequest("圆桌决策参数格式错误"))
+			return
+		}
+		item, err := svc.DecideRoundtable(user.ID, c.Param("projectId"), c.Param("runId"), input)
+		if err != nil {
+			writeManjuError(c, err)
+			return
+		}
+		writeOK(c, gin.H{"item": item})
+	})
+
 	group.DELETE("/projects/:projectId/members/:memberId", func(c *gin.Context) {
 		user, ok := actor(c)
 		if !ok {
@@ -454,6 +473,8 @@ func writeManjuError(c *gin.Context, err error) {
 		writeError(c, kernel.BadAuthRequest(err.Error()))
 	case errors.Is(err, manju.ErrScriptSourceNotFound):
 		writeError(c, kernel.NotFound("原著来源不存在"))
+	case errors.Is(err, manju.ErrRoundtableDecisionRequired):
+		writeError(c, kernel.BadAuthRequest("请明确选择接受当前稿或精修重写，圆桌不能直接锁定"))
 	case errors.Is(err, manju.ErrScriptStageNotReady):
 		writeError(c, kernel.NewAppError(kernel.CodeConflict, "当前阶段尚不可确认或启动"))
 	case errors.Is(err, manju.ErrScriptTaskUnavailable):

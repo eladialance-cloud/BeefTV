@@ -533,6 +533,7 @@ var p0bAWhitelistRules = []p0bAWhitelistRule{
 			"表现“被天花板压住”",
 			"牢笼感",
 			"表现“被天花板压住” / 牢笼感",
+			`表现"被天花板压住" / 牢笼感`,
 			"阶级压迫",
 			"角色被环境吞噬",
 			"阶级压迫 / 角色被环境吞噬",
@@ -585,6 +586,7 @@ var p0bAWhitelistRules = []p0bAWhitelistRule{
 		PositiveOptions: []string{
 			"强调局部",
 			"强调局部（手 / 脚 / 嘴）",
+			"强调局部（手 / 脚 / 嘴）= 微距 / 特写镜头",
 			"微距",
 			"特写",
 			"暴力美学",
@@ -802,12 +804,22 @@ func p0bAUnlockClauses(value string) (p0bAUnlockClause, bool) {
 }
 
 func p0bOfficialWhitelistOption(reason string, options []string) bool {
+	reason = p0bNormalizeQuoteVariants(reason)
 	for _, option := range options {
-		if reason == option {
+		if reason == p0bNormalizeQuoteVariants(option) {
 			return true
 		}
 	}
 	return false
+}
+
+func p0bNormalizeQuoteVariants(value string) string {
+	return strings.NewReplacer(
+		"“", `"`,
+		"”", `"`,
+		"‘", "'",
+		"’", "'",
+	).Replace(value)
 }
 
 type p0bTokenState struct {

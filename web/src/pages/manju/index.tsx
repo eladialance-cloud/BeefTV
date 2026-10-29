@@ -43,6 +43,7 @@ import {
     deleteManjuProject,
     confirmManjuScriptStage,
     createManjuScriptRun,
+    decideManjuRoundtable,
     getManjuScriptRun,
     getManjuProject,
     getManjuStyleCatalog,
@@ -73,6 +74,7 @@ import {
     type ManjuProjectModelBinding,
     type ManjuProjectSummary,
     type ManjuRuleLibraryStatus,
+    type ManjuRoundtableDecision,
     type ManjuStyleBaseID,
     type ManjuStyleCard,
     type ManjuTrendResolution,
@@ -1872,6 +1874,17 @@ function ScriptStageCard({ projectId, projectName, detail, stage, canEdit, onUpd
         },
         onError: (error) => setNotice({ tone: "error", text: error instanceof Error ? error.message : "剧本阶段确认失败" }),
     });
+    const decideRoundtableMutation = useMutation({
+        mutationFn: (decision: ManjuRoundtableDecision) => decideManjuRoundtable(projectId, detail.run.id, decision),
+        onSuccess: ({ item }, decision) => {
+            setNotice({
+                tone: "success",
+                text: decision === "PROCEED_CURRENT" ? "已接受当前稿并锁定圆桌审核。" : "已重新打开正式剧本，等待生成新版本。",
+            });
+            onUpdated(item);
+        },
+        onError: (error) => setNotice({ tone: "error", text: error instanceof Error ? error.message : "圆桌决策提交失败" }),
+    });
     const regenerateArtifactMutation = useMutation({
         mutationFn: () => regenerateManjuScriptArtifact(projectId, detail.run.id, stage.key, instruction.trim()),
         onSuccess: ({ item }) => {
@@ -1897,7 +1910,8 @@ function ScriptStageCard({ projectId, projectName, detail, stage, canEdit, onUpd
     const isCurrent = detail.run.currentStage === stage.key;
     const runActive = detail.run.status === "ACTIVE";
     const runReadable = runActive || detail.run.status === "COMPLETED";
-    const canConfirm = canEdit && runActive && ["AWAITING_CONFIRMATION", "AWAITING_USER_DECISION"].includes(stage.status);
+    const canConfirm = canEdit && runActive && stage.key !== "roundtable_review" && stage.status === "AWAITING_CONFIRMATION";
+    const canDecideRoundtable = canEdit && runActive && stage.key === "roundtable_review" && stage.status === "AWAITING_USER_DECISION";
     const canRegenerateArtifact = canEdit && runReadable && Boolean(artifact) && !stage.taskId && ["LOCKED", "BLOCKED", "AWAITING_CONFIRMATION", "AWAITING_USER_DECISION"].includes(stage.status);
     const canRun = canEdit && runActive && isCurrent && ["IN_PROGRESS", "BLOCKED", "STALE"].includes(stage.status) && !canRegenerateArtifact;
     const canManualCorrect = canEdit && stage.status === "BLOCKED" && Boolean(stage.draft?.content);
@@ -1996,9 +2010,30 @@ function ScriptStageCard({ projectId, projectName, detail, stage, canEdit, onUpd
             ) : null}
             {canConfirm ? (
                 <footer className="manju-script-stage-actions">
-                    <span>{stage.status === "AWAITING_USER_DECISION" ? "五席意见已生成，最终决策必须由你提交。" : "确认后本阶段锁定，后续阶段才能读取。"}</span>
+                    <span>确认后本阶段锁定，后续阶段才能读取。</span>
                     <Button type="primary" icon={<Check />} loading={confirmMutation.isPending} onClick={() => confirmMutation.mutate()}>
-                        {stage.status === "AWAITING_USER_DECISION" ? "提交圆桌决策并锁定" : "确认并进入下一阶段"}
+                        确认并进入下一阶段
+                    </Button>
+                </footer>
+            ) : null}
+            {canDecideRoundtable ? (
+                <footer className="manju-script-stage-actions">
+                    <span>五席意见已生成。请明确选择接受当前稿，或授权进入一次精修/重写。</span>
+                    <Button
+                        type="primary"
+                        icon={<Check />}
+                        loading={decideRoundtableMutation.isPending}
+                        onClick={() => decideRoundtableMutation.mutate("PROCEED_CURRENT")}
+                    >
+                        接受当前稿
+                    </Button>
+                    <Button
+                        danger
+                        icon={<RefreshCw />}
+                        loading={decideRoundtableMutation.isPending}
+                        onClick={() => decideRoundtableMutation.mutate("REFINE_OR_REWRITE")}
+                    >
+                        精修并重写
                     </Button>
                 </footer>
             ) : null}

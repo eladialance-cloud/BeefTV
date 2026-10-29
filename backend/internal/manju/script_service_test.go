@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"infinite-canvas/backend/internal/manju"
 	"infinite-canvas/backend/internal/model"
@@ -258,6 +259,206 @@ func findScriptStage(t *testing.T, detail *manju.ScriptRunDetail, key string) ma
 	}
 	t.Fatalf("缺少阶段 %s: %+v", key, detail.Stages)
 	return manju.ScriptStageView{}
+}
+
+func prepareRoundtableAwaitingDecision(t *testing.T, f fixture) *manju.ScriptRunDetail {
+	t.Helper()
+	now := time.Now()
+	run := &model.ManjuScriptRun{
+		ID: "run-roundtable-decision", ProjectID: f.projectID, Branch: manju.ScriptBranchOriginal,
+		Mode: manju.ScriptModeStepwise, Status: model.ManjuScriptRunStatusActive,
+		CurrentStage: manju.ScriptStageRoundtableReview, LockRevision: 1,
+		CreatedBy: f.ownerID, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := f.db.Create(run).Error; err != nil {
+		t.Fatal(err)
+	}
+	scriptArtifact := &model.ManjuScriptArtifact{
+		ID: "artifact-script-v1", ProjectID: f.projectID, RunID: run.ID, StageID: "stage-script-draft",
+		Kind: "SCRIPT_DRAFT.md", Version: 1, Content: "# 正式剧本 v1\n林澈推开旧宅的门。",
+		ContentHash: "script-v1", CreatedBy: f.ownerID, CreatedAt: now,
+	}
+	reviewArtifact := &model.ManjuScriptArtifact{
+		ID: "artifact-roundtable-v1", ProjectID: f.projectID, RunID: run.ID, StageID: "stage-roundtable-review",
+		Kind: "ROUNDTABLE_REVIEW.md", Version: 1, Content: "# 五席圆桌审核\n等待用户选择。",
+		ContentHash: "roundtable-v1", CreatedBy: f.ownerID, CreatedAt: now,
+	}
+	if err := f.db.Create(&[]model.ManjuScriptArtifact{*scriptArtifact, *reviewArtifact}).Error; err != nil {
+		t.Fatal(err)
+	}
+	stages := []model.ManjuScriptStage{
+		{ID: "stage-source", RunID: run.ID, Key: manju.ScriptStageSourceRegistration, Title: "来源登记", Position: 1, Status: manju.ScriptStageStatusLocked, Version: 1},
+		{ID: "stage-ip", RunID: run.ID, Key: manju.ScriptStageIPDevelopment, Title: "IP 与角色开发", Position: 2, Status: manju.ScriptStageStatusLocked, Version: 1},
+		{ID: "stage-series", RunID: run.ID, Key: manju.ScriptStageSeriesBible, Title: "全剧开发圣经", Position: 3, Status: manju.ScriptStageStatusLocked, Version: 1},
+		{ID: "stage-episodes", RunID: run.ID, Key: manju.ScriptStageEpisodePlanning, Title: "分集规划", Position: 4, Status: manju.ScriptStageStatusLocked, Version: 1},
+		{ID: "stage-script-draft", RunID: run.ID, Key: manju.ScriptStageScriptDraft, Title: "正式剧本", Position: 5, Status: manju.ScriptStageStatusLocked, Version: 1, ArtifactID: scriptArtifact.ID},
+		{ID: "stage-roundtable-review", RunID: run.ID, Key: manju.ScriptStageRoundtableReview, Title: "五席圆桌审核", Position: 6, Status: manju.ScriptStageStatusAwaitingDecision, Version: 1, ArtifactID: reviewArtifact.ID},
+	}
+	if err := f.db.Create(&stages).Error; err != nil {
+		t.Fatal(err)
+	}
+	detail, err := f.service.ScriptRunDetail(f.ownerID, f.projectID, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return detail
+}
+
+func TestRoundtableCannotLockWithoutExplicitDecision(t *testing.T) {
+	f := newFixture(t)
+	run := prepareRoundtableAwaitingDecision(t, f)
+
+	_, err := f.service.ConfirmScriptStage(
+		f.ownerID, f.projectID, run.Run.ID, manju.ScriptStageRoundtableReview,
+	)
+	if !errors.Is(err, manju.ErrRoundtableDecisionRequired) {
+		t.Fatalf("roundtable confirmation must require a decision, got %v", err)
+	}
+	detail, detailErr := f.service.ScriptRunDetail(f.ownerID, f.projectID, run.Run.ID)
+	if detailErr != nil {
+		t.Fatal(detailErr)
+	}
+	if got := findScriptStage(t, detail, manju.ScriptStageRoundtableReview).Status; got != manju.ScriptStageStatusAwaitingDecision {
+		t.Fatalf("missing decision must not mutate review status, got %s", got)
+	}
+	if detail.Run.Status != model.ManjuScriptRunStatusActive {
+		t.Fatalf("missing decision must keep run active, got %s", detail.Run.Status)
+	}
+}
+
+func TestRoundtableDecisionRequiresAllowedValue(t *testing.T) {
+	for _, decision := range []manju.RoundtableDecision{"", "CONFIRM"} {
+		t.Run(string(decision), func(t *testing.T) {
+			f := newFixture(t)
+			run := prepareRoundtableAwaitingDecision(t, f)
+
+			_, err := f.service.DecideRoundtable(
+				f.ownerID, f.projectID, run.Run.ID,
+				manju.RoundtableDecisionInput{Decision: decision},
+			)
+			if !errors.Is(err, manju.ErrRoundtableDecisionRequired) {
+				t.Fatalf("decision %q must be rejected, got %v", decision, err)
+			}
+			detail, detailErr := f.service.ScriptRunDetail(f.ownerID, f.projectID, run.Run.ID)
+			if detailErr != nil {
+				t.Fatal(detailErr)
+			}
+			if got := findScriptStage(t, detail, manju.ScriptStageRoundtableReview).Status; got != manju.ScriptStageStatusAwaitingDecision {
+				t.Fatalf("invalid decision must not mutate review status, got %s", got)
+			}
+		})
+	}
+}
+
+func TestRoundtableProceedCurrentLocksReviewAndCompletesRun(t *testing.T) {
+	f := newFixture(t)
+	run := prepareRoundtableAwaitingDecision(t, f)
+
+	detail, err := f.service.DecideRoundtable(
+		f.ownerID, f.projectID, run.Run.ID,
+		manju.RoundtableDecisionInput{Decision: manju.RoundtableProceed, Note: "接受当前版本"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	review := findScriptStage(t, detail, manju.ScriptStageRoundtableReview)
+	if review.Status != manju.ScriptStageStatusLocked {
+		t.Fatalf("PROCEED_CURRENT must lock review, got %+v", review)
+	}
+	if review.ConfirmedBy != f.ownerID || review.ConfirmedAt == nil {
+		t.Fatalf("PROCEED_CURRENT must persist the decision confirmation, got %+v", review)
+	}
+	if review.ArtifactID != "artifact-roundtable-v1" {
+		t.Fatalf("PROCEED_CURRENT must preserve the accepted review artifact, got %+v", review)
+	}
+	if detail.Run.Status != model.ManjuScriptRunStatusCompleted || detail.Run.CurrentStage != "" {
+		t.Fatalf("PROCEED_CURRENT must complete the script chain, got %+v", detail.Run)
+	}
+}
+
+func TestRoundtableRefineReopensScriptDraftAtNextVersion(t *testing.T) {
+	f := newFixture(t)
+	run := prepareRoundtableAwaitingDecision(t, f)
+	before := findScriptStage(t, run, manju.ScriptStageScriptDraft)
+
+	detail, err := f.service.DecideRoundtable(
+		f.ownerID, f.projectID, run.Run.ID,
+		manju.RoundtableDecisionInput{Decision: manju.RoundtableRefine, Note: "按圆桌意见精修"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	review := findScriptStage(t, detail, manju.ScriptStageRoundtableReview)
+	if review.Status != manju.ScriptStageStatusStale {
+		t.Fatalf("REFINE_OR_REWRITE must stale review, got %+v", review)
+	}
+	if review.ArtifactID != "artifact-roundtable-v1" {
+		t.Fatalf("REFINE_OR_REWRITE must preserve the review artifact as history, got %+v", review)
+	}
+	scriptDraft := findScriptStage(t, detail, manju.ScriptStageScriptDraft)
+	if scriptDraft.Status != manju.ScriptStageStatusInProgress {
+		t.Fatalf("REFINE_OR_REWRITE must reopen script_draft, got %+v", scriptDraft)
+	}
+	if scriptDraft.Version != before.Version+1 {
+		t.Fatalf("script_draft must reopen at the next version: before=%d after=%d", before.Version, scriptDraft.Version)
+	}
+	if scriptDraft.TaskID != "" {
+		t.Fatalf("reopened script_draft must wait for a new task, got %+v", scriptDraft)
+	}
+	if detail.Run.Status != model.ManjuScriptRunStatusActive || detail.Run.CurrentStage != manju.ScriptStageScriptDraft {
+		t.Fatalf("REFINE_OR_REWRITE must make script_draft current, got %+v", detail.Run)
+	}
+}
+
+func TestRoundtableRefineMaterializesExactlyOneNewScriptVersion(t *testing.T) {
+	f := newFixture(t)
+	run := prepareRoundtableAwaitingDecision(t, f)
+	if err := f.db.Create(&model.ManjuProjectModelBinding{
+		ID: "binding-roundtable-refine", ProjectID: f.projectID,
+		TextChannelID: "channel-text", TextModelKey: "text-pro",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.DecideRoundtable(
+		f.ownerID, f.projectID, run.Run.ID,
+		manju.RoundtableDecisionInput{Decision: manju.RoundtableRefine, Note: "生成新版本"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	task := &model.Task{
+		ID: "task-roundtable-refine", UserID: f.ownerID, ProjectID: f.projectID,
+		Type: "canvas_text", Status: model.TaskStatusQueued,
+	}
+	if err := f.db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	f.service.SetScriptTaskCreator((&sequentialScriptTaskCreator{tasks: []*model.Task{task}}).create)
+	if _, err := f.service.RunScriptStage(
+		f.ownerID, f.projectID, run.Run.ID, manju.ScriptStageScriptDraft,
+		manju.ScriptStageRunInput{Instruction: "按圆桌意见精修"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	succeedManjuTask(t, f, task.ID, "# 正式剧本 v2\n林澈停在门内。")
+
+	detail, err := f.service.ScriptRunDetail(f.ownerID, f.projectID, run.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scriptDraft := findScriptStage(t, detail, manju.ScriptStageScriptDraft)
+	if scriptDraft.Status != manju.ScriptStageStatusAwaitingConfirmation || scriptDraft.Version != 2 {
+		t.Fatalf("refined script must produce one pending v2 artifact, got %+v", scriptDraft)
+	}
+	if scriptDraft.ArtifactID == "" || scriptDraft.ArtifactID == "artifact-script-v1" {
+		t.Fatalf("refined script must reference the new artifact, got %+v", scriptDraft)
+	}
+	var artifact model.ManjuScriptArtifact
+	if err := f.db.First(&artifact, "id = ?", scriptDraft.ArtifactID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if artifact.Version != 2 || !strings.Contains(artifact.Content, "林澈停在门内") {
+		t.Fatalf("new script artifact must be v2, got %+v", artifact)
+	}
 }
 
 func TestStepwiseConfirmationLocksCurrentStageAndStartsNext(t *testing.T) {

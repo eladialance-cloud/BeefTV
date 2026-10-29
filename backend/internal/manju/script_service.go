@@ -55,17 +55,18 @@ const (
 )
 
 var (
-	ErrP0Required              = errors.New("manju P0 lock is required")
-	ErrScriptRunNotFound       = errors.New("manju script run not found")
-	ErrScriptStageNotFound     = errors.New("manju script stage not found")
-	ErrInvalidScriptRun        = errors.New("invalid manju script run")
-	ErrTrendResolutionRequired = errors.New("manju trend resolution is required")
-	ErrInvalidScriptSource     = errors.New("invalid manju script source")
-	ErrScriptSourceNotFound    = errors.New("manju script source not found")
-	ErrScriptUnitInProgress    = errors.New("manju script adaptation unit is still in progress")
-	ErrSourceLibraryChanged    = errors.New("manju source library changed since the base unit")
-	ErrScriptStageNotReady     = errors.New("manju script stage is not ready")
-	ErrScriptTaskUnavailable   = errors.New("manju script task service is unavailable")
+	ErrP0Required                 = errors.New("manju P0 lock is required")
+	ErrScriptRunNotFound          = errors.New("manju script run not found")
+	ErrScriptStageNotFound        = errors.New("manju script stage not found")
+	ErrInvalidScriptRun           = errors.New("invalid manju script run")
+	ErrTrendResolutionRequired    = errors.New("manju trend resolution is required")
+	ErrInvalidScriptSource        = errors.New("invalid manju script source")
+	ErrScriptSourceNotFound       = errors.New("manju script source not found")
+	ErrScriptUnitInProgress       = errors.New("manju script adaptation unit is still in progress")
+	ErrSourceLibraryChanged       = errors.New("manju source library changed since the base unit")
+	ErrScriptStageNotReady        = errors.New("manju script stage is not ready")
+	ErrRoundtableDecisionRequired = errors.New("manju roundtable decision is required")
+	ErrScriptTaskUnavailable      = errors.New("manju script task service is unavailable")
 
 	scriptInputKindValues = valueSet(ScriptInputNovel, ScriptInputOutline, ScriptInputFinished)
 	trendResolutionValues = valueSet(TrendResolutionOriginal, TrendResolutionBenchmark)
@@ -92,6 +93,18 @@ type ScriptSourceInput struct {
 
 type ScriptStageRunInput struct {
 	Instruction string `json:"instruction"`
+}
+
+type RoundtableDecision string
+
+const (
+	RoundtableProceed RoundtableDecision = "PROCEED_CURRENT"
+	RoundtableRefine  RoundtableDecision = "REFINE_OR_REWRITE"
+)
+
+type RoundtableDecisionInput struct {
+	Decision RoundtableDecision `json:"decision"`
+	Note     string             `json:"note,omitempty"`
 }
 
 type ScriptTaskCreateFunc func(userID string, request localtask.CreateRequest) (*model.Task, error)
@@ -862,7 +875,7 @@ func (s *Service) RunScriptStage(actorID, projectID, runID, stageKey string, inp
 			promptInstruction = "【项目完整原著库】\n" + projectSourceText + "\n\n" + promptInstruction
 		}
 		prompt := buildScriptStagePrompt(access.Project.Name, *run, *stage, source, artifacts, receipt, promptInstruction, skillContext)
-		operationKey = fmt.Sprintf("manju:%s:%s:v%d", run.ID, stage.Key, stage.Version+1)
+		operationKey = fmt.Sprintf("manju:%s:%s:v%d", run.ID, stage.Key, scriptStageDispatchVersion(*stage))
 		ruleSnapshot, err := s.ensureManjuRuleSnapshot(tx, projectID, run.LockRevision, actorID)
 		if err != nil {
 			return err
@@ -909,12 +922,16 @@ func (s *Service) RunScriptStage(actorID, projectID, runID, stageKey string, inp
 		if err := s.recordManjuRuleReads(tx, ruleSnapshot, run.ID, stage.ID, "P1", operationKey, ruleBundle); err != nil {
 			return err
 		}
-		stageInput, err := json.Marshal(map[string]string{
+		stageInputValues := map[string]any{
 			"instruction":     input.Instruction,
 			"prompt":          prompt,
 			"ruleSnapshotId":  ruleSnapshot.ID,
 			"modelExchangeId": exchange.ID,
-		})
+		}
+		if preparedVersion := scriptStagePreparedVersion(stage.InputJSON); preparedVersion > 0 {
+			stageInputValues["preparedVersion"] = preparedVersion
+		}
+		stageInput, err := json.Marshal(stageInputValues)
 		if err != nil {
 			return err
 		}
@@ -1205,12 +1222,21 @@ func (s *Service) reconcileScriptStageTasks(actorID, projectID, runID string) (a
 				}
 				stage.TaskID = ""
 				stage.Version++
+				if scriptStagePreparedVersion(stage.InputJSON) > 0 {
+					stage.InputJSON = scriptStagePreparedVersionInput(stage.Version)
+				}
 				if err := tx.SaveManjuScriptStage(stage); err != nil {
 					return err
 				}
 			case model.TaskStatusSucceeded:
 				if strings.TrimSpace(stage.ArtifactID) != "" {
-					continue
+					artifactTaskID, err := scriptArtifactTaskID(tx, runID, stage.ArtifactID)
+					if err != nil {
+						return err
+					}
+					if artifactTaskID == task.ID {
+						continue
+					}
 				}
 				content, err := scriptTaskResultText(task.ResultJSON)
 				if err != nil || strings.TrimSpace(content) == "" {
@@ -1222,11 +1248,18 @@ func (s *Service) reconcileScriptStageTasks(actorID, projectID, runID string) (a
 					continue
 				}
 				now := time.Now()
-				stage.Version++
+				artifactVersion := stage.Version + 1
+				if preparedVersion := scriptStagePreparedVersion(stage.InputJSON); preparedVersion > 0 {
+					artifactVersion = preparedVersion
+					stage.Version = preparedVersion
+					stage.InputJSON = ""
+				} else {
+					stage.Version = artifactVersion
+				}
 				sum := sha256.Sum256([]byte(content))
 				artifact := &model.ManjuScriptArtifact{
 					ID: uuid.NewString(), ProjectID: projectID, RunID: runID, StageID: stage.ID,
-					Kind: scriptArtifactKind(run.Branch, stage.Key), Version: stage.Version,
+					Kind: scriptArtifactKind(run.Branch, stage.Key), Version: artifactVersion,
 					Content: content, ContentHash: hex.EncodeToString(sum[:]), TaskID: task.ID,
 					CreatedBy: actorID, CreatedAt: now,
 				}
@@ -1297,6 +1330,19 @@ func scriptTaskResultText(raw string) (string, error) {
 	return strings.TrimSpace(payload.Text), nil
 }
 
+func scriptArtifactTaskID(tx *repository.Repository, runID, artifactID string) (string, error) {
+	artifacts, err := tx.ManjuScriptArtifacts(runID)
+	if err != nil {
+		return "", err
+	}
+	for _, artifact := range artifacts {
+		if artifact.ID == artifactID {
+			return artifact.TaskID, nil
+		}
+	}
+	return "", nil
+}
+
 func blockScriptStageRecord(tx *repository.Repository, stage *model.ManjuScriptStage, message string) error {
 	taskID := stage.TaskID
 	stage.Status = model.ManjuScriptStageStatusBlocked
@@ -1357,7 +1403,11 @@ func (s *Service) ConfirmScriptStage(actorID, projectID, runID, stageKey string)
 		if stage.Status == model.ManjuScriptStageStatusLocked {
 			return nil
 		}
-		if stage.Status != model.ManjuScriptStageStatusAwaitingConfirm && stage.Status != model.ManjuScriptStageStatusAwaitingDecision {
+		if stage.Key == ScriptStageRoundtableReview &&
+			stage.Status == model.ManjuScriptStageStatusAwaitingDecision {
+			return ErrRoundtableDecisionRequired
+		}
+		if stage.Status != model.ManjuScriptStageStatusAwaitingConfirm {
 			return ErrScriptStageNotReady
 		}
 		if strings.TrimSpace(stage.ArtifactID) == "" {
@@ -1397,6 +1447,148 @@ func (s *Service) ConfirmScriptStage(actorID, projectID, runID, stageKey string)
 		_, _ = s.RunScriptStage(actorID, projectID, runID, autoStageKey, ScriptStageRunInput{})
 	}
 	return s.ScriptRunDetail(actorID, projectID, runID)
+}
+
+func (s *Service) DecideRoundtable(actorID, projectID, runID string, input RoundtableDecisionInput) (*ScriptRunDetail, error) {
+	actorID = strings.TrimSpace(actorID)
+	projectID = strings.TrimSpace(projectID)
+	runID = strings.TrimSpace(runID)
+	input.Decision = RoundtableDecision(strings.TrimSpace(string(input.Decision)))
+	input.Note = strings.TrimSpace(input.Note)
+	if input.Decision != RoundtableProceed && input.Decision != RoundtableRefine {
+		return nil, ErrRoundtableDecisionRequired
+	}
+
+	autoStageKey := ""
+	err := s.repo.Transaction(func(tx *repository.Repository) error {
+		access, err := tx.ManjuProjectForUser(actorID, projectID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if !canConfirmScript(access.Role) {
+			return ErrForbidden
+		}
+		run, err := tx.ManjuScriptRun(projectID, runID)
+		if err != nil {
+			return err
+		}
+		if run == nil {
+			return ErrScriptRunNotFound
+		}
+		if run.Status != model.ManjuScriptRunStatusActive {
+			return ErrInvalidScriptRun
+		}
+		review, err := tx.ManjuScriptStage(runID, ScriptStageRoundtableReview)
+		if err != nil {
+			return err
+		}
+		if review == nil {
+			return ErrScriptStageNotFound
+		}
+		if review.Status != model.ManjuScriptStageStatusAwaitingDecision ||
+			strings.TrimSpace(review.ArtifactID) == "" {
+			return ErrScriptStageNotReady
+		}
+		if _, err := scriptArtifactContentByID(tx, runID, review.ArtifactID); err != nil {
+			return err
+		}
+
+		now := time.Now()
+		decisionRecord, err := json.Marshal(map[string]any{
+			"decision":  input.Decision,
+			"note":      input.Note,
+			"decidedBy": actorID,
+			"decidedAt": now,
+		})
+		if err != nil {
+			return err
+		}
+		review.InputJSON = string(decisionRecord)
+
+		switch input.Decision {
+		case RoundtableProceed:
+			review.Status = model.ManjuScriptStageStatusLocked
+			review.ConfirmedBy = actorID
+			review.ConfirmedAt = &now
+			review.Error = ""
+			if err := tx.SaveManjuScriptStage(review); err != nil {
+				return err
+			}
+			next, err := activateNextScriptStage(tx, run, review.Position)
+			if err != nil {
+				return err
+			}
+			run.CurrentStage = next
+			if run.Mode == ScriptModeFullPipeline && next != "" && next != ScriptStageSourceRegistration {
+				autoStageKey = next
+			}
+			return tx.SaveManjuScriptRun(run)
+		case RoundtableRefine:
+			review.Status = model.ManjuScriptStageStatusStale
+			review.ConfirmedBy = ""
+			review.ConfirmedAt = nil
+			review.Error = "用户选择精修或重写，等待新剧本版本"
+			if err := tx.SaveManjuScriptStage(review); err != nil {
+				return err
+			}
+			scriptDraft, err := tx.ManjuScriptStage(runID, ScriptStageScriptDraft)
+			if err != nil {
+				return err
+			}
+			if scriptDraft == nil {
+				return ErrScriptStageNotFound
+			}
+			scriptDraft.Version++
+			scriptDraft.Status = model.ManjuScriptStageStatusInProgress
+			scriptDraft.TaskID = ""
+			scriptDraft.Error = ""
+			scriptDraft.ConfirmedBy = ""
+			scriptDraft.ConfirmedAt = nil
+			scriptDraft.CompletedAt = nil
+			scriptDraft.StartedAt = &now
+			scriptDraft.InputJSON = scriptStagePreparedVersionInput(scriptDraft.Version)
+			if err := tx.SaveManjuScriptStage(scriptDraft); err != nil {
+				return err
+			}
+			run.Status = model.ManjuScriptRunStatusActive
+			run.CurrentStage = ScriptStageScriptDraft
+			return tx.SaveManjuScriptRun(run)
+		default:
+			return ErrRoundtableDecisionRequired
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	if autoStageKey != "" {
+		_, _ = s.RunScriptStage(actorID, projectID, runID, autoStageKey, ScriptStageRunInput{})
+	}
+	return s.ScriptRunDetail(actorID, projectID, runID)
+}
+
+func scriptStagePreparedVersion(raw string) int64 {
+	var input struct {
+		PreparedVersion int64 `json:"preparedVersion"`
+	}
+	if strings.TrimSpace(raw) == "" || json.Unmarshal([]byte(raw), &input) != nil {
+		return 0
+	}
+	return input.PreparedVersion
+}
+
+func scriptStagePreparedVersionInput(version int64) string {
+	encoded, _ := json.Marshal(map[string]int64{"preparedVersion": version})
+	return string(encoded)
+}
+
+func scriptStageDispatchVersion(stage model.ManjuScriptStage) int64 {
+	if preparedVersion := scriptStagePreparedVersion(stage.InputJSON); preparedVersion > 0 {
+		return preparedVersion
+	}
+	return stage.Version + 1
 }
 
 func markDownstreamScriptStagesStale(tx *repository.Repository, runID string, position int) error {

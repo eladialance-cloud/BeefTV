@@ -558,6 +558,158 @@ func TestManjuScriptSourceRouteDoesNotRequireRetiredP0BStage(t *testing.T) {
 	}
 }
 
+func prepareManjuRoundtableAwaitingDecision(t *testing.T, db *gorm.DB) string {
+	t.Helper()
+	now := time.Now()
+	runID := "run-roundtable-http"
+	run := &model.ManjuScriptRun{
+		ID: runID, ProjectID: "project-secret", Branch: manjusvc.ScriptBranchOriginal,
+		Mode: manjusvc.ScriptModeStepwise, Status: model.ManjuScriptRunStatusActive,
+		CurrentStage: manjusvc.ScriptStageRoundtableReview, LockRevision: 1,
+		CreatedBy: testManjuOwnerID, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(run).Error; err != nil {
+		t.Fatal(err)
+	}
+	scriptArtifact := &model.ManjuScriptArtifact{
+		ID: "http-script-v1", ProjectID: run.ProjectID, RunID: runID, StageID: "http-stage-script-draft",
+		Kind: "SCRIPT_DRAFT.md", Version: 1, Content: "# 正式剧本 v1",
+		ContentHash: "http-script-v1", CreatedBy: testManjuOwnerID, CreatedAt: now,
+	}
+	reviewArtifact := &model.ManjuScriptArtifact{
+		ID: "http-roundtable-v1", ProjectID: run.ProjectID, RunID: runID, StageID: "http-stage-roundtable-review",
+		Kind: "ROUNDTABLE_REVIEW.md", Version: 1, Content: "# 五席圆桌审核\n等待用户选择。",
+		ContentHash: "http-roundtable-v1", CreatedBy: testManjuOwnerID, CreatedAt: now,
+	}
+	if err := db.Create(&[]model.ManjuScriptArtifact{*scriptArtifact, *reviewArtifact}).Error; err != nil {
+		t.Fatal(err)
+	}
+	stages := []model.ManjuScriptStage{
+		{ID: "http-stage-source", RunID: runID, Key: manjusvc.ScriptStageSourceRegistration, Title: "来源登记", Position: 1, Status: manjusvc.ScriptStageStatusLocked, Version: 1},
+		{ID: "http-stage-ip", RunID: runID, Key: manjusvc.ScriptStageIPDevelopment, Title: "IP 与角色开发", Position: 2, Status: manjusvc.ScriptStageStatusLocked, Version: 1},
+		{ID: "http-stage-series", RunID: runID, Key: manjusvc.ScriptStageSeriesBible, Title: "全剧开发圣经", Position: 3, Status: manjusvc.ScriptStageStatusLocked, Version: 1},
+		{ID: "http-stage-episodes", RunID: runID, Key: manjusvc.ScriptStageEpisodePlanning, Title: "分集规划", Position: 4, Status: manjusvc.ScriptStageStatusLocked, Version: 1},
+		{ID: "http-stage-script-draft", RunID: runID, Key: manjusvc.ScriptStageScriptDraft, Title: "正式剧本", Position: 5, Status: manjusvc.ScriptStageStatusLocked, Version: 1, ArtifactID: scriptArtifact.ID},
+		{ID: "http-stage-roundtable-review", RunID: runID, Key: manjusvc.ScriptStageRoundtableReview, Title: "五席圆桌审核", Position: 6, Status: manjusvc.ScriptStageStatusAwaitingDecision, Version: 1, ArtifactID: reviewArtifact.ID},
+	}
+	if err := db.Create(&stages).Error; err != nil {
+		t.Fatal(err)
+	}
+	return runID
+}
+
+func TestManjuRoundtableDecisionRequiresExplicitChoice(t *testing.T) {
+	engine, _, db := newManjuHTTPEnvWithDB(t)
+	runID := prepareManjuRoundtableAwaitingDecision(t, db)
+	path := "/api/manju/projects/project-secret/script-runs/" + runID + "/stages/roundtable_review/decide"
+
+	recorder := manjuRequest(t, engine, http.MethodPost, path, map[string]any{}, "owner")
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("missing roundtable decision must map to 400, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var stages []model.ManjuScriptStage
+	if err := db.Where("run_id = ?", runID).Find(&stages).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, stage := range stages {
+		if stage.Key == manjusvc.ScriptStageRoundtableReview && stage.Status != manjusvc.ScriptStageStatusAwaitingDecision {
+			t.Fatalf("missing decision must not mutate review state: %+v", stage)
+		}
+	}
+}
+
+func TestManjuRoundtableDecisionRejectsNonAwaitingReviewAsConflict(t *testing.T) {
+	engine, _, db := newManjuHTTPEnvWithDB(t)
+	runID := prepareManjuRoundtableAwaitingDecision(t, db)
+	if err := db.Model(&model.ManjuScriptStage{}).
+		Where("run_id = ? AND key = ?", runID, manjusvc.ScriptStageRoundtableReview).
+		Update("status", manjusvc.ScriptStageStatusLocked).Error; err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/manju/projects/project-secret/script-runs/" + runID + "/stages/roundtable_review/decide"
+
+	recorder := manjuRequest(t, engine, http.MethodPost, path, map[string]any{
+		"decision": manjusvc.RoundtableProceed,
+	}, "owner")
+
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("non-awaiting roundtable decision must map to 409, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestManjuRoundtableDecisionReturnsDownstreamState(t *testing.T) {
+	testCases := []struct {
+		name            string
+		decision        manjusvc.RoundtableDecision
+		expectedRun     string
+		expectedCurrent string
+		expectedReview  string
+		expectedScript  string
+		expectedVersion int64
+	}{
+		{
+			name:            "proceed current",
+			decision:        manjusvc.RoundtableProceed,
+			expectedRun:     model.ManjuScriptRunStatusCompleted,
+			expectedReview:  manjusvc.ScriptStageStatusLocked,
+			expectedScript:  manjusvc.ScriptStageStatusLocked,
+			expectedVersion: 1,
+		},
+		{
+			name:            "refine or rewrite",
+			decision:        manjusvc.RoundtableRefine,
+			expectedRun:     model.ManjuScriptRunStatusActive,
+			expectedCurrent: manjusvc.ScriptStageScriptDraft,
+			expectedReview:  manjusvc.ScriptStageStatusStale,
+			expectedScript:  manjusvc.ScriptStageStatusInProgress,
+			expectedVersion: 2,
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			engine, _, db := newManjuHTTPEnvWithDB(t)
+			runID := prepareManjuRoundtableAwaitingDecision(t, db)
+			path := "/api/manju/projects/project-secret/script-runs/" + runID + "/stages/roundtable_review/decide"
+
+			recorder := manjuRequest(t, engine, http.MethodPost, path, map[string]any{
+				"decision": testCase.decision,
+				"note":     "API decision regression",
+			}, "owner")
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("roundtable decision must return 200, got %d: %s", recorder.Code, recorder.Body.String())
+			}
+			var payload struct {
+				Data struct {
+					Item manjusvc.ScriptRunDetail `json:"item"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+				t.Fatal(err)
+			}
+			detail := payload.Data.Item
+			if detail.Run.Status != testCase.expectedRun || detail.Run.CurrentStage != testCase.expectedCurrent {
+				t.Fatalf("unexpected run state: %+v", detail.Run)
+			}
+			var review, scriptDraft manjusvc.ScriptStageView
+			for _, stage := range detail.Stages {
+				switch stage.Key {
+				case manjusvc.ScriptStageRoundtableReview:
+					review = stage
+				case manjusvc.ScriptStageScriptDraft:
+					scriptDraft = stage
+				}
+			}
+			if review.Status != testCase.expectedReview {
+				t.Fatalf("unexpected review state: %+v", review)
+			}
+			if scriptDraft.Status != testCase.expectedScript || scriptDraft.Version != testCase.expectedVersion {
+				t.Fatalf("unexpected script_draft state: %+v", scriptDraft)
+			}
+		})
+	}
+}
+
 func TestManjuSourceLibraryCreatesChapterAdaptationUnit(t *testing.T) {
 	engine, _ := newManjuHTTPEnv(t)
 	lockBody := map[string]any{
