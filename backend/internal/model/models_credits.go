@@ -2,8 +2,12 @@ package model
 
 import "time"
 
-// CreditAccount is the hosted wallet for one user. Balance is spendable points,
-// Frozen is reserved by in-flight tasks; Available is Balance - Frozen.
+// MicrocreditsPerCredit is the fixed-point scale shared by wallet, ledger,
+// quote, migration and task-cost records.
+const MicrocreditsPerCredit int64 = 1_000_000
+
+// CreditAccount is the hosted wallet for one user. Balance and Frozen are stored
+// in microcredits (1 credit = 1,000,000 microcredits). Available is Balance - Frozen.
 //
 // Invariant: Balance + Frozen always equals the cumulative effect of every
 // ledger entry for this user, and neither field may go negative.
@@ -23,9 +27,10 @@ func (CreditAccount) TableName() string { return "credit_accounts" }
 // in-flight task. A task may only be frozen against the available amount.
 func (a CreditAccount) Available() int64 { return a.Balance - a.Frozen }
 
-// CreditLedgerEntry is an immutable wallet movement. Entries are never updated
-// or deleted: corrections are new entries. IdempotencyKey is unique, so a
-// repeated submit, retry or provider callback converges on one entry.
+// CreditLedgerEntry is an immutable wallet movement. Amount and every before/after
+// snapshot are stored in microcredits. Entries are never updated or deleted:
+// corrections are new entries. IdempotencyKey is unique, so a repeated submit,
+// retry or provider callback converges on one entry.
 type CreditLedgerEntry struct {
 	ID             string    `json:"id" gorm:"primaryKey;size:36"`
 	UserID         string    `json:"userId" gorm:"size:36;index"`

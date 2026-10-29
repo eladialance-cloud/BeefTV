@@ -5,7 +5,7 @@ import (
 	"math"
 	"time"
 
-	"infinite-canvas/backend/internal/credits"
+	"infinite-canvas/backend/internal/model"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -42,7 +42,7 @@ func migrateHostedCreditsToMicrocredits(db *gorm.DB) error {
 		if claimed.RowsAffected == 0 {
 			return nil
 		}
-		scale := credits.MicrocreditsPerCredit
+		scale := model.MicrocreditsPerCredit
 		scaled := func(column string) string {
 			return fmt.Sprintf(
 				"CASE WHEN %[1]s > %[2]d THEN %[3]d WHEN %[1]s < %[4]d THEN %[5]d ELSE %[1]s * %[6]d END",
