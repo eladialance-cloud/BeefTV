@@ -165,7 +165,7 @@ func TestCompileFeedDoesNotCompressRuleGeneratedContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	feed, _, err := defaultManjuSkillRuntime.CompileFeed(string(stateJSON), ManjuSkillValidationOptions{
+	feed, _, err := compileFeedWithTestBaseline(string(stateJSON), ManjuSkillValidationOptions{
 		Model: "2.0", Track: "1", Combat: "none", Mode: "M1", Aspect: "9:16", Assets: 9, Timeout: 120 * time.Second,
 	})
 	if err != nil {
@@ -201,7 +201,7 @@ func TestCompileFeedReturnsOfficialCompilerOutputUnchanged(t *testing.T) {
 	if err != nil || code != 0 {
 		t.Fatalf("official compiler failed: code=%d err=%v\n%s", code, err, official)
 	}
-	actual, _, err := defaultManjuSkillRuntime.CompileFeed(normalized, ManjuSkillValidationOptions{
+	actual, _, err := compileFeedWithTestBaseline(normalized, ManjuSkillValidationOptions{
 		Model: "2.5", Track: "1", Combat: "none", Mode: "M1", Aspect: "16:9", Assets: 9, Timeout: 120 * time.Second,
 	})
 	if err != nil {

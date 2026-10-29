@@ -74,7 +74,7 @@ func registerManjuProductionRoutes(group *gin.RouterGroup, svc ManjuService, res
 			return
 		}
 		var input manju.ProductionStageRunInput
-		if err := c.ShouldBindJSON(&input); err != nil {
+		if err := bindStrictJSON(c, &input); err != nil {
 			writeError(c, kernel.BadAuthRequest("生产阶段执行参数格式错误"))
 			return
 		}
@@ -105,7 +105,7 @@ func registerManjuProductionRoutes(group *gin.RouterGroup, svc ManjuService, res
 			return
 		}
 		var input manju.ProductionStageRunInput
-		if err := c.ShouldBindJSON(&input); err != nil {
+		if err := bindStrictJSON(c, &input); err != nil {
 			writeError(c, kernel.BadAuthRequest("工件重新生成参数格式错误"))
 			return
 		}

@@ -3778,12 +3778,12 @@
     background: color-mix(in srgb, var(--manju-danger, #d44) 7%, transparent);
 }
 
-.manju-production-audit.is-skipped {
+.manju-production-audit.is-warning {
     border-color: color-mix(in srgb, var(--manju-warning) 32%, var(--manju-hairline));
     background: color-mix(in srgb, var(--manju-warning) 7%, transparent);
 }
 
-.manju-production-audit.is-skipped > svg {
+.manju-production-audit.is-warning > svg {
     color: var(--manju-warning);
 }
 

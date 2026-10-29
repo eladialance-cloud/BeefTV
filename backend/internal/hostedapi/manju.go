@@ -1,6 +1,7 @@
 package hostedapi
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -11,6 +12,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+func bindStrictJSON(c *gin.Context, target any) error {
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	return decoder.Decode(target)
+}
 
 // ManjuService is the hosted project surface used by the manju studio. Session
 // identity is passed explicitly; request paths and bodies never carry an actor.

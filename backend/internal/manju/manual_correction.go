@@ -743,6 +743,7 @@ func (s *Service) PreviewProductionStoryboardCompile(
 			StyleForbiddenItems:   view.Snapshot.StyleForbiddenItems,
 			StyleBans:             strings.Join(view.Snapshot.StyleForbiddenItems, "；"),
 			Assets:                99, Timeout: 120 * time.Second,
+			UpstreamScript: content,
 		}
 		return nil
 	})
@@ -758,7 +759,7 @@ func (s *Service) PreviewProductionStoryboardCompile(
 	hardLimit := contract.Budget.HardByModel[normalizedModel]
 	preview := &ManjuCompilePreview{
 		Model: normalizedModel, HardLimit: hardLimit, Passed: validation.Passed,
-		Issues: validation.Issues, Warnings: validation.Warnings, Feed: feed,
+		Issues: validation.Issues, Warnings: append(validation.Warnings, validation.DialogueWarnings...), Feed: feed,
 		Segments: previewCompiledFeedSegments(feed, hardLimit),
 	}
 	return preview, nil

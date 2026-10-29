@@ -1213,6 +1213,22 @@ func TestManjuProductionRoutesRequireSession(t *testing.T) {
 	}
 }
 
+func TestP4RequestRejectsObsoleteSkipValidationField(t *testing.T) {
+	engine, _ := newManjuHTTPEnv(t)
+
+	recorder := manjuRequest(
+		t,
+		engine,
+		http.MethodPost,
+		"/api/manju/projects/project-secret/production-runs/run-1/stages/feed_package/run",
+		map[string]any{"skipValidation": true},
+		"owner",
+	)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("skipValidation must be rejected, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestManjuProductionRoutesDoNotLeakForeignProject(t *testing.T) {
 	engine, _ := newManjuHTTPEnv(t)
 

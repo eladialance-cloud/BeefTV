@@ -3322,15 +3322,22 @@ function ProductionStageCard({
     const readyStoryboardImageCount = (detail.images || []).filter((image) => image.status === "READY" && Boolean(image.resourceId)).length;
     const sourceP3ArtifactId = detail.stages.find((item) => item.key === "director_storyboard")?.artifactId || "";
     const isOfficialCompiler = stage.key === "feed_package";
-    const machineCheckSkipped = stage.machineCheckStatus === "SKIPPED_BY_USER";
+    const legacyNonCompliant = stage.machineCheckStatus === "LEGACY_NON_COMPLIANT";
+    const machineCheckPassed = stage.machineCheckStatus === "PASS";
+    const machineCheckProofMissing = isOfficialCompiler && Boolean(artifact) && !legacyNonCompliant && !machineCheckPassed;
+    const machineCheckWarnings = stage.machineCheckWarnings || [];
     const officialAuditLabel = isOfficialCompiler
         ? artifact
-            ? machineCheckSkipped
-                ? "compile_feed.py 已生成投喂稿；用户已跳过 validate_prompt.py + gate_check.py"
-                : "compile_feed.py + validate_prompt.py + gate_check.py 已通过"
+            ? legacyNonCompliant
+                ? stage.machineCheckNote || "历史非合规状态：未通过 V7.4.26 机检，不能作为当前锁定依据。"
+                : machineCheckProofMissing
+                  ? "未记录完整四步机检，不能作为 PASS；请重新执行官方 P4 编译链"
+                : machineCheckWarnings.length > 0
+                  ? "compile_feed.py + validate_prompt.py + gate_check.py + script_feed_diff.py 已通过；台词完整性存在需人工核对的部分覆盖警告"
+                  : "compile_feed.py + validate_prompt.py + gate_check.py + script_feed_diff.py 已通过"
             : stage.error
-              ? "官方编译或双机检未通过"
-              : "等待官方编译与双机检"
+              ? "官方 P4 完整机检链未通过"
+              : "等待官方 P4 完整机检链"
         : stage.key === "qc_handoff"
           ? artifact
               ? "audit_contract.py 全流程契约审计已通过"
@@ -3338,14 +3345,21 @@ function ProductionStageCard({
                 ? "官方全流程契约审计未通过"
                 : "等待官方全流程契约审计"
           : "";
-    const officialAuditTone = artifact ? (machineCheckSkipped ? "is-skipped" : "is-passed") : stage.error ? "is-failed" : "is-pending";
+    const officialAuditTone = artifact
+        ? legacyNonCompliant || machineCheckProofMissing
+            ? "is-failed"
+            : machineCheckWarnings.length > 0
+              ? "is-warning"
+              : "is-passed"
+        : stage.error
+          ? "is-failed"
+          : "is-pending";
     const [instruction, setInstruction] = useState("");
     const [notice, setNotice] = useState<{ tone: "info" | "error" | "success"; text: string } | null>(null);
     const [regenerateOpen, setRegenerateOpen] = useState(false);
     const [regenerateInstruction, setRegenerateInstruction] = useState("");
     const [manualCorrectionOpen, setManualCorrectionOpen] = useState(false);
     const [compilePreview, setCompilePreview] = useState<ManjuCompilePreview | undefined>();
-    const [skipMachineCheck, setSkipMachineCheck] = useState(false);
     const canvasImportsQuery = useQuery({
         queryKey: ["manju", "canvas-imports", projectId],
         queryFn: () => listManjuCanvasImports(projectId),
@@ -3355,12 +3369,8 @@ function ProductionStageCard({
     const runMutation = useMutation({
         mutationFn: () => runManjuProductionStage(projectId, detail.run.id, stage.key, {
             instruction: instruction.trim(),
-            skipValidation: isOfficialCompiler && skipMachineCheck,
         }),
         onSuccess: ({ item }) => {
-            if (isOfficialCompiler && skipMachineCheck) {
-                setNotice({ tone: "info", text: "compile_feed.py 已生成投喂稿；本次未运行官方双机检，工件不会被标记为机检 PASS。" });
-            }
             onUpdated(item);
         },
         onError: (error) => setNotice({ tone: "error", text: error instanceof Error ? error.message : "阶段执行失败" }),
@@ -3524,7 +3534,8 @@ function ProductionStageCard({
                     <ShieldCheck />
                     <div>
                         <strong>官方机检</strong>
-                        <span>{machineCheckSkipped && stage.machineCheckNote ? stage.machineCheckNote : officialAuditLabel}</span>
+                        <span>{officialAuditLabel}</span>
+                        {machineCheckWarnings.map((warning) => <span key={warning}>{warning}</span>)}
                     </div>
                 </div>
             ) : null}
@@ -3554,16 +3565,9 @@ function ProductionStageCard({
             ) : null}
             {canRun ? (
                 <div className={`manju-production-stage-input${isOfficialCompiler ? " is-compiler" : ""}`}>
-                    {isOfficialCompiler ? (
-                        <label className="manju-production-skip-check">
-                            <Checkbox checked={skipMachineCheck} onChange={(event) => setSkipMachineCheck(event.target.checked)}>
-                                跳过官方双机检
-                            </Checkbox>
-                            <span>仍执行官方 compile_feed.py；只跳过 validate_prompt.py 与 gate_check.py，不伪造 PASS。</span>
-                        </label>
-                    ) : <Input.TextArea rows={3} value={instruction} placeholder={meta?.placeholder} onChange={(event) => setInstruction(event.target.value)} />}
+                    {isOfficialCompiler ? null : <Input.TextArea rows={3} value={instruction} placeholder={meta?.placeholder} onChange={(event) => setInstruction(event.target.value)} />}
                     <Button type="primary" icon={<Play />} loading={runMutation.isPending} onClick={() => runMutation.mutate()}>
-                        {isOfficialCompiler && skipMachineCheck ? "仅编译并保存投喂稿" : meta?.runLabel}
+                        {meta?.runLabel}
                     </Button>
                 </div>
             ) : null}

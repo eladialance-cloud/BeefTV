@@ -1113,6 +1113,45 @@ func TestLegacyP3WithoutAssetRefsBlocksP4AndRoutesToP3(t *testing.T) {
 	}
 }
 
+func TestP4RejectsMissingDialogueFromUpstreamStoryboard(t *testing.T) {
+	f := newFixture(t)
+	run := prepareP4WithUpstreamDialogue(t, f, "林澈：别开门。")
+	_, err := f.service.RunProductionStage(
+		f.ownerID, f.projectID, run.Run.ID, manju.ProductionStageFeed,
+		manju.ProductionStageRunInput{},
+	)
+	if err == nil || !strings.Contains(err.Error(), "台词") {
+		t.Fatalf("missing dialogue must fail P4, got %v", err)
+	}
+}
+
+func TestP4RetainsDialogueIntegrityWarnings(t *testing.T) {
+	f := newFixture(t)
+	run := prepareP4WithDialogueComparison(
+		t,
+		f,
+		"林澈：别开门，外面有人，快走，千万不要回头。",
+		"【林澈（低沉）：\"别开门，外面有人，快走。\"】",
+	)
+	if _, err := f.service.RunProductionStage(
+		f.ownerID, f.projectID, run.Run.ID, manju.ProductionStageFeed,
+		manju.ProductionStageRunInput{},
+	); err != nil {
+		t.Fatalf("部分覆盖警告不得阻断 P4: %v", err)
+	}
+	detail, err := f.service.ProductionRunDetail(f.ownerID, f.projectID, run.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage := findProductionStage(t, detail, manju.ProductionStageFeed)
+	if stage.MachineCheckStatus != model.ManjuProductionMachineCheckStatusPass {
+		t.Fatalf("P4 硬门通过后应保留 PASS 状态: %+v", stage)
+	}
+	if len(stage.MachineCheckWarnings) == 0 {
+		t.Fatalf("台词部分覆盖警告必须保留在 P4 阶段: %+v", stage)
+	}
+}
+
 func TestGenerateProductionPrevisUsesNewOperationKeyPerAttempt(t *testing.T) {
 	f := newFixture(t)
 	run := prepareP4AwaitingConfirmation(t, f)
@@ -1161,6 +1200,67 @@ func TestGenerateProductionPrevisUsesNewOperationKeyPerAttempt(t *testing.T) {
 	if !strings.Contains(firstID, ":v1") || !strings.Contains(secondID, ":v2") {
 		t.Fatalf("previs retry versions must increment: first=%q second=%q", firstID, secondID)
 	}
+}
+
+func prepareP4WithUpstreamDialogue(t *testing.T, f fixture, dialogue string) *manju.ProductionRunDetail {
+	t.Helper()
+	return prepareP4WithDialogueComparison(t, f, dialogue, "无")
+}
+
+func prepareP4WithDialogueComparison(t *testing.T, f fixture, upstreamDialogue, compiledDialogue string) *manju.ProductionRunDetail {
+	t.Helper()
+	f.service.SetSkillValidationEnabledForTest(true)
+	assetRunID := prepareCompletedProductionAsset(t, f, "M1")
+	run, err := f.service.CreateProductionRun(f.ownerID, f.projectID, manju.ProductionRunInput{AssetRunID: assetRunID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockProductionP0BForTest(t, f, run.Run.ID)
+	p3Task := &model.Task{
+		ID: "production-p3-dialogue-baseline", UserID: f.ownerID, ProjectID: f.projectID,
+		Type: "canvas_text", Status: model.TaskStatusQueued,
+	}
+	if err := f.db.Create(p3Task).Error; err != nil {
+		t.Fatal(err)
+	}
+	f.service.SetScriptTaskCreator((&sequentialScriptTaskCreator{tasks: []*model.Task{p3Task}}).create)
+	if _, err := f.service.RunProductionStage(
+		f.ownerID, f.projectID, run.Run.ID, manju.ProductionStageStoryboard,
+		manju.ProductionStageRunInput{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	storyboard := strings.Replace(
+		validStoryboardArtifact(),
+		"## 台词精简建议清单",
+		upstreamDialogue+"\n\n## 台词精简建议清单",
+		1,
+	)
+	if compiledDialogue != "无" {
+		encodedDialogue, err := json.Marshal(compiledDialogue)
+		if err != nil {
+			t.Fatal(err)
+		}
+		storyboard = strings.Replace(
+			storyboard,
+			`"dialogue": "无"`,
+			`"dialogue": `+string(encodedDialogue),
+			1,
+		)
+	}
+	storyboard = strings.ReplaceAll(storyboard, "35mm", "21mm")
+	succeedManjuTask(t, f, p3Task.ID, storyboard)
+	if _, err := f.service.ConfirmProductionStage(
+		f.ownerID, f.projectID, run.Run.ID, manju.ProductionStageStoryboard,
+		manju.ProductionConfirmInput{Note: "P3 台词基线确认"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	detail, err := f.service.ProductionRunDetail(f.ownerID, f.projectID, run.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return detail
 }
 
 func prepareP4AwaitingConfirmation(t *testing.T, f fixture) *manju.ProductionRunDetail {

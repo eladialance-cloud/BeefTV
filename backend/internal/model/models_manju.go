@@ -54,6 +54,9 @@ const (
 	ManjuProductionArtifactPrevis        = "PREVIS_STORYBOARD.md"
 	ManjuProductionArtifactQC            = "QC_HANDOFF.md"
 
+	ManjuProductionMachineCheckStatusPass               = "PASS"
+	ManjuProductionMachineCheckStatusLegacyNonCompliant = "LEGACY_NON_COMPLIANT"
+
 	ManjuProductionPrevisStatusQueued  = "QUEUED"
 	ManjuProductionPrevisStatusRunning = "RUNNING"
 	ManjuProductionPrevisStatusReady   = "READY"

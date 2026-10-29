@@ -60,18 +60,18 @@ type ManjuSkillValidationOptions struct {
 	StyleBans             string
 	Assets                int
 	StateJSON             string
+	UpstreamScript        string
 	Timeout               time.Duration
-	SkipValidation        bool
 }
 
 type ManjuSkillValidationResult struct {
-	Passed         bool
-	Skipped        bool
-	ExitCode       int
-	Output         string
-	Issues         []string
-	DeferredIssues []string
-	Warnings       []string
+	Passed           bool
+	ExitCode         int
+	Output           string
+	Issues           []string
+	DeferredIssues   []string
+	Warnings         []string
+	DialogueWarnings []string
 }
 
 var defaultManjuSkillRuntime = &ManjuSkillRuntime{}
@@ -354,6 +354,167 @@ func (r *ManjuSkillRuntime) ValidateP45(content string, segments int) (ManjuSkil
 	return result, nil
 }
 
+func (r *ManjuSkillRuntime) ValidateDialogueIntegrity(
+	upstreamScript, feed string,
+	timeout time.Duration,
+) (ManjuSkillValidationResult, error) {
+	if strings.TrimSpace(upstreamScript) == "" {
+		return ManjuSkillValidationResult{}, ErrProjectStateUnavailable
+	}
+	if strings.TrimSpace(feed) == "" {
+		return ManjuSkillValidationResult{
+			ExitCode: -1,
+			Output:   "投喂稿为空，无法执行 script_feed_diff.py",
+			Issues:   []string{"投喂稿为空，无法执行 script_feed_diff.py"},
+		}, nil
+	}
+	scriptPath, scriptCleanup, err := writeManjuSkillTemp("p3-upstream-*.md", upstreamScript)
+	if err != nil {
+		return ManjuSkillValidationResult{}, err
+	}
+	defer scriptCleanup()
+	feedPath, feedCleanup, err := writeManjuSkillTemp("p4-feed-*.md", feed)
+	if err != nil {
+		return ManjuSkillValidationResult{}, err
+	}
+	defer feedCleanup()
+	return r.runDialogueDiff(scriptPath, feedPath, upstreamScript, timeout)
+}
+
+func (r *ManjuSkillRuntime) runDialogueDiff(scriptPath, feedPath, upstreamScript string, timeout time.Duration) (ManjuSkillValidationResult, error) {
+	args := []string{"--script", scriptPath, "--feed", feedPath}
+	if names := dialogueNamesFromScript(upstreamScript); len(names) > 0 {
+		args = append(args, "--names", strings.Join(names, ","))
+	}
+	output, code, runErr := r.runPython(
+		filepath.Join("sd-feed-engine", "scripts", "script_feed_diff.py"),
+		args,
+		timeout,
+	)
+	result := ManjuSkillValidationResult{Output: strings.TrimSpace(output), ExitCode: code}
+	if !validDialogueDiffOutput(result.Output) {
+		message := "script_feed_diff.py 未返回有效台词完整性报告"
+		if runErr != nil {
+			message += ": " + runErr.Error()
+		}
+		if result.Output != "" {
+			message += ": " + firstNonEmptyLine(result.Output, result.Output)
+		}
+		result.Issues = append(result.Issues, message)
+		return result, nil
+	}
+	switch code {
+	case 0:
+		result.Passed = runErr == nil
+		if !result.Passed {
+			result.Issues = append(result.Issues, "script_feed_diff.py exit 0 但执行未成功: "+runErr.Error())
+		}
+	case 1:
+		result.Passed = true
+		result.DialogueWarnings = dialogueDiffWarnings(result.Output)
+		if len(result.DialogueWarnings) == 0 {
+			result.DialogueWarnings = append(result.DialogueWarnings, "script_feed_diff.py 报告台词部分覆盖，需逐句核对")
+		}
+	case 2:
+		result.Issues = dialogueDiffIssues(result.Output)
+		if len(result.Issues) == 0 {
+			result.Issues = append(result.Issues, "script_feed_diff.py exit 2：投喂稿存在缺失台词")
+		}
+	default:
+		message := fmt.Sprintf("script_feed_diff.py exit %d", code)
+		if runErr != nil {
+			message += ": " + runErr.Error()
+		}
+		result.Issues = append(result.Issues, message)
+	}
+	return result, nil
+}
+
+func dialogueNamesFromScript(script string) []string {
+	seen := map[string]bool{}
+	names := make([]string, 0, 4)
+	for _, rawLine := range strings.Split(script, "\n") {
+		line := strings.TrimSpace(rawLine)
+		hadDialoguePrefix := strings.HasPrefix(line, "台词：")
+		line = strings.TrimPrefix(line, "台词：")
+		for {
+			index := strings.IndexAny(line, "：:")
+			if index <= 0 {
+				break
+			}
+			name := strings.TrimSpace(line[:index])
+			if pause := strings.IndexAny(name, "（("); pause >= 0 {
+				name = strings.TrimSpace(name[:pause])
+			}
+			if hadDialoguePrefix && name == "无" {
+				if strings.HasPrefix(line[index:], "：") {
+					line = strings.TrimSpace(line[index+len("："):])
+				} else {
+					line = strings.TrimSpace(line[index+1:])
+				}
+				continue
+			}
+			if name != "" && name != "无" && !dialogueScriptFieldLabel(name) {
+				if !seen[name] {
+					seen[name] = true
+					names = append(names, name)
+				}
+			}
+			break
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+func dialogueScriptFieldLabel(name string) bool {
+	switch name {
+	case "场景", "画面内容", "状态", "光影", "色调", "台词", "重音", "人声", "音效",
+		"文字平面图", "导演稿", "角色表演档案", "分镜总表", "故事板表", "交付清单",
+		"台词精简建议清单", "P3 交付清单":
+		return true
+	default:
+		return false
+	}
+}
+
+func validDialogueDiffOutput(output string) bool {
+	return strings.Contains(output, "=== 汇总 ===") &&
+		strings.Contains(output, "❌ 缺失") &&
+		strings.Contains(output, "⚠ 弱匹配")
+}
+
+func dialogueDiffWarnings(output string) []string {
+	warnings := make([]string, 0)
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.Contains(line, "⚠ 部分覆盖") || strings.HasPrefix(line, "⚠ 弱匹配") {
+			warnings = append(warnings, line)
+		}
+	}
+	return warnings
+}
+
+func dialogueDiffIssues(output string) []string {
+	issues := []string{"台词完整性校验失败：投喂稿存在缺失台词"}
+	captureMissing := false
+	for _, line := range strings.Split(output, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "★ 缺失明细") {
+			captureMissing = true
+			continue
+		}
+		if captureMissing && trimmed != "" {
+			issues = append(issues, trimmed)
+			continue
+		}
+		if strings.Contains(trimmed, "❌ 缺失") {
+			issues = append(issues, trimmed)
+		}
+	}
+	return issues
+}
+
 func (r *ManjuSkillRuntime) PrevisContext() (string, error) {
 	root, err := r.ensureRoot()
 	if err != nil {
@@ -425,15 +586,6 @@ func (r *ManjuSkillRuntime) CompileFeed(stateJSON string, options ManjuSkillVali
 		}
 		return feed, ManjuSkillValidationResult{Output: message, ExitCode: code}, fmt.Errorf("官方 compile_feed.py 编译失败: %s", message)
 	}
-	if options.SkipValidation {
-		return feed, ManjuSkillValidationResult{
-			Skipped: true,
-			Output:  "用户选择跳过 V7.4.26 官方 validate_prompt.py 与 gate_check.py；compile_feed.py 已成功生成投喂稿。",
-			Warnings: []string{
-				"已跳过官方双机检：投喂稿不是 PASS，只代表 compile_feed.py 已产出文本。",
-			},
-		}, nil
-	}
 	options.StateJSON = stateJSON
 	validationOptions := options
 	if strings.TrimSpace(validationOptions.StyleSource) != "" {
@@ -443,7 +595,33 @@ func (r *ManjuSkillRuntime) CompileFeed(stateJSON string, options ManjuSkillVali
 		}
 	}
 	validation, validationErr := r.ValidateP4(feed, validationOptions)
-	return feed, validation, validationErr
+	if validationErr != nil || !validation.Passed {
+		return feed, validation, validationErr
+	}
+	dialogueValidation, dialogueErr := r.ValidateDialogueIntegrity(
+		options.UpstreamScript,
+		feed,
+		options.Timeout,
+	)
+	combined := validation
+	combined.Output = strings.TrimSpace(strings.Join([]string{
+		strings.TrimSpace(validation.Output),
+		strings.TrimSpace(dialogueValidation.Output),
+	}, "\n\n"))
+	combined.ExitCode = dialogueValidation.ExitCode
+	combined.Passed = dialogueValidation.Passed
+	combined.Issues = append(combined.Issues, dialogueValidation.Issues...)
+	combined.DialogueWarnings = append(combined.DialogueWarnings, dialogueValidation.DialogueWarnings...)
+	if dialogueErr != nil {
+		combined.Passed = false
+		message := "台词完整性基线不可用: " + dialogueErr.Error()
+		combined.Issues = append(combined.Issues, message)
+		if combined.Output != "" {
+			combined.Output += "\n\n"
+		}
+		combined.Output += message
+	}
+	return feed, combined, nil
 }
 
 func (r *ManjuSkillRuntime) prepareOfficialCompileState(stateJSON string, options ManjuSkillValidationOptions) (string, error) {

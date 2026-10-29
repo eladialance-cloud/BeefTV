@@ -34,9 +34,18 @@ test("P4 is presented as the official compiler instead of a text task", () => {
 });
 
 test("P4 and P5 expose official machine-check status", () => {
-    expect(page).toContain("compile_feed.py + validate_prompt.py + gate_check.py 已通过");
+    expect(page).toContain("compile_feed.py + validate_prompt.py + gate_check.py + script_feed_diff.py 已通过");
     expect(page).toContain("audit_contract.py 全流程契约审计已通过");
     expect(styles).toContain(".manju-production-audit.is-passed");
+});
+
+test("P4 validation cannot be skipped", () => {
+    expect(page).not.toContain("跳过官方双机检");
+    expect(page).not.toContain("skipValidation");
+    expect(api).not.toContain("skipValidation");
+    expect(page).toContain("script_feed_diff.py");
+    expect(page).toContain("历史非合规状态：未通过 V7.4.26 机检，不能作为当前锁定依据。");
+    expect(page).toContain("未记录完整四步机检，不能作为 PASS");
 });
 
 test("P4.5 is an independent P4 gate backed by check_p45.py", () => {

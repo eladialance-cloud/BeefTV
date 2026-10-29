@@ -492,8 +492,9 @@ export type ManjuProductionStage = {
     completedAt?: string;
     updatedAt: string;
     draft?: ManjuStageDraft;
-    machineCheckStatus?: "PASS" | "SKIPPED_BY_USER";
+    machineCheckStatus?: "PASS" | "LEGACY_NON_COMPLIANT";
     machineCheckNote?: string;
+    machineCheckWarnings?: string[];
 };
 
 export type ManjuCompiledSegmentPreview = {
@@ -842,7 +843,7 @@ export function getManjuProductionRun(projectId: string, runId: string) {
     return http.get<{ item: ManjuProductionRunDetail }>(`/manju/projects/${encodeURIComponent(projectId)}/production-runs/${encodeURIComponent(runId)}`);
 }
 
-export function runManjuProductionStage(projectId: string, runId: string, stageKey: string, input: { instruction: string; skipValidation?: boolean }) {
+export function runManjuProductionStage(projectId: string, runId: string, stageKey: string, input: { instruction: string }) {
     return http.post<{ item: ManjuProductionRunDetail }>(`/manju/projects/${encodeURIComponent(projectId)}/production-runs/${encodeURIComponent(runId)}/stages/${encodeURIComponent(stageKey)}/run`, input);
 }
 
