@@ -75,9 +75,9 @@ var (
 	scriptInputKindValues = valueSet(ScriptInputNovel, ScriptInputOutline, ScriptInputFinished)
 	trendResolutionValues = valueSet(TrendResolutionOriginal, TrendResolutionBenchmark)
 
-	roundtableGradeJSONPattern  = regexp.MustCompile(`(?mi)["']?grade["']?\s*:\s*["']([^"'\r\n]+)["']`)
-	roundtableGradeFieldPattern = regexp.MustCompile(`(?mi)^\s*(?:[-*]\s*)?(?:\*\*)?(?:grade|等级|综合等级|最终等级|评审等级)(?:\*\*)?\s*[:：]\s*(.*?)\s*$`)
-	roundtableGradeTablePattern = regexp.MustCompile(`(?mi)^\s*\|\s*(?:\*\*)?(?:grade|综合等级|最终等级|评审等级)(?:\*\*)?\s*\|\s*([^|\r\n]+)\s*\|`)
+	roundtableGradeJSONPattern  = regexp.MustCompile(`(?m)(?:^|[\s,{])"grade"\s*:\s*"([^"\r\n]*)"`)
+	roundtableGradeFieldPattern = regexp.MustCompile(`(?mi)^\s*(?:[-*]\s*)?(?:\*\*)?(?:grade|等级)(?:\*\*)?\s*[:：]\s*(.*?)\s*$`)
+	roundtableGradeTablePattern = regexp.MustCompile(`(?mi)^\s*\|\s*(?:\*\*)?(?:grade|等级)(?:\*\*)?\s*\|\s*([^|\r\n]+)\s*\|`)
 
 	roundtableGradePatterns = []*regexp.Regexp{
 		roundtableGradeJSONPattern,

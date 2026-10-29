@@ -458,7 +458,12 @@ func TestRoundtableGradeMustBeSingleAndAuthoritative(t *testing.T) {
 		content string
 	}{
 		{name: "missing", content: "# 五席圆桌审核\n等待用户选择。"},
-		{name: "conflicting", content: "# 五席圆桌审核\ngrade: A\n综合等级：B\n等待用户选择。"},
+		{name: "upgrade substring is not authoritative", content: `# 五席圆桌审核
+{"upgrade":"A"}`},
+		{name: "downgrade substring is not authoritative", content: `# 五席圆桌审核
+{"downgrade":"A"}`},
+		{name: "conflicting field and table", content: "# 五席圆桌审核\ngrade: A\n| 等级 | B |\n等待用户选择。"},
+		{name: "conflicting JSON and table", content: "# 五席圆桌审核\n{\"grade\":\"A\"}\n| 等级 | B |\n等待用户选择。"},
 		{name: "unsupported", content: "# 五席圆桌审核\ngrade: B+\n等待用户选择。"},
 	}
 	for _, testCase := range testCases {
