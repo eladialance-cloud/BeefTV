@@ -27,7 +27,568 @@ tags:
   - name: agent-ops
   - name: assistant
   - name: creation-conversations
+  - name: manju
 paths:
+  /manju/projects:
+    get:
+      tags: [manju]
+      summary: 列出当前登录用户可访问的漫剧项目
+      description: 只返回 type=manju 的项目；主理人来自项目归属，协作者来自活动成员记录。
+      responses:
+        "200":
+          description: 信封 data.items 为项目摘要，含 accessRole 与 revision
+        "401":
+          description: 未登录
+  /manju/projects/{projectId}:
+    get:
+      tags: [manju]
+      summary: 读取漫剧项目详情
+      description: 返回项目、当前访问角色、主理人可见的成员、当前 P0 回执和项目级三槽位模型路由。
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: 信封 data.item 为项目详情
+        "404":
+          description: 项目不存在、不是漫剧项目或当前账号无权访问
+  /manju/projects/{projectId}/lock:
+    put:
+      tags: [manju]
+      summary: 保存 P0 立项锁并创建新 revision
+      description: |
+        仅主理人或制片可写。旧 revision 保留并标记 superseded。
+        所有硬锁必须有对应 confirmedLocks 项；有值但未确认不构成选择。
+        目标时长超过单段上限时还必须显式确认 seamMode。
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [track, source, videoModel, aspectRatio, deliveryMode, targetDurationSeconds, styleBase, styleCardId, confirmedLocks]
+              properties:
+                track: { type: string, enum: [domestic, overseas, explainer, other] }
+                source: { type: string, enum: [original, adaptation, benchmark, trend] }
+                videoModel: { type: string, enum: [seedance-2.5, seedance-2.0, minimax-h3] }
+                aspectRatio: { type: string, enum: ["16:9", "9:16", "21:9"] }
+                deliveryMode: { type: string, enum: [board, markdown, both] }
+                seamMode: { type: string, enum: [tail-frame-freeze, hard-cut, insert-shot, creative-transition] }
+                targetDurationSeconds: { type: integer, minimum: 1 }
+                styleBase: { type: string, enum: [live-action, 2d-animation, 3d-cg, ink-2d] }
+                styleCardId: { type: string }
+                assetMode: { type: string, enum: [M0, M1, M2] }
+                confirmedLocks:
+                  type: array
+                  minItems: 6
+                  uniqueItems: true
+                  description: 单段任务至少确认六项；多段任务还需 seamMode
+                  items:
+                    type: string
+                    enum: [track, source, videoModel, aspectRatio, deliveryMode, styleCard, seamMode]
+      responses:
+        "200":
+          description: 信封 data.item 为新锁回执，含 revision、segmentCount 与 SHA-256 contentHash
+        "400":
+          description: 字段无效、硬锁未逐项确认，或目标时长需要多段但缺少 seamMode
+        "403":
+          description: 当前成员角色不能修改 P0
+  /manju/projects/{projectId}/deliverables:
+    get:
+      tags: [manju]
+      summary: 读取项目内所有生产链版本的持久化交付文件
+      description: |
+        只返回 P5 事务中持久化的 ManjuDeliverable 行，不从工件临时拼造文件。
+        V2 markdown 行集含 markdown、previs、manifest；board/both 另含 board。
+        接口保留所有生产链的历史行，不因新版本生成而隐藏旧交付。
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: |
+            信封 data.items 为不可变交付行，含 productionRunId、kind、fileName、mimeType、
+            contentHash、contentContractVersion 和 complianceStatus。
+            kind 为 markdown、board、previs 或 manifest；V1 历史行集为 LEGACY_COMPLIANT。
+        "404":
+          description: 项目不存在、不是漫剧项目或当前账号无权访问
+  /manju/projects/{projectId}/production-runs/{runId}/deliverables:
+    get:
+      tags: [manju]
+      summary: 读取指定生产链版本的持久化交付文件
+      description: |
+        按 productionRunId 返回该版本自己的 Markdown、看板、P4.5 和交付清单。
+        P5 历史版本切换使用此接口，不改变当前 P0 revision，也不读取其他生产链的行。
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: 信封 data.items 为该生产链的不可变交付行
+        "404":
+          description: 项目、生产链不存在或当前账号无权访问
+  /manju/projects/{projectId}/script-runs:
+    post:
+      tags: [manju]
+      summary: 创建 V7.4.26 P1 剧本运行
+      description: |
+        P0 必须已锁定。素材来源只允许 original、adaptation、benchmark、trend。
+        polish 不是第五个来源：adaptation 且 inputKind=finished_script 时进入润色分支。
+        source=trend 时必须显式选择 trendResolution=original|benchmark。
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode]
+              properties:
+                mode: { type: string, enum: [STEPWISE, FULL_SCRIPT_PIPELINE] }
+                inputKind: { type: string, enum: [novel, outline, finished_script] }
+                trendResolution: { type: string, enum: [original, benchmark] }
+                title: { type: string }
+                sourceDocumentId: { type: string }
+                chapterIds:
+                  type: array
+                  items: { type: string }
+                baseRunId: { type: string }
+                reuseGlobalStages: { type: boolean }
+      responses:
+        "200":
+          description: 信封 data.item 为带 branch、inputKind、trendResolution 和六阶段状态的运行详情
+        "400":
+          description: P0 未锁、来源/输入类型无效，或 trend 未选择解析路线
+        "403":
+          description: 当前成员角色不能创建 P1
+  /manju/projects/{projectId}/script-runs/{runId}/stages/roundtable_review/decide:
+    post:
+      tags: [manju]
+      summary: 提交五席圆桌用户决策
+      description: |
+        这是 roundtable_review 的唯一锁定入口。审核必须处于 AWAITING_USER_DECISION。
+        普通 confirm、manual-correct 和 regenerate-artifact 在该状态均返回 409。
+        PROCEED_CURRENT 锁定当前审核；B/NOT_READY 接受当前稿必须 acceptQualityRisk=true。
+        REFINE_OR_REWRITE 将本轮审核标为 STALE，并重新打开 script_draft 的下一版本。
+        每次有效决策都追加不可变台账，记录审核工件 ID、哈希、等级和风险确认。
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              additionalProperties: false
+              properties:
+                decision:
+                  type: string
+                  enum: [PROCEED_CURRENT, REFINE_OR_REWRITE]
+                acceptQualityRisk:
+                  type: boolean
+                  default: false
+                note:
+                  type: string
+      responses:
+        "200":
+          description: 信封 data.item 为更新后的运行详情，含 roundtableDecisions 和下游阶段状态
+        "400":
+          description: decision 缺失或非法；B/NOT_READY 接受当前稿未确认质量风险
+        "403":
+          description: 当前成员角色不能提交决策
+        "404":
+          description: 项目、运行或圆桌阶段不存在
+        "409":
+          description: 审核不在 AWAITING_USER_DECISION、等级缺失/冲突/不支持，或尝试使用旁路接口
+  /manju/projects/{projectId}/models:
+    put:
+      tags: [manju]
+      summary: 保存项目级文本、图片、视频模型路由
+      description: 仅主理人或制片可写。每个槽位必须引用画布后台已启用且 capability 匹配的系统渠道模型；不支持音频槽位。
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text, image, video]
+              properties:
+                text: { $ref: "#/components/schemas/ManjuModelSelection" }
+                image: { $ref: "#/components/schemas/ManjuModelSelection" }
+                video: { $ref: "#/components/schemas/ManjuModelSelection" }
+      responses:
+        "200":
+          description: 信封 data.item 为已保存的模型路由
+        "400":
+          description: 槽位缺失、模型停用或能力不匹配
+        "403":
+          description: 当前成员角色不能修改模型路由
+  /manju/projects/{projectId}/members:
+    post:
+      tags: [manju]
+      summary: 邀请已有活动账号加入漫剧项目或更新其角色
+      description: 仅主理人可写。用户身份来自托管 session；请求体只接受 userId 和项目角色。
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, role]
+              properties:
+                userId: { type: string }
+                role: { type: string, enum: [producer, writer, director, reviewer, viewer] }
+      responses:
+        "200":
+          description: 信封 data.item 为成员记录；重复邀请同一账号会更新原记录
+        "400":
+          description: 用户 ID、角色或活动账号无效
+        "403":
+          description: 只有主理人可以管理成员
+  /manju/projects/{projectId}/members/{memberId}:
+    delete:
+      tags: [manju]
+      summary: 从漫剧项目移除协作者
+      description: 仅主理人可写。项目归属人不能作为成员行移除。
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: memberId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: 信封 data.deleted 为 true
+        "404":
+          description: 项目或成员不存在
+  /manju/projects/{projectId}/asset-runs/{runId}/regenerate:
+    post:
+      tags: [manju]
+      summary: 重新生成 P2 数字资产任务
+      description: |
+        仅主理人、制片或导演可写。旧 P2 任务、工件和参考图保留；新任务从实体提取开始。
+        请求体省略 reuseAssets 时默认为 true，使用当前已完成同模式资产库作为基线。
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                instruction: { type: string }
+                reuseAssets: { type: boolean, default: true }
+      responses:
+        "200":
+          description: 信封 data.item 为已启动的新 P2 详情
+        "400":
+          description: 旧任务、素材形态或资产复用条件无效
+        "403":
+          description: 当前成员角色不能重新生成 P2
+        "404":
+          description: 项目或 P2 任务不存在
+        "409":
+          description: 当前 P2 任务尚未完成或不满足复用门禁
+  /manju/projects/{projectId}/production-runs/{runId}/stages/{stageKey}/regenerate:
+    post:
+      tags: [manju]
+      summary: 重新生成 P3 或 P4 生产阶段
+      description: |
+        仅允许 director_storyboard（P3）和 feed_package（P4）。旧生产链标记 SUPERSEDED 并完整保留。
+        P3 新版本从 P3 开始；P4 新版本复制已锁定的 P3 工件和 READY 故事板图引用，并从 P4 开始。
+        阶段或媒体任务仍在 queued/running 时拒绝创建新版本。
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: stageKey
+          required: true
+          schema: { type: string, enum: [director_storyboard, feed_package] }
+      responses:
+        "200":
+          description: 信封 data.item 为从目标阶段开始的新生产链详情
+        "403":
+          description: 当前成员角色不能重新生成生产阶段
+        "404":
+          description: 项目、生产链或阶段不存在
+        "409":
+          description: 目标阶段未锁定或仍等待确认、上游 P3 未锁定，或仍有任务在运行
+  /manju/projects/{projectId}/production-runs:
+    post:
+      tags: [manju]
+      summary: 创建 V7.4.26 P3-P5 生产链
+      description: |
+        需要已完成并锁定的 P2。新链固定创建四个阶段：
+        decision_anchor（P0B）→ director_storyboard（P3）→ feed_package（P4）→ qc_handoff（P5）。
+        P0B 未锁时 P3 不得运行。
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assetRunId]
+              properties:
+                assetRunId: { type: string }
+      responses:
+        "200":
+          description: 信封 data.item 为生产链详情，stages 顺序固定并以 P0B 为首
+        "400":
+          description: 当前 P2 或已有活动生产链状态不允许创建
+        "403":
+          description: 当前成员角色不能创建生产链
+        "409":
+          description: P2 尚未完成并锁定
+    get:
+      tags: [manju]
+      summary: 列出生产链版本
+      description: 返回当前版本及保留的历史版本，不下发删除或改写历史工件的操作。
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: 信封 data.items 为生产链摘要，含 status、currentStage 与 lockRevision
+        "404":
+          description: 项目不存在或当前账号无权访问
+  /manju/projects/{projectId}/production-runs/{runId}:
+    get:
+      tags: [manju]
+      summary: 读取生产链详情
+      description: |
+        返回四个生产阶段、已持久化工件、P4.5 状态、故事板图片和视频任务。
+        P4 machineCheckStatus=PASS 只在该凭证完整且绑定当前锁定 P3 工件时出现；
+        缺失、残缺或错绑的凭证显示 LEGACY_NON_COMPLIANT。
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: 信封 data.item 为生产链详情
+        "404":
+          description: 项目、生产链不存在或当前账号无权访问
+  /manju/projects/{projectId}/production-runs/{runId}/stages/{stageKey}/run:
+    post:
+      tags: [manju]
+      summary: 执行当前生产阶段
+      description: |
+        严格 JSON 只接受 instruction。skipValidation、未知字段和尾随 JSON 返回 400。
+        阶段只能按 P0B → P3 → P4 → P5 顺序执行，上游未锁定时返回 409。
+        P4 固定运行 compile_feed.py → validate_prompt.py → gate_check.py → script_feed_diff.py。
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: stageKey
+          required: true
+          schema: { type: string, enum: [decision_anchor, director_storyboard, feed_package, qc_handoff] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                instruction: { type: string }
+      responses:
+        "200":
+          description: 信封 data.item 为已启动或推进后的生产链详情
+        "400":
+          description: 阶段参数无效、含 skipValidation/未知字段，或 JSON 后还有尾随值
+        "403":
+          description: 当前成员角色不能执行生产阶段
+        "404":
+          description: 生产链或阶段不存在
+        "409":
+          description: 上游阶段未锁定、当前阶段不满足启动条件，或机器门禁失败
+  /manju/projects/{projectId}/production-runs/{runId}/stages/{stageKey}/confirm:
+    post:
+      tags: [manju]
+      summary: 确认并锁定生产阶段
+      description: |
+        P0B 必须满足情绪锚点表和构图雷区 A/B 合同。
+        P3 必须有完整表演/导演/分镜/图形化交付，并且每个必出故事板段取得真实图片资源。
+        P4 必须有完整四段机检凭证且绑定当前锁定 P3；P4.5 未通过 check_p45.py 时仍不可锁定。
+        P5 在同一事务中持久化 C 交付文件并完成生产链。
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: stageKey
+          required: true
+          schema: { type: string, enum: [decision_anchor, director_storyboard, feed_package, qc_handoff] }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string }
+      responses:
+        "200":
+          description: 信封 data.item 为锁定后的生产链详情
+        "403":
+          description: 当前成员角色不能确认生产阶段
+        "404":
+          description: 生产链或阶段不存在
+        "409":
+          description: 阶段未待确认、上游未锁、P3 故事板未齐、P4/P4.5 机检无效或视频未就绪
+  /manju/projects/{projectId}/production-runs/{runId}/previs-storyboard:
+    post:
+      tags: [manju]
+      summary: 生成独立 P4.5 预演故事板附件
+      description: |
+        从已锁定 P3 与当前 P4 投喂稿创建文本任务。结果必须是独立 Markdown，
+        不生成图片、不进入视频投喂稿；check_p45.py 失败时保留失败状态且 P4 不能锁定。
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: 信封 data.item 为带 P4.5 任务状态的生产链详情
+        "403":
+          description: 当前成员角色不能生成 P4.5
+        "404":
+          description: 生产链不存在
+        "409":
+          description: P3/P4 状态不允许生成，或已有 P4.5 任务在运行
+  /manju/projects/{projectId}/production-runs/{runId}/storyboard-images:
+    post:
+      tags: [manju]
+      summary: 启动逐段 P3 故事板图片任务
+      description: |
+        解析锁定 P3 故事板表并创建所需图片任务。每个必出段都必须取得真实资源；
+        部分成功、任务运行中或资源失效时 P3 保持 AWAITING_CONFIRMATION。
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: 信封 data.item 为含逐段图片状态的生产链详情
+        "400":
+          description: P3 故事板表无法解析为逐段图片任务
+        "403":
+          description: 当前成员角色不能启动 P3 图片
+        "409":
+          description: P0B/P3 状态不满足，或图片任务已经运行
+  /manju/projects/{projectId}/production-runs/{runId}/videos:
+    post:
+      tags: [manju]
+      summary: 启动逐段 P4 视频任务
+      description: |
+        从锁定 P3 和当前 P4 投喂稿创建逐段视频任务。所有段必须取得真实视频资源，
+        P4.5 也必须通过；两者任一未满足时 P4 不能锁定。
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: 信封 data.item 为含逐段视频状态的生产链详情
+        "400":
+          description: P4 投喂稿无法解析为逐段视频任务
+        "403":
+          description: 当前成员角色不能启动 P4 视频
+        "409":
+          description: P3/P4 状态不允许，或只有失败段可以重试
   /business/tools:
     get:
       tags: [agent-ops]
@@ -800,6 +1361,12 @@ components:
       in: cookie
       name: open_ai_canvas_session
   schemas:
+    ManjuModelSelection:
+      type: object
+      required: [channelId, modelKey]
+      properties:
+        channelId: { type: string }
+        modelKey: { type: string }
     Envelope:
       type: object
       required: [code, msg]

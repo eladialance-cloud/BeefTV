@@ -389,6 +389,10 @@ function styleForbiddenText(items?: string[]) {
     return (items || []).join("\n");
 }
 
+function isManjuStyleBaseID(value: ManjuLockInput["styleBase"]): value is ManjuStyleBaseID {
+    return value !== "";
+}
+
 function parseStyleForbiddenItems(value: string) {
     return value
         .split(/\r?\n/)
@@ -450,7 +454,11 @@ function ManjuProjectLibrary() {
     const queryClient = useQueryClient();
     const [createOpen, setCreateOpen] = useState(false);
     const [deleteTarget, setDeleteTarget] = useState<ManjuProjectSummary | null>(null);
-    const [createForm] = Form.useForm<{ name: string; aspectRatio: ManjuLockInput["aspectRatio"]; sourceType: ManjuLockInput["source"] }>();
+    const [createForm] = Form.useForm<{
+        name: string;
+        aspectRatio: Exclude<ManjuLockInput["aspectRatio"], "">;
+        sourceType: Exclude<ManjuLockInput["source"], "">;
+    }>();
     const projectsQuery = useQuery({
         queryKey: ["manju", "projects"],
         queryFn: listManjuProjects,
@@ -878,16 +886,18 @@ export function P0LockPanel({ detail, onSaved }: { detail: ManjuProjectDetail; o
     const readyToLockP0 = requiredLockKeys.every((key) => confirmedLocks.has(key));
     const compatibleFamilies = useMemo(() => {
         const catalog = styleCatalogQuery.data;
-        if (!catalog) return [];
-        const familyIds = new Set(catalog.items.filter((card) => card.compatibleStyleBases.includes(form.styleBase)).map((card) => card.family));
+        const styleBase = form.styleBase;
+        if (!catalog || !styleBase) return [];
+        const familyIds = new Set(catalog.items.filter((card) => card.compatibleStyleBases.includes(styleBase)).map((card) => card.family));
         return catalog.families.filter((family) => familyIds.has(family.id));
     }, [form.styleBase, styleCatalogQuery.data]);
     const selectedCard = useMemo(() => styleCatalogQuery.data?.items.find((card) => card.id === form.styleCardId), [form.styleCardId, styleCatalogQuery.data]);
     const candidateCards = useMemo(() => {
         const catalog = styleCatalogQuery.data;
-        if (!catalog || !styleFamilyId) return [];
+        const styleBase = form.styleBase;
+        if (!catalog || !styleFamilyId || !styleBase) return [];
         return catalog.items
-            .filter((card) => card.family === styleFamilyId && card.compatibleStyleBases.includes(form.styleBase))
+            .filter((card) => card.family === styleFamilyId && card.compatibleStyleBases.includes(styleBase))
             .sort((left, right) => styleRecommendationScore(right, form.track) - styleRecommendationScore(left, form.track) || left.number - right.number)
             .slice(0, 4);
     }, [form.styleBase, form.track, styleCatalogQuery.data, styleFamilyId]);
@@ -1366,14 +1376,15 @@ export function P0LockPanel({ detail, onSaved }: { detail: ManjuProjectDetail; o
                                         </header>
                                         <div className="manju-style-all-grid">
                                             {styleCatalogQuery.data.items.map((card) => {
-                                                const compatible = card.compatibleStyleBases.includes(form.styleBase);
+                                                const compatible = isManjuStyleBaseID(form.styleBase) && card.compatibleStyleBases.includes(form.styleBase);
+                                                const styleBaseLabel = isManjuStyleBaseID(form.styleBase) ? STYLE_BASE_LABELS[form.styleBase] : "未选影像基底";
                                                 return (
                                                     <button
                                                         type="button"
                                                         key={card.id}
                                                         className={form.styleCardId === card.id ? "is-selected" : ""}
                                                         disabled={!canEdit || !compatible}
-                                                        title={compatible ? card.promptParameters : `与${STYLE_BASE_LABELS[form.styleBase]}冲突`}
+                                                        title={compatible ? card.promptParameters : `与${styleBaseLabel}冲突`}
                                                         onClick={() => selectStyleCard(card)}
                                                     >
                                                         <span>#{String(card.number).padStart(2, "0")}</span>
@@ -2299,7 +2310,6 @@ function ManjuCanvasPackagePanel({ projectId, projectName, stage, runId, sourceS
         image.runId === sourceContext.productionRunId
         && image.artifactId === sourceContext.p3ArtifactId
         && image.status === "READY"
-        && image.status !== "SUPERSEDED"
         && Boolean(image.resourceId),
     ));
     const requiredMissing = requiredSourceStages.some((sourceStage) =>
@@ -2426,7 +2436,6 @@ async function loadManjuCanvasReferences(
                     image.runId === sourceContext.productionRunId
                     && image.artifactId === sourceContext.p3ArtifactId
                     && image.status === "READY"
-                    && image.status !== "SUPERSEDED"
                     && Boolean(image.resourceId),
                 )
                 .map((image): ManjuCanvasImportReference => ({

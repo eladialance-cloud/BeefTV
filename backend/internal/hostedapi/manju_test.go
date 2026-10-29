@@ -1443,22 +1443,42 @@ func TestManjuProductionRoutesCreateRunAndAdvanceStoryboardStage(t *testing.T) {
 	}
 	storyboard := strings.Join([]string{
 		"# P3 分镜与故事板",
-		"## 分镜总表",
-		"| 镜号 | 时长 | 景别 | 动作 |",
-		"|---|---|---|---|",
-		"| 1-1 | 3 | 近景 | 林澈停步 |",
-		"## 故事板表",
-		"| 段 | 格 | 动作相位 | 站位视线 | 资产引用 |",
+		"## 角色表演档案",
+		"林澈：克制的青年，肩背常紧；紧张时呼吸变浅。",
+		"",
+		"## 逐场节拍表",
+		"| 场 | 目标 | 障碍 | 战术 | 转折 |",
 		"|---|---|---|---|---|",
-		"| 1 | 1 | 推门 | 画面左侧 | 图1 |",
+		"| 场1 | 进门 | 门锁 | 推门 | 门开 |",
+		"",
+		"## 导演稿",
+		"文字平面图：门在画面右侧，林澈从左侧入画，轴线保持左林澈右门。",
+		"",
+		"## 分镜总表",
+		"| 段号 | 镜号 | 时长 | 景别 | 机位 | 运镜 | 画面内容 | 台词 | 音效 | 资产引用 |",
+		"|---|---|---|---|---|---|---|---|---|---|",
+		"| 段1 | 01 | 3s | 近景 | 侧45度 | 固定 | 林澈停步 | 无 | 木门吱呀 | CHR-林澈 |",
+		"",
+		"## 故事板表",
+		"### 第1段｜旧宅门",
+		"| 段号 | 面板ID | 动作相位 | 镜头信息 | 站位与视线 | 资产引用 | 面板边界备注 |",
+		"|---|---|---|---|---|---|---|",
+		"| 段1 | P01 | 起始 | 近景侧45度 | 林澈在左前景看门 | CHR-林澈 | 动作相位，不是剪辑点 |",
+		"| 段1 | P02 | 过程 | 手部近景 | 右手推门 | CHR-林澈 | 动作相位，不是剪辑点 |",
+		"| 段1 | P03 | 反应 | 近景 | 视线看向门内 | CHR-林澈 | 动作相位，不是剪辑点 |",
+		"| 段1 | P04 | 出口 | 近景 | 林澈停在门内 | CHR-林澈 | 动作相位，不是剪辑点 |",
+		"",
+		"## 台词精简建议清单",
+		"本稿全量承接上游台词，无精简建议。",
+		"",
 		"## P3 交付清单",
 		"| 段 | 剧情分镜格/覆盖 | 故事板图格数 | 具体说明/豁免理由 |",
 		"|---|---|---|---|",
-		"| 段1 | 场1 ✅ | 1格 | 测试样本 |",
-		"故事板图：每段六格",
-		"剧情分镜格：每场一格",
-		"## 台词精简建议清单",
-		"默认承接上游台词，无精简。",
+		"| 段1 | 覆盖：场1 ✅ | 4格(2×2 四宫格) | 无豁免；测试样本 |",
+		"",
+		"<!-- MANJU_PROJECT_STATE_PATCH_JSON",
+		`{"segments":[{"seg_id":"段1","scene":"旧宅","asset_refs":{"scenes":["旧宅"],"characters":["林澈"],"props":[]},"shots":[{"no":1,"start":0,"end":3,"spec":"近景 · 35mm · 侧45度 · 固定","action":"林澈停步","sound":"木门吱呀","dialogue":"无"}]}]}`,
+		"-->",
 	}, "\n")
 	artifact := model.ManjuProductionArtifact{
 		ID: "production-artifact-storyboard", ProjectID: "project-secret", RunID: run.ID, StageID: stage.ID,
@@ -1568,6 +1588,7 @@ func TestManjuProductionRoutesCreateRunAndAdvanceStoryboardStage(t *testing.T) {
 	feedStage.Status = model.ManjuProductionStageStatusAwaitingConfirmation
 	feedStage.ArtifactID = feedArtifact.ID
 	feedStage.CompletedAt = &now
+	feedStage.InputJSON = fmt.Sprintf(`{"machineCheckProof":{"version":"V7.4.26","pipeline":"compile_feed.py -> validate_prompt.py -> gate_check.py -> script_feed_diff.py","compiler":"V7.4.26 compile_feed.py","validator":"V7.4.26 validate_prompt.py","gate":"V7.4.26 gate_check.py","dialogueDiff":"V7.4.26 script_feed_diff.py","dialogueBaselineArtifactId":%q,"status":"PASS","warnings":[]}}`, artifact.ID)
 	if err := db.Save(&feedStage).Error; err != nil {
 		t.Fatal(err)
 	}

@@ -148,6 +148,53 @@ Windows 的运行地址描述文件位于用户目录的 `.beeftv/runtime/`，�
 
 跨画布回合在第一次写入每张画布前，于业务操作同一事务内保存原文。结算返回 `change.canvasChanges`；单次撤销先校验全部目标，再在一个事务内恢复。任何目标在该轮之后被修改，整组撤销返回冲突，不恢复部分画布。内置暂不提供非画布的 `conversation.message.attach`；外部调用保持开放。
 
+## 漫剧工作室（托管）
+
+漫剧接口只在 hosted server profile 注册，身份固定取自当前登录 session。请求路径和请求体都不能指定操作者；项目所有者来自 `projects.user_id`，协作者来自活动成员记录。所有接口只接受 `type = "manju"` 的项目，普通画布项目不能借此读取或修改。
+
+当前唯一运行口径是 V7.4.26，固定上游提交为 `6f16955c57053d77ea0ffbdbbf3a7985a3e0080a`。本地允许的唯一规则差异是 `patchId=V7.4.26+beef-segment-assets.1`，并须由 source manifest 同时记录 `baseTreeHash` 与 `patchedTreeHash`。V7.4.20 只能出现在历史计划或历史工件说明中，不能作为运行版本、回退目标或测试预期。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/manju/projects` | 列出当前账号可访问的漫剧项目，只返回项目摘要与当前角色 |
+| GET | `/api/manju/projects/:projectId` | 读取项目、P0 当前回执、项目模型路由；主理人额外读取成员列表 |
+| PUT | `/api/manju/projects/:projectId/lock` | 主理人或制片保存 P0；硬锁必须逐项出现在 `confirmedLocks`，每次保存创建新 revision，旧回执标记 `superseded` |
+| PUT | `/api/manju/projects/:projectId/models` | 主理人或制片保存文本、图片、视频三个项目级模型槽位 |
+| POST | `/api/manju/projects/:projectId/members` | 主理人按已有活动用户 ID 邀请成员；重复邀请更新角色 |
+| DELETE | `/api/manju/projects/:projectId/members/:memberId` | 主理人移除协作者 |
+| POST | `/api/manju/projects/:projectId/script-runs` | 按 P0 来源创建 P1；`inputKind` 区分小说、大纲和成型剧本，热点速成必须显式提交 `trendResolution` |
+| POST | `/api/manju/projects/:projectId/script-runs/:runId/stages/roundtable_review/decide` | 圆桌专用决策入口；只接受 `PROCEED_CURRENT` 或 `REFINE_OR_REWRITE` |
+| POST | `/api/manju/projects/:projectId/asset-runs/:runId/regenerate` | 保留旧 P2，创建并启动一版新的 P2 实体提取；默认复用当前已上传资产 |
+| POST | `/api/manju/projects/:projectId/production-runs` | 从已锁定 P2 创建 V7.4.26 生产链，首阶段固定为 `decision_anchor`（P0B） |
+| GET | `/api/manju/projects/:projectId/production-runs` | 列出生产链版本，保留 `COMPLETED` 与 `SUPERSEDED` 历史 |
+| GET | `/api/manju/projects/:projectId/production-runs/:runId` | 读取生产链、四个阶段、工件、P4.5 状态与媒体任务状态 |
+| POST | `/api/manju/projects/:projectId/production-runs/:runId/stages/:stageKey/run` | 执行当前生产阶段；`stageKey` 只接受 `decision_anchor`、`director_storyboard`、`feed_package`、`qc_handoff` |
+| POST | `/api/manju/projects/:projectId/production-runs/:runId/stages/:stageKey/confirm` | 确认并锁定当前阶段；上游未锁、P3 未齐、P4 凭证无效或 P4.5 未通过时返回 409 |
+| POST | `/api/manju/projects/:projectId/production-runs/:runId/stages/:stageKey/regenerate` | 从 P3 或 P4 建立新的生产链版本；P3 重建后续阶段，P4 承接已锁定 P3 并重建 P5 |
+| POST | `/api/manju/projects/:projectId/production-runs/:runId/previs-storyboard` | 基于已生成的 P4 投喂稿和 P3 状态，使用项目文本模型生成独立 P4.5 预演故事板附件；结果必须通过 `check_p45.py` |
+| POST | `/api/manju/projects/:projectId/production-runs/:runId/storyboard-images` | 从已锁 P0B 和 P3 故事板表启动逐段图片任务；全部段取得真实资源前 P3 不能锁定 |
+| POST | `/api/manju/projects/:projectId/production-runs/:runId/videos` | 从已锁 P3 和 P4 投喂稿启动逐段视频任务；全部段就绪前 P4 不能锁定 |
+| GET | `/api/manju/projects/:projectId/deliverables` | 返回该项目所有生产链版本已持久化的用户交付文件，不能从工件临时拼造 |
+| GET | `/api/manju/projects/:projectId/production-runs/:runId/deliverables` | 按生产链读取对应的不可变 Markdown、看板、P4.5 和交付清单，供历史版本切换 |
+
+P0 的视频业务模型、画幅、目标时长、画风卡和多段段缝规则由服务端重新校验；目标时长超过所选模型的单段上限时，缺少 `seamMode` 返回 400。单段任务必须明确确认 `track`、`source`、`videoModel`、`aspectRatio`、`deliveryMode` 和 `styleCard`，多段任务还必须确认 `seamMode`；有值但没有进入 `confirmedLocks` 不构成用户选择。四个素材来源仍是 `original`、`adaptation`、`benchmark`、`trend`；`polish` 不是第五个来源，只有 `adaptation + finished_script` 才进入润色分支。`trend` 必须先选择 `original` 或 `benchmark` 的解析路线。项目模型路由只能引用画布管理后台已启用且 capability 匹配的 system channel model，不支持音频槽位，也不在漫剧工作室重复配置模型计费、支付渠道或对象存储。
+
+P1 的圆桌审核固定进入 `AWAITING_USER_DECISION`，不能用普通确认、重新生成或人工修正绕过。缺少或非法的 `decision` 返回 400；审核不在该状态、等级缺失/冲突或使用旁路接口返回 409。`PROCEED_CURRENT` 锁定本轮审核；`B` / `NOT_READY` 接受当前稿还必须带 `acceptQualityRisk: true`。`REFINE_OR_REWRITE` 将本轮审核标为 `STALE`，保留原评审工件，并把 `script_draft` 重新打开到下一版本。每次有效决策都写入独立不可变台账，记录审核工件 ID、哈希、等级、风险确认和操作者。
+
+P1-P5 通过持久任务推进并记录真实工件。P0B 在 P2 完成后、P3 分镜前执行，`decision_anchor` 必须锁定包含六列情绪锚点表和构图雷区 A/B 白名单的 `EMOTION_ANCHOR_TABLE.md`；P3 `director_storyboard` 在 P0B 锁定前不能启动。P3 还必须满足完整表演、导演、分镜总表和每段 CLEAN_GRID 提示词合同，并且每一个需要故事板图的段都取得真实图片资源后才能锁定。
+
+重新生成不会覆盖旧任务：P2 旧任务和已上传参考图保留；P3 重新生成会建立从 P3 开始的新生产链；P4 重新生成会复制已锁定的 P3 工件和就绪故事板图引用，并让 P4.5 与 P5 重新等待。旧生产链中的工件、图片和视频保留为历史，不静默删除。P4 使用逐字对齐的 V7.4.26 `compile_feed.py`、`validate_prompt.py`、`gate_check.py` 和 `script_feed_diff.py`，严格按此顺序执行；请求不接受 `skipValidation` 或未知字段，严格 JSON 还拒绝尾随值。`validate_prompt.py` 必须返回含 `issues` / `warnings` 数组的 JSON，`gate_check.py` 必须返回 `FAIL=0` 汇总，空输出、畸形输出、超时和脚本缺失均 fail-closed。台词差异退出码 2 为硬失败；退出码 1 的警告可以保留为 PASS 证据，但不能省略。
+
+P4 的 `machineCheckProof` 必须绑定当前锁定 P3 工件，并精确记录 `version`、`pipeline`、`compiler`、`validator`、`gate`、`dialogueDiff`、`dialogueBaselineArtifactId`、`status=PASS` 和必须存在的 `warnings` 数组（无警告时为显式空数组）。仅有一个顶层 `PASS`、凭证字段缺失或绑定到其他 P3 工件时，运行详情显示 `LEGACY_NON_COMPLIANT`，确认接口返回 409。P4.5 只生成独立 Markdown 提示词附件，不生成图片、不入素材库、不进入视频投喂稿；P4.5 未生成或 `check_p45.py` 未通过时 P4 不能锁定。P5 的 `audit_contract.py` 全项目归档会把已通过的 `PREVIS_STORYBOARD.md` 一并纳入契约审计。
+
+P1/P2 工件同时执行正文可消费性校验。正文出现 `BLOCKED`、`非锁定稿`、`不得下游消费` 或 `门禁阻断单` 时，阶段不能确认或自动锁定，也不能创建下游 P2/P3 运行；已存在的下游运行在下一次执行前同样会被拒绝。此类错误返回 HTTP 409，并保留原工件的阶段错误供重新生成。确认前正常工件中的“工作稿/未审核/未锁定”只是生成时自述，不单独判为阻断；用户确认后的系统 LOCKED 状态是下游读取的最终权威，并会随上游工件明确注入模型提示词。
+
+P2 资产编译的输出格式由 [check_asset_blocks.py] 对应的共享契约 `asset-block-v1.json` 驱动。契约记录官方脚本路径与 SHA-256，并由生成脚本从固定 V7.4.26 检查器生成；同一契约同时用于模型执行提示词和进入 Python 机检前的结构预检。官方 `check_asset_blocks.py` 仍是最终语义门禁，BeefTV 不再手工重复维护一套独立字段清单。
+
+P4 的画风段8/段9由 BeefTV 外部适配层注入到每一个投喂单元的 text 代码块内部，而不是只放在整份文档头部。这样官方 `validate_prompt.py --by-segment` 校验每个单元时都能独立看到同一套画风与表演锁；视频执行时仍从第一个单元提取全局画风，但不会把单元正文混入全局样式。
+
+C 交付在 P5 锁定与生产链完成同一事务中写成不可变 `ManjuDeliverable` 行。`deliveryMode=markdown` 产出 Markdown 源稿、独立 P4.5 预演故事板和交付清单，不产出看板；`deliveryMode=board` 或 `both` 还产出由官方 `build_board_lite.py` 编译的非空 HTML 看板。新行集契约版本为 `V7.4.26-DELIVERY-V2`、状态 `COMPLIANT`；历史 `V7.4.26-DELIVERY-V1` 行集保持 `LEGACY_COMPLIANT` 且不改写原文件。项目级交付接口保留所有生产链版本，P5 页面默认选择最新 `ACTIVE` / `COMPLETED` 生产链，也可以按 `productionRunId` 切换到旧版读取其独立交付；切换历史版本不改变当前 P0 revision。
+
 ## 生成确认与重放
 
 `GET /assistant/history` 的每个轮次包含 `undone`，从当前用户和画布的持久化撤销回执读取。页面重开后仍显示已撤销；回执不存在或不属于该用户/画布时不泄露其状态。

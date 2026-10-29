@@ -115,9 +115,9 @@ test("P3 cannot bypass storyboard image delivery with an optional-image message"
 test("P4 canvas packaging uses only current ready P3 image lineage", () => {
     expect(page).toContain("sourceP3ArtifactId");
     expect(page).toContain('image.status === "READY"');
-    expect(page).toContain('image.status !== "SUPERSEDED"');
     expect(page).toContain("image.runId === sourceContext.productionRunId");
     expect(page).toContain("image.artifactId === sourceContext.p3ArtifactId");
+    expect(page).toContain("Boolean(image.resourceId)");
     expect(page).toContain('if (sourceStage === "p3_images")');
 });
 
