@@ -74,6 +74,7 @@ const (
 	ManjuCanvasStageP3Images = "p3_images"
 	ManjuCanvasStageP4Videos = "p4_videos"
 	ManjuCanvasImportActive  = "ACTIVE"
+	ManjuCanvasImportStale   = "STALE"
 
 	ManjuScriptBranchOriginal   = "original"
 	ManjuScriptBranchAdaptation = "adaptation"

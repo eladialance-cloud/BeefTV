@@ -312,6 +312,15 @@ func (s *Service) SaveCanvasImport(actorID, projectID string, input CanvasImport
 	return &view, nil
 }
 
+func staleP3CanvasImportForRun(tx *repository.Repository, projectID, runID string) error {
+	item, err := tx.ManjuCanvasImportForRun(projectID, CanvasPackageStageP3Images, runID)
+	if err != nil || item == nil {
+		return err
+	}
+	item.Status = model.ManjuCanvasImportStale
+	return tx.SaveManjuCanvasImport(item)
+}
+
 func (s *Service) CanvasImports(actorID, projectID string) ([]CanvasImportView, error) {
 	access, err := s.repo.ManjuProjectForUser(strings.TrimSpace(actorID), strings.TrimSpace(projectID))
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -643,7 +652,17 @@ func (s *Service) p4CanvasPackage(projectID, runID string, snapshot LockSnapshot
 		segment := anyMap(raw)
 		stateSegments[normalizeProductionSegmentCode(anyString(segment["seg_id"]))] = segment
 	}
-	readyStoryboards := productionReadyStoryboardCodes(s.repo, projectID)
+	p3Stage, err := s.repo.ManjuProductionStage(runID, ProductionStageStoryboard)
+	if err != nil {
+		return nil, err
+	}
+	if p3Stage == nil || p3Stage.Status != model.ManjuProductionStageStatusLocked || strings.TrimSpace(p3Stage.ArtifactID) == "" {
+		return nil, ErrProductionStageNotReady
+	}
+	readyStoryboards, err := s.currentProductionStoryboardCodes(runID, p3Stage.ArtifactID)
+	if err != nil {
+		return nil, err
+	}
 	tasks := make([]CanvasPackageTask, 0, len(segments))
 	for _, segment := range segments {
 		referenceLimit := 9
@@ -678,23 +697,34 @@ func (s *Service) p4CanvasPackage(projectID, runID string, snapshot LockSnapshot
 	}, nil
 }
 
-func productionReadyStoryboardCodes(repo *repository.Repository, projectID string) map[string]bool {
+func (s *Service) currentProductionStoryboardCodes(runID, artifactID string) (map[string]bool, error) {
 	result := make(map[string]bool)
-	item, err := repo.ManjuCanvasImportForStage(projectID, CanvasPackageStageP3Images)
-	if err != nil || item == nil {
-		return result
+	images, err := s.repo.ManjuProductionImages(runID)
+	if err != nil {
+		return nil, err
 	}
-	canvas, err := repo.CanvasProjectForUser(item.CreatedBy, item.CanvasID)
-	if err != nil || canvas == nil {
-		return result
-	}
-	for _, reference := range canvasImportReferences(canvas.PayloadJSON, CanvasPackageStageP3Images) {
-		code := normalizeProductionSegmentCode(fallbackValue(reference.AssetCode, reference.Code))
-		if code != "0" {
-			result[code] = true
+	for _, image := range images {
+		if image.Status == ProductionImageStatusSuperseded ||
+			image.Status != ProductionImageStatusReady ||
+			image.ArtifactID != artifactID ||
+			strings.TrimSpace(image.ResourceID) == "" {
+			continue
 		}
+		key := p3SegmentKey(image.SegmentCode)
+		if key == "" {
+			continue
+		}
+		resource, err := s.repo.ResourceForUser(image.CreatedBy, image.ResourceID)
+		if errors.Is(err, gorm.ErrRecordNotFound) || resource == nil ||
+			resource.Kind != "image" || resource.Status != model.ResourceStatusReady {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		result[key] = true
 	}
-	return result
+	return result, nil
 }
 
 func (s *Service) latestCanvasLockSnapshot(projectID string) LockSnapshot {

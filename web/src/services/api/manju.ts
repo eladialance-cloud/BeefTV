@@ -547,6 +547,7 @@ export type ManjuProductionPrevis = {
 
 export type ManjuProductionImage = {
     id: string;
+    runId: string;
     artifactId?: string;
     position: number;
     segmentCode: string;

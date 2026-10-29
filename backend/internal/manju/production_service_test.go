@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1874,6 +1875,24 @@ func TestP3RegenerationSupersedesStaleStoryboardImagesWithoutDeletingMedia(t *te
 		t.Fatal(err)
 	}
 	oldImage := detail.Images[0]
+	oldPkg, err := f.service.CanvasPackage(f.ownerID, f.projectID, manju.CanvasPackageStageP3Images, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldCanvas := &model.CanvasProject{
+		ID: "p3-regeneration-old-import-canvas", UserID: f.ownerID, ProjectID: f.projectID,
+		Title: "旧 P3 画布导入", PayloadJSON: `{"nodes":[]}`, Revision: 1,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := f.db.Create(oldCanvas).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.SaveCanvasImport(f.ownerID, f.projectID, manju.CanvasImportInput{
+		Stage: manju.CanvasPackageStageP3Images, ProductionRunID: runID,
+		CanvasID: oldCanvas.ID, PackageHash: oldPkg.Hash,
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	newTask := &model.Task{
 		ID: "p3-regenerated-exempt-task", UserID: f.ownerID, ProjectID: f.projectID,
@@ -1913,6 +1932,85 @@ func TestP3RegenerationSupersedesStaleStoryboardImagesWithoutDeletingMedia(t *te
 	}
 	if resourceCount != 1 {
 		t.Fatalf("supersession must not delete the historical resource: %s", oldResourceID)
+	}
+	var p3Import model.ManjuCanvasImport
+	if err := f.db.First(&p3Import, "project_id = ? AND stage = ?", f.projectID, manju.CanvasPackageStageP3Images).Error; err != nil {
+		t.Fatal(err)
+	}
+	if p3Import.Status != "STALE" {
+		t.Fatalf("same-run P3 regeneration must stale the old canvas import: %+v", p3Import)
+	}
+}
+
+func TestP4CanvasPackageUsesCurrentP3ImageLineage(t *testing.T) {
+	f := newFixture(t)
+	detail := prepareP4AwaitingConfirmation(t, f)
+	p3Stage := findProductionStage(t, detail, manju.ProductionStageStoryboard)
+	resourceID := "p4-current-p3-storyboard-resource"
+	if err := f.db.Create(&model.Resource{
+		ID: resourceID, UserID: f.ownerID, Kind: "image", Status: model.ResourceStatusReady,
+		MimeType: "image/png", PublicURL: "/api/resources/" + resourceID + "/file",
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.Create(&model.ManjuProductionImage{
+		ID: "p4-current-p3-storyboard", ProjectID: f.projectID, RunID: detail.Run.ID,
+		StageID: p3Stage.ID, ArtifactID: p3Stage.ArtifactID, Position: 1, SegmentCode: "段1",
+		Status: manju.ProductionImageStatusReady, ResourceID: resourceID, CreatedBy: f.ownerID,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	oldCanvasPayload, err := json.Marshal(map[string]any{"nodes": []any{
+		map[string]any{
+			"id": "old-p3-import-node", "type": "image", "title": "旧段13",
+			"metadata": map[string]any{
+				"manjuStage": manju.CanvasPackageStageP3Images, "manjuTaskId": "old-p3-task",
+				"manjuTaskCode": "段13", "storageKey": "resource:old-p3-resource",
+			},
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldCanvas := &model.CanvasProject{
+		ID: "old-p3-import-canvas", UserID: f.ownerID, ProjectID: f.projectID,
+		Title: "旧 P3 导入", PayloadJSON: string(oldCanvasPayload), Revision: 1,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := f.db.Create(oldCanvas).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.Create(&model.ManjuCanvasImport{
+		ID: "old-p3-import", ProjectID: f.projectID, Stage: manju.CanvasPackageStageP3Images,
+		ProductionRunID: "old-production-run", CanvasID: oldCanvas.ID, PackageHash: "old-hash",
+		TaskCount: 1, Status: model.ManjuCanvasImportActive, CreatedBy: f.ownerID,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	pkg, err := f.service.CanvasPackage(f.ownerID, f.projectID, manju.CanvasPackageStageP4Videos, detail.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var currentTask *manju.CanvasPackageTask
+	for index := range pkg.Tasks {
+		if pkg.Tasks[index].Code == "段1" {
+			currentTask = &pkg.Tasks[index]
+			break
+		}
+	}
+	if currentTask == nil {
+		t.Fatalf("P4 package missing current segment task: %+v", pkg.Tasks)
+	}
+	if !slices.Contains(currentTask.ReferenceCodes, "段1") {
+		t.Fatalf("P4 package must include the current direct P3 image lineage: %+v", currentTask.ReferenceCodes)
+	}
+	if slices.Contains(currentTask.ReferenceCodes, "段13") {
+		t.Fatalf("P4 package leaked a stale P3 import: %+v", currentTask.ReferenceCodes)
 	}
 }
 

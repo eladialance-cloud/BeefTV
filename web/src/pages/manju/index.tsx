@@ -113,6 +113,7 @@ import {
     type ManjuCanvasImportReference,
     type ManjuCanvasTask,
     type ManjuProductionArtifact,
+    type ManjuProductionImage,
     type ManjuProductionRun,
     type ManjuProductionRunDetail,
     type ManjuProductionStage,
@@ -2253,12 +2254,17 @@ type ManjuCanvasPackagePanelProps = {
     runId: string;
     sourceStages?: ManjuCanvasPackageStage[];
     requiredSourceStages?: ManjuCanvasPackageStage[];
+    sourceContext?: {
+        productionRunId: string;
+        p3ArtifactId: string;
+        storyboardImages: ManjuProductionImage[];
+    };
     canEdit: boolean;
     disabledReason?: string;
     onNotice: (notice: { tone: "info" | "error" | "success"; text: string }) => void;
 };
 
-function ManjuCanvasPackagePanel({ projectId, projectName, stage, runId, sourceStages = [], requiredSourceStages = sourceStages, canEdit, disabledReason, onNotice }: ManjuCanvasPackagePanelProps) {
+function ManjuCanvasPackagePanel({ projectId, projectName, stage, runId, sourceStages = [], requiredSourceStages = sourceStages, sourceContext, canEdit, disabledReason, onNotice }: ManjuCanvasPackagePanelProps) {
     const queryClient = useQueryClient();
     const navigate = useNavigate();
     const importsQuery = useQuery({
@@ -2266,16 +2272,33 @@ function ManjuCanvasPackagePanel({ projectId, projectName, stage, runId, sourceS
         queryFn: () => listManjuCanvasImports(projectId),
     });
     const imports = importsQuery.data?.items || [];
+    const activeImports = imports.filter((item) => item.status === "ACTIVE");
     const projectCanvasImport = imports.find((item) => item.stage === "p2_assets") || imports.find((item) => item.stage === "p3_images") || imports.find((item) => item.stage === "p4_videos");
-    const currentImport = imports.find((item) => item.stage === stage && (stage === "p2_assets" ? item.assetRunId === runId : item.productionRunId === runId));
-    const sourceImports = sourceStages.map((sourceStage) => imports.find((item) => item.stage === sourceStage));
-    const requiredMissing = requiredSourceStages.some((sourceStage) => !imports.some((item) => item.stage === sourceStage));
+    const currentImport = activeImports.find((item) => item.stage === stage && (stage === "p2_assets" ? item.assetRunId === runId : item.productionRunId === runId));
+    const hasCurrentP3StoryboardImages = Boolean(sourceContext && sourceContext.p3ArtifactId && sourceContext.storyboardImages.some((image) =>
+        image.runId === sourceContext.productionRunId
+        && image.artifactId === sourceContext.p3ArtifactId
+        && image.status === "READY"
+        && image.status !== "SUPERSEDED"
+        && Boolean(image.resourceId),
+    ));
+    const requiredMissing = requiredSourceStages.some((sourceStage) =>
+        sourceStage === "p3_images"
+            ? !hasCurrentP3StoryboardImages
+            : !activeImports.some((item) => item.stage === sourceStage),
+    );
     const blockedReason = disabledReason || (requiredMissing ? "请先把上一阶段导入画布，并在画布中完成对应资源生成。" : "");
     const importMutation = useMutation({
         mutationFn: async () => {
             const { item: pkg } = await getManjuCanvasPackage(projectId, stage, runId);
-            const availableSourceStages = sourceStages.filter((sourceStage) => imports.some((item) => item.stage === sourceStage));
-            const references = availableSourceStages.length ? await loadManjuCanvasReferences(projectId, availableSourceStages) : [];
+            const availableSourceStages = sourceStages.filter((sourceStage) =>
+                sourceStage === "p3_images"
+                    ? hasCurrentP3StoryboardImages
+                    : activeImports.some((item) => item.stage === sourceStage),
+            );
+            const references = availableSourceStages.length
+                ? await loadManjuCanvasReferences(projectId, availableSourceStages, sourceContext)
+                : [];
             let canvasId = projectCanvasImport?.canvasId;
             let addedTaskCount = pkg.tasks.length;
             if (canvasId) {
@@ -2365,9 +2388,41 @@ function ManjuCanvasPackagePanel({ projectId, projectName, stage, runId, sourceS
     );
 }
 
-async function loadManjuCanvasReferences(projectId: string, sourceStages: ManjuCanvasPackageStage[]): Promise<ManjuCanvasReference[]> {
+async function loadManjuCanvasReferences(
+    projectId: string,
+    sourceStages: ManjuCanvasPackageStage[],
+    sourceContext?: {
+        productionRunId: string;
+        p3ArtifactId: string;
+        storyboardImages: ManjuProductionImage[];
+    },
+): Promise<ManjuCanvasReference[]> {
     const byCode = new Map<string, ManjuCanvasImportReference>();
-    const sourceReferencePages = await Promise.all(sourceStages.map((sourceStage) => getManjuCanvasImportReferences(projectId, sourceStage)));
+    const sourceReferencePages = await Promise.all(sourceStages.map(async (sourceStage) => {
+        if (sourceStage === "p3_images") {
+            if (!sourceContext) return { items: [] };
+            const items = sourceContext.storyboardImages
+                .filter((image) =>
+                    image.runId === sourceContext.productionRunId
+                    && image.artifactId === sourceContext.p3ArtifactId
+                    && image.status === "READY"
+                    && image.status !== "SUPERSEDED"
+                    && Boolean(image.resourceId),
+                )
+                .map((image): ManjuCanvasImportReference => ({
+                    code: image.segmentCode,
+                    taskId: image.taskId,
+                    title: image.segmentCode,
+                    prompt: image.shotLabel,
+                    content: `resource:${image.resourceId}`,
+                    storageKey: `resource:${image.resourceId}`,
+                    category: "material",
+                    kind: "image",
+                }));
+            return { items };
+        }
+        return getManjuCanvasImportReferences(projectId, sourceStage);
+    }));
     for (const { items } of sourceReferencePages) {
         for (const item of items) {
             const key = manjuReferenceCodeKey(item.code);
@@ -3265,6 +3320,7 @@ function ProductionStageCard({
     const previsReady = previs?.status === "READY" && Boolean(previs.artifactId) && Boolean(previsArtifact);
     const previsLive = previs?.status === "QUEUED" || previs?.status === "RUNNING";
     const readyStoryboardImageCount = (detail.images || []).filter((image) => image.status === "READY" && Boolean(image.resourceId)).length;
+    const sourceP3ArtifactId = detail.stages.find((item) => item.key === "director_storyboard")?.artifactId || "";
     const isOfficialCompiler = stage.key === "feed_package";
     const machineCheckSkipped = stage.machineCheckStatus === "SKIPPED_BY_USER";
     const officialAuditLabel = isOfficialCompiler
@@ -3544,6 +3600,11 @@ function ProductionStageCard({
                     runId={detail.run.id}
                     sourceStages={canvasSourceStages}
                     requiredSourceStages={canvasPackageStage ? ["p2_assets"] : []}
+                    sourceContext={canvasPackageStage === "p4_videos" ? {
+                        productionRunId: detail.run.id,
+                        p3ArtifactId: sourceP3ArtifactId,
+                        storyboardImages: detail.images || [],
+                    } : undefined}
                     canEdit={canEdit}
                     disabledReason={stage.key === "qc_handoff" && canvasPackageStage === "p4_videos" ? "P5 使用已锁定的 P4 视频画布进行主理人看片；这里只读取，不新建生成任务。" : undefined}
                     onNotice={setNotice}

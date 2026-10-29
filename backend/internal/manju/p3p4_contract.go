@@ -580,13 +580,26 @@ func p3NormalizeExemptionReason(value string) string {
 }
 
 func p3ExemptionReasonPlaceholder(value string) bool {
-	compact := strings.NewReplacer(" ", "", "\t", "", "\r", "", "\n", "").Replace(strings.ToLower(value))
-	compact = strings.Trim(compact, "（）()：:，,。.;；-—_/\\")
+	clauses := regexp.MustCompile(`[;；,，。.、|｜/\n]+`).Split(value, -1)
+	for _, clause := range clauses {
+		compact := strings.NewReplacer(" ", "", "\t", "", "\r", "", "\n", "").Replace(strings.ToLower(clause))
+		compact = strings.Trim(compact, "（）()：:，,。.;；-—_/\\")
+		if compact == "" {
+			continue
+		}
+		if !p3ExemptionClausePlaceholder(compact) {
+			return false
+		}
+	}
+	return true
+}
+
+func p3ExemptionClausePlaceholder(compact string) bool {
 	switch compact {
-	case "", "理由", "单镜过场", "单镜过场段", "无", "无豁免", "暂无", "略", "同上", "按需", "不适用", "待补", "待补充", "待定", "tbd", "todo", "n/a", "na":
+	case "理由", "单镜过场", "单镜过场段", "无", "无豁免", "暂无", "略", "同上", "按需", "不适用", "待补", "待补充", "待定", "补充", "后续补充", "见上文", "见前文", "占位", "未完成", "tbd", "todo", "n/a", "na":
 		return true
 	}
-	for _, token := range []string{"待补", "待定", "待完善", "未完成", "占位", "tbd", "todo"} {
+	for _, token := range []string{"待补", "待定", "待完善", "未完成", "占位", "暂无", "无豁免", "后续补充", "见上文", "见前文", "tbd", "todo"} {
 		if strings.Contains(compact, token) {
 			return true
 		}

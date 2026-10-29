@@ -74,6 +74,15 @@ test("P3 cannot bypass storyboard image delivery with an optional-image message"
     expect(page).not.toContain("没有图片也可以确认进入 P4");
 });
 
+test("P4 canvas packaging uses only current ready P3 image lineage", () => {
+    expect(page).toContain("sourceP3ArtifactId");
+    expect(page).toContain('image.status === "READY"');
+    expect(page).toContain('image.status !== "SUPERSEDED"');
+    expect(page).toContain("image.runId === sourceContext.productionRunId");
+    expect(page).toContain("image.artifactId === sourceContext.p3ArtifactId");
+    expect(page).toContain('if (sourceStage === "p3_images")');
+});
+
 test("P1 never shows an empty state while the active run is still loading", () => {
     expect(page).toContain("runsQuery.isLoading || runQuery.isLoading");
     expect(page).toContain("正在读取剧本任务版");

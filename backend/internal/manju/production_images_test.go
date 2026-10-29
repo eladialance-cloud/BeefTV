@@ -100,6 +100,27 @@ func TestP3StoryboardExemptionDoesNotTreatNoExemptionAsExempt(t *testing.T) {
 	}
 }
 
+func TestP3PlotExemptionRejectsCompositePlaceholders(t *testing.T) {
+	testCases := []string{
+		"理由：暂无；后续补充",
+		"理由：略；见上文",
+		"理由：待补 / 后续补充",
+		"理由：TODO；补充",
+	}
+	for _, reason := range testCases {
+		t.Run(reason, func(t *testing.T) {
+			exempt, _, err := parseP3PlotExemption(
+				"覆盖：场1 ⛔豁免（纯空镜场）",
+				reason,
+				"场1",
+			)
+			if err == nil {
+				t.Fatalf("composite placeholder must fail: exempt=%v reason=%q", exempt, reason)
+			}
+		})
+	}
+}
+
 func TestParseStoryboardImageSegmentsWithoutBoundaryColumn(t *testing.T) {
 	content := `## 故事板表
 | 段 | 格号 | 动作相位 | 镜头信息 | 站位+视线 | 资产引用 |

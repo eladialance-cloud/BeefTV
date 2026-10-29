@@ -701,6 +701,11 @@ func (s *Service) RegenerateProductionArtifact(actorID, projectID, runID, stageK
 		if err := ensureNoLiveProductionWork(tx, actorID, runID, stages); err != nil {
 			return err
 		}
+		if stageKey == ProductionStageStoryboard {
+			if err := staleP3CanvasImportForRun(tx, projectID, runID); err != nil {
+				return err
+			}
+		}
 
 		target.Status = model.ManjuProductionStageStatusInProgress
 		target.TaskID = ""

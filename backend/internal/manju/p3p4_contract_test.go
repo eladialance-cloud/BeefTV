@@ -138,9 +138,11 @@ func TestP3RejectsInvalidStoryboardExemptionForms(t *testing.T) {
 		{name: "empty 单镜过场 label", storyboardCell: "⛔豁免（单镜过场段）", reason: "单镜过场："},
 		{name: "placeholder reason", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：无"},
 		{name: "pending reason", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：待补"},
+		{name: "composite pending reason", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：暂无；后续补充"},
 		{name: "tbd reason", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：TBD"},
 		{name: "todo reason", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：todo"},
 		{name: "ellipsis reason", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：略"},
+		{name: "composite see above reason", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：略；见上文"},
 		{name: "same as above reason", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：同上"},
 		{name: "punctuation reason", storyboardCell: "⛔豁免（单镜过场段）", reason: "理由：..."},
 	}

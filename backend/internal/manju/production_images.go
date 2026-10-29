@@ -37,6 +37,7 @@ const storyboardSheetAspectRatio = "16:9"
 
 type ProductionImageView struct {
 	ID          string    `json:"id"`
+	RunID       string    `json:"runId"`
 	ArtifactID  string    `json:"artifactId,omitempty"`
 	Position    int       `json:"position"`
 	SegmentCode string    `json:"segmentCode"`
@@ -1012,7 +1013,7 @@ func storyboardImagesReady(tx *repository.Repository, runID string) error {
 
 func productionImageView(image model.ManjuProductionImage) ProductionImageView {
 	return ProductionImageView{
-		ID: image.ID, ArtifactID: image.ArtifactID, Position: image.Position,
+		ID: image.ID, RunID: image.RunID, ArtifactID: image.ArtifactID, Position: image.Position,
 		SegmentCode: image.SegmentCode, ShotLabel: image.ShotLabel,
 		Attempt: image.Attempt, Status: image.Status, TaskID: image.TaskID, ResourceID: image.ResourceID,
 		URL: image.URL, Error: image.Error, CreatedAt: image.CreatedAt, UpdatedAt: image.UpdatedAt,
