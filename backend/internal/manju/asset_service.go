@@ -1323,7 +1323,7 @@ func buildAssetStagePrompt(projectName string, run model.ManjuAssetRun, stage mo
 		fmt.Fprintf(&out, "【本次用户补充】\n%s\n\n", instruction)
 	}
 	appendManjuSkillContext(&out, skillContext)
-	out.WriteString("\n\n【BeefTV 运行接口】\n")
+	out.WriteString("\n\n【VisiDeep AI 运行接口】\n")
 	out.WriteString(assetStageInstruction(run.AssetMode, stage.Key))
 	if stage.Key == AssetStageCompile {
 		out.WriteString(projectStatePatchInstruction("P2"))

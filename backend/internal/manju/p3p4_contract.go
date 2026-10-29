@@ -1846,7 +1846,7 @@ func p3ProjectStateInstruction() string {
 	}
 	return fmt.Sprintf(`
 
-【BeefTV 项目状态传输块】
+【VisiDeep AI 项目状态传输块】
 阶段键：%s
 
 <!-- MANJU_PROJECT_STATE_PATCH_JSON
@@ -1922,7 +1922,7 @@ func p4FeedPrompt(assetMode string) string {
 	out.WriteString("必须包含 `# P4 投喂封装`、`## 素材接线单`（M0 除外）、`## 台词完整性`、`## 六道闸门`；不得新增、删除或改写 P3 台词。\n")
 	fmt.Fprintf(
 		&out,
-		"BeefTV 预检与官方门禁顺序：`%s` → `%s` → `%s`；校验参数固定包含 %s，任何 FAIL 均关闭通过。",
+		"VisiDeep AI 预检与官方门禁顺序：`%s` → `%s` → `%s`；校验参数固定包含 %s，任何 FAIL 均关闭通过。",
 		contract.ExecutionOrder[0],
 		contract.ExecutionOrder[1],
 		contract.ExecutionOrder[2],

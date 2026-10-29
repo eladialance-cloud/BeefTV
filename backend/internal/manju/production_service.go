@@ -2533,7 +2533,7 @@ func buildProductionStagePrompt(projectName string, run model.ManjuProductionRun
 		out.WriteString("\n")
 	}
 	appendManjuSkillContext(&out, skillContext)
-	out.WriteString("\n\n【BeefTV 运行接口】\n")
+	out.WriteString("\n\n【VisiDeep AI 运行接口】\n")
 	out.WriteString(productionStageInstruction(stage.Key, assetRun.AssetMode))
 	if stage.Key == ProductionStageStoryboard {
 		out.WriteString(projectStatePatchInstruction("P3"))

@@ -563,7 +563,7 @@ func projectStatePatchInstruction(stage string) string {
 	case "P1":
 		return `
 
-【BeefTV 项目状态传输块】
+【VisiDeep AI 项目状态传输块】
 若当前官方阶段产物包含世界锚或角色锚，仅在 Markdown 末尾追加一个：
 <!-- MANJU_PROJECT_STATE_PATCH_JSON
 {"world_anchor":{"era_anchor":"","region":"","tech_level":"","forbidden_elements":[],"required_elements":[]},"characters":{"角色名":{"id":"CHR-01","fig_no":1,"age_anchor":"","body_anchor":"","look_3piece":"","voice_lock":"","business":"","break_trigger":"","address_map":{},"char_states":{}}}}
@@ -572,7 +572,7 @@ func projectStatePatchInstruction(stage string) string {
 	case "P2":
 		return `
 
-【BeefTV 项目状态传输块】
+【VisiDeep AI 项目状态传输块】
 仅在 Markdown 末尾追加：
 <!-- MANJU_PROJECT_STATE_PATCH_JSON
 {"world_anchor":{"era_anchor":"","region":"","tech_level":"","forbidden_elements":[],"required_elements":[]},"characters":{"角色名":{"id":"CHR-01","fig_no":1,"age_anchor":"","body_anchor":"","look_3piece":"","voice_lock":"","business":"","break_trigger":"","address_map":{},"char_states":{}}},"scenes":{"场景名":{"id":"SCN-01","fig_no":2,"coords":"","set_states":{"default":""},"media_layer":"","lighting":""}},"props":{"道具名":{"id":"PRP-01","fig_no":3,"material_desc":""}}}
