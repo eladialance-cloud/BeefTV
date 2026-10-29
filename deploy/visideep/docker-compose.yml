@@ -1,0 +1,84 @@
+name: visideep
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${CANVAS_POSTGRES_DB}
+      POSTGRES_USER: ${CANVAS_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${CANVAS_POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - internal
+
+  backend:
+    image: visideep-backend:${VISIDEEP_IMAGE_TAG:-local}
+    build:
+      context: ../..
+      dockerfile: backend/Dockerfile
+      args:
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+        APK_MIRROR: ${APK_MIRROR:-}
+        BUILD_VERSION: ${VISIDEEP_IMAGE_TAG:-local}
+    env_file:
+      - .env
+    environment:
+      CANVAS_BACKEND_ADDR: ":8080"
+      CANVAS_BACKEND_DATA_DIR: /data
+      CANVAS_DATABASE_DRIVER: postgres
+      DATABASE_URL: ${DATABASE_URL}
+      GIN_MODE: release
+    volumes:
+      - backend_data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: ${CANVAS_SHUTDOWN_TIMEOUT:-10m}
+    networks:
+      - internal
+
+  web:
+    image: visideep-web:${VISIDEEP_IMAGE_TAG:-local}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        BUILD_VERSION: ${VISIDEEP_IMAGE_TAG:-local}
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+    ports:
+      - "127.0.0.1:${VISIDEEP_WEB_PORT:-3100}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+
+  admin:
+    image: visideep-admin:${VISIDEEP_IMAGE_TAG:-local}
+    build:
+      context: ../..
+      dockerfile: deploy/visideep/admin.Dockerfile
+    ports:
+      - "127.0.0.1:${VISIDEEP_ADMIN_PORT:-3101}:80"
+    restart: unless-stopped
+    networks:
+      - internal
+
+networks:
+  internal:
+    name: visideep_internal
+
+volumes:
+  postgres_data:
+    name: visideep_postgres_data
+  backend_data:
+    name: visideep_backend_data
