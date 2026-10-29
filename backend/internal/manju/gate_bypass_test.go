@@ -2,7 +2,6 @@ package manju_test
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -16,10 +15,10 @@ func TestV7426AllHardGatesFailClosed(t *testing.T) {
 		run  func(t *testing.T, f fixture) error
 	}{
 		{"missing P0 confirmation", runSaveLockWithoutDeliveryConfirmation},
-		{"missing P0B", runP1BeforeP0B},
+		{"P3 before locked P0B", runP3BeforeP0B},
 		{"partial storyboard images", confirmP3WithOneMissingImage},
+		{"missing P4 proof", confirmP4WithIncompleteMachineCheckProof},
 		{"missing dialogue diff", startP4WithMissingDialogue},
-		{"board not materialized", readBoardBeforeCompile},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -28,6 +27,7 @@ func TestV7426AllHardGatesFailClosed(t *testing.T) {
 			}
 		})
 	}
+	t.Run("board delivery materialization boundaries", exerciseBoardDeliveryMaterializationBoundaries)
 }
 
 func runSaveLockWithoutDeliveryConfirmation(t *testing.T, f fixture) error {
@@ -42,12 +42,40 @@ func runSaveLockWithoutDeliveryConfirmation(t *testing.T, f fixture) error {
 	return err
 }
 
-func runP1BeforeP0B(t *testing.T, f fixture) error {
+func runP3BeforeP0B(t *testing.T, f fixture) error {
 	t.Helper()
 	assetRunID := prepareCompletedProductionAsset(t, f, manju.AssetModeM1Value)
 	run, err := f.service.CreateProductionRun(f.ownerID, f.projectID, manju.ProductionRunInput{AssetRunID: assetRunID})
 	if err != nil {
 		t.Fatalf("create production run: %v", err)
+	}
+
+	if err := f.db.Model(&model.ManjuProductionRun{}).
+		Where("id = ?", run.Run.ID).
+		Update("current_stage", manju.ProductionStageStoryboard).Error; err != nil {
+		t.Fatalf("move active production run to P3: %v", err)
+	}
+	if err := f.db.Model(&model.ManjuProductionStage{}).
+		Where("run_id = ? AND key = ?", run.Run.ID, manju.ProductionStageStoryboard).
+		Update("status", model.ManjuProductionStageStatusInProgress).Error; err != nil {
+		t.Fatalf("activate P3 stage: %v", err)
+	}
+	task := &model.Task{
+		ID: "gate-bypass-p0b-task", UserID: f.ownerID, ProjectID: f.projectID,
+		Type: "canvas_text", Status: model.TaskStatusQueued,
+	}
+	if err := f.db.Create(task).Error; err != nil {
+		t.Fatalf("create task that must not be requested: %v", err)
+	}
+	creator := &sequentialScriptTaskCreator{tasks: []*model.Task{task}}
+	f.service.SetScriptTaskCreator(creator.create)
+	var activeRun model.ManjuProductionRun
+	if err := f.db.First(&activeRun, "id = ?", run.Run.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if activeRun.Status != model.ManjuProductionRunStatusActive ||
+		activeRun.CurrentStage != manju.ProductionStageStoryboard {
+		t.Fatalf("fixture must reach an active P3 current stage: %+v", activeRun)
 	}
 
 	_, err = f.service.RunProductionStage(
@@ -59,6 +87,19 @@ func runP1BeforeP0B(t *testing.T, f fixture) error {
 	)
 	if !errors.Is(err, manju.ErrProductionStageNotReady) {
 		t.Fatalf("P3 before locked P0B must fail with ErrProductionStageNotReady, got %v", err)
+	}
+	if err.Error() != manju.ErrProductionStageNotReady.Error() {
+		t.Fatalf("P3 must fail at ensureProductionStageGate, got message %q", err)
+	}
+	if len(creator.requests) != 0 {
+		t.Fatalf("P3 task must not be created while P0B is unlocked: %+v", creator.requests)
+	}
+	var decision model.ManjuProductionStage
+	if err := f.db.First(&decision, "run_id = ? AND key = ?", run.Run.ID, manju.ProductionStageDecisionAnchor).Error; err != nil {
+		t.Fatal(err)
+	}
+	if decision.Status == model.ManjuProductionStageStatusLocked || decision.ArtifactID != "" {
+		t.Fatalf("fixture must keep P0B unlocked without an artifact: %+v", decision)
 	}
 	return err
 }
@@ -142,19 +183,126 @@ func startP4WithMissingDialogue(t *testing.T, f fixture) error {
 	return err
 }
 
-func readBoardBeforeCompile(t *testing.T, f fixture) error {
+func confirmP4WithIncompleteMachineCheckProof(t *testing.T, f fixture) error {
 	t.Helper()
-	detail := completeProjectThroughP5ForTest(t, f, manju.DeliveryMarkdown)
-	rows, err := f.service.ProductionRunDeliverables(f.ownerID, f.projectID, detail.Run.ID)
-	if err != nil {
-		t.Fatalf("read persisted deliverables: %v", err)
+	run := prepareP4AwaitingConfirmation(t, f)
+	apparentPass := `{"machineCheckProof":{"version":"V7.4.26","status":"PASS"},"machineCheckNote":"历史 PASS"}`
+	if err := f.db.Model(&model.ManjuProductionStage{}).
+		Where("run_id = ? AND key = ?", run.Run.ID, manju.ProductionStageFeed).
+		Update("input_json", apparentPass).Error; err != nil {
+		t.Fatalf("write incomplete apparent PASS proof: %v", err)
 	}
+
+	_, err := f.service.ConfirmProductionStage(
+		f.ownerID,
+		f.projectID,
+		run.Run.ID,
+		manju.ProductionStageFeed,
+		manju.ProductionConfirmInput{Note: "尝试使用残缺 PASS 凭证"},
+	)
+	if !errors.Is(err, manju.ErrProductionMachineCheckProofInvalid) {
+		t.Fatalf("P4 confirmation with incomplete PASS proof must fail with ErrProductionMachineCheckProofInvalid, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "pipeline") {
+		t.Fatalf("P4 must reject the missing pipeline proof step, got %v", err)
+	}
+	detail, detailErr := f.service.ProductionRunDetail(f.ownerID, f.projectID, run.Run.ID)
+	if detailErr != nil {
+		t.Fatalf("read P4 after rejected confirmation: %v", detailErr)
+	}
+	if got := findProductionStage(t, detail, manju.ProductionStageFeed).Status; got != model.ManjuProductionStageStatusAwaitingConfirmation {
+		t.Fatalf("rejected P4 proof must leave the stage unlocked, got %s", got)
+	}
+	return err
+}
+
+func exerciseBoardDeliveryMaterializationBoundaries(t *testing.T) {
+	t.Helper()
+
+	t.Run("no board before P5 confirmation", func(t *testing.T) {
+		f := newFixture(t)
+		run := prepareP4AwaitingConfirmation(t, f)
+		rows, err := f.service.ProductionRunDeliverables(f.ownerID, f.projectID, run.Run.ID)
+		if err != nil {
+			t.Fatalf("read pre-P5 deliverables: %v", err)
+		}
+		if len(rows) != 0 {
+			t.Fatalf("pre-P5 run exposed deliverables before materialization: %+v", rows)
+		}
+	})
+
+	t.Run("markdown mode has no board", func(t *testing.T) {
+		f := newFixture(t)
+		detail := completeProjectThroughP5ForTest(t, f, manju.DeliveryMarkdown)
+		rows, err := f.service.ProductionRunDeliverables(f.ownerID, f.projectID, detail.Run.ID)
+		if err != nil {
+			t.Fatalf("read markdown deliverables: %v", err)
+		}
+		assertGateDeliverableKindCount(t, rows, "markdown", 1)
+		assertGateDeliverableKindCount(t, rows, "board", 0)
+	})
+
+	for _, mode := range []string{manju.DeliveryBoard, manju.DeliveryBoth} {
+		t.Run(mode+" mode materializes one idempotent board", func(t *testing.T) {
+			f := newFixture(t)
+			detail := completeProjectThroughP5ForTest(t, f, mode)
+			before, err := f.service.ProductionRunDeliverables(f.ownerID, f.projectID, detail.Run.ID)
+			if err != nil {
+				t.Fatalf("read initial %s deliverables: %v", mode, err)
+			}
+			assertGateDeliverableKindCount(t, before, "markdown", 1)
+			assertGateDeliverableKindCount(t, before, "board", 1)
+			board := gateDeliverablesByKind(before, "board")
+			if !strings.HasPrefix(strings.ToLower(board[0].Content), "<!doctype html>") {
+				t.Fatalf("materialized board is not official HTML")
+			}
+
+			if _, err := f.service.ConfirmProductionStage(
+				f.ownerID,
+				f.projectID,
+				detail.Run.ID,
+				manju.ProductionStageQC,
+				manju.ProductionConfirmInput{Note: "重复确认交付"},
+			); err != nil {
+				t.Fatalf("repeat P5 confirmation must be idempotent: %v", err)
+			}
+			after, err := f.service.ProductionRunDeliverables(f.ownerID, f.projectID, detail.Run.ID)
+			if err != nil {
+				t.Fatalf("read repeated %s deliverables: %v", mode, err)
+			}
+			if len(after) != len(before) {
+				t.Fatalf("repeat confirmation changed %s deliverable count: before=%d after=%d", mode, len(before), len(after))
+			}
+			for index := range before {
+				if before[index] != after[index] {
+					t.Fatalf("repeat confirmation rewrote %s deliverable:\nbefore=%+v\nafter=%+v", mode, before[index], after[index])
+				}
+			}
+			assertGateDeliverableKindCount(t, after, "board", 1)
+		})
+	}
+}
+
+func assertGateDeliverableKindCount(
+	t *testing.T,
+	rows []manju.UserDeliverableView,
+	kind string,
+	want int,
+) {
+	t.Helper()
+	if got := len(gateDeliverablesByKind(rows, kind)); got != want {
+		t.Fatalf("%s deliverable count = %d, want %d: %+v", kind, got, want, rows)
+	}
+}
+
+func gateDeliverablesByKind(rows []manju.UserDeliverableView, kind string) []manju.UserDeliverableView {
+	result := make([]manju.UserDeliverableView, 0, len(rows))
 	for _, row := range rows {
-		if row.Kind == "board" {
-			return nil
+		if row.Kind == kind {
+			result = append(result, row)
 		}
 	}
-	return fmt.Errorf("%w: markdown delivery must not expose a board row", manju.ErrProductionDeliverablesNotReady)
+	return result
 }
 
 func removeString(values []string, target string) []string {
