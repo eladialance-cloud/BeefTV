@@ -144,26 +144,32 @@ func (r *Repository) nextPrefixedID(db *gorm.DB, prefix string) (string, error) 
 
 func (r *Repository) UserStorageUsage(userID string) (UserStorageUsage, error) {
 	var usage UserStorageUsage
-	canvasBytes := `(SELECT COALESCE(SUM(length(CAST(COALESCE(payload_json, '') AS BLOB))), 0) FROM canvas_projects WHERE user_id = ?)`
+	dialect := r.Dialect()
+	canvasBytes := fmt.Sprintf(`(SELECT %s FROM canvas_projects WHERE user_id = ?)`, sumTextBytesExpr(dialect, "payload_json"))
 	args := []any{userID, userID, userID, userID}
 	if r.db.Migrator().HasTable(&model.CanvasDrawing{}) {
-		canvasBytes += ` + (SELECT COALESCE(SUM(length(CAST(COALESCE(snapshot_json, '') AS BLOB))), 0) FROM canvas_drawings WHERE user_id = ? AND deleted_at IS NULL)`
+		canvasBytes += fmt.Sprintf(` + (SELECT %s FROM canvas_drawings WHERE user_id = ? AND deleted_at IS NULL)`, sumTextBytesExpr(dialect, "snapshot_json"))
 		args = append(args, userID)
 	}
+	assetBytes := sumTextBytesExpr(dialect, "payload_json")
+	taskPromptBytes := sumTextBytesExpr(dialect, "prompt", "input_json", "result_json", "text_draft", "error")
+	taskLogBytes := sumTextBytesExpr(dialect, "message", "payload")
+	resultBytes := sumTextBytesExpr(dialect, "url", "payload")
+	apiCallBytes := sumTextBytesExpr(dialect, "path", "model", "provider_request_id", "error_code", "error", "upstream_url", "request_body", "response_body")
 	query := fmt.Sprintf(`
 		SELECT
 			(SELECT COUNT(*) FROM assets WHERE user_id = ?) AS asset_count,
-			(SELECT COALESCE(SUM(length(CAST(COALESCE(payload_json, '') AS BLOB))), 0) FROM assets WHERE user_id = ?) AS asset_bytes,
+			(SELECT %s FROM assets WHERE user_id = ?) AS asset_bytes,
 			(SELECT COUNT(*) FROM canvas_projects WHERE user_id = ?) AS canvas_count,
 			%s AS canvas_bytes,
 			(SELECT COUNT(*) FROM tasks WHERE user_id = ?) AS task_count,
-			(SELECT COALESCE(SUM(length(CAST(COALESCE(prompt, '') AS BLOB)) + length(CAST(COALESCE(input_json, '') AS BLOB)) + length(CAST(COALESCE(result_json, '') AS BLOB)) + length(CAST(COALESCE(text_draft, '') AS BLOB)) + length(CAST(COALESCE(error, '') AS BLOB))), 0) FROM tasks WHERE user_id = ?)
-			+ (SELECT COALESCE(SUM(length(CAST(COALESCE(message, '') AS BLOB)) + length(CAST(COALESCE(payload, '') AS BLOB))), 0) FROM task_logs WHERE user_id = ?)
-			+ (SELECT COALESCE(SUM(length(CAST(COALESCE(url, '') AS BLOB)) + length(CAST(COALESCE(payload, '') AS BLOB))), 0) FROM results WHERE user_id = ?)
+			(SELECT %s FROM tasks WHERE user_id = ?)
+			+ (SELECT %s FROM task_logs WHERE user_id = ?)
+			+ (SELECT %s FROM results WHERE user_id = ?)
 			+ (SELECT COALESCE(SUM(byte_count), 0) FROM task_text_delta WHERE user_id = ?)
-			+ (SELECT COALESCE(SUM(length(CAST(COALESCE(path, '') AS BLOB)) + length(CAST(COALESCE(model, '') AS BLOB)) + length(CAST(COALESCE(provider_request_id, '') AS BLOB)) + length(CAST(COALESCE(error_code, '') AS BLOB)) + length(CAST(COALESCE(error, '') AS BLOB)) + length(CAST(COALESCE(upstream_url, '') AS BLOB)) + length(CAST(COALESCE(request_body, '') AS BLOB)) + length(CAST(COALESCE(response_body, '') AS BLOB))), 0) FROM api_call_logs WHERE user_id = ?) AS task_bytes,
+			+ (SELECT %s FROM api_call_logs WHERE user_id = ?) AS task_bytes,
 			(SELECT COUNT(*) FROM api_call_logs WHERE user_id = ?) AS api_call_count
-	`, canvasBytes)
+	`, assetBytes, canvasBytes, taskPromptBytes, taskLogBytes, resultBytes, apiCallBytes)
 	args = append(args, userID, userID, userID, userID, userID, userID, userID)
 	err := r.db.Raw(query, args...).Scan(&usage).Error
 	return usage, err
