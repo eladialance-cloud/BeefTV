@@ -86,7 +86,7 @@ func (r *Repository) UserAssetQuickFilterCounts(userID string) (favorite int64, 
 }
 
 func (r *Repository) UserAssetProjectCounts(userID string) ([]UserAssetFacetRow, error) {
-	expr := userAssetProjectLabelSQL()
+	expr := userAssetProjectLabelSQL(r.Dialect())
 	var rows []UserAssetFacetRow
 	err := userAssetFilteredQuery(
 		r.db.Model(&model.Asset{}).Where("user_id = ? AND kind <> ?", userID, "entity"),
@@ -114,6 +114,7 @@ func (r *Repository) UserAssetGeneratedCounts(userID string) (total int64, kindR
 }
 
 func userAssetFilteredQuery(query *gorm.DB, filter UserAssetPageFilter, includeSearch bool) *gorm.DB {
+	dialect := query.Dialector.Name()
 	if value := strings.TrimSpace(filter.Kind); value != "" {
 		query = query.Where("kind = ?", value)
 	}
@@ -141,31 +142,59 @@ func userAssetFilteredQuery(query *gorm.DB, filter UserAssetPageFilter, includeS
 		}
 	}
 	if filter.Favorite {
-		query = query.Where("json_extract(payload_json, '$.metadata.favorite') IN (1, 'true', '1')")
+		query = query.Where(userAssetFavoriteSQL(dialect))
 	}
 	if filter.Recent {
 		query = query.Where("updated_at >= ?", time.Now().UTC().Add(-userAssetRecentDuration))
 	}
 	if value := strings.TrimSpace(filter.Project); value != "" {
-		query = query.Where(userAssetProjectLabelSQL()+" = ?", value)
+		query = query.Where(userAssetProjectLabelSQL(dialect)+" = ?", value)
 	}
 	if value := strings.TrimSpace(filter.ProjectID); value != "" {
 		query = query.Where("EXISTS (SELECT 1 FROM project_asset_links WHERE project_asset_links.asset_id = assets.id AND project_asset_links.project_id = ?)", value)
 	}
 	if filter.Generated {
-		query = query.Where(userAssetGeneratedSQL())
+		query = query.Where(userAssetGeneratedSQL(dialect))
 	}
 	return query
 }
 
-func userAssetGeneratedSQL() string {
+func userAssetFavoriteSQL(dialect string) string {
+	if strings.EqualFold(strings.TrimSpace(dialect), "postgres") {
+		return "COALESCE((payload_json::jsonb #>> '{metadata,favorite}'), '') IN ('1', 'true', 'True')"
+	}
+	return "json_extract(payload_json, '$.metadata.favorite') IN (1, 'true', '1')"
+}
+
+func userAssetGeneratedSQL(dialect string) string {
+	if strings.EqualFold(strings.TrimSpace(dialect), "postgres") {
+		return `(kind IN ('image','video','audio') AND (
+			COALESCE((payload_json::jsonb #>> '{source}'), '') = '生成任务'
+			OR jsonb_typeof(payload_json::jsonb #> '{metadata,generationEffectKey}') = 'string'
+		))`
+	}
 	return `(kind IN ('image','video','audio') AND (
 		json_extract(payload_json, '$.source') = '生成任务'
 		OR json_type(payload_json, '$.metadata.generationEffectKey') = 'text'
 	))`
 }
 
-func userAssetProjectLabelSQL() string {
+func userAssetProjectLabelSQL(dialect string) string {
+	if strings.EqualFold(strings.TrimSpace(dialect), "postgres") {
+		return `CASE
+			WHEN TRIM(COALESCE((payload_json::jsonb #>> '{metadata,projectName}'), '')) != ''
+				THEN TRIM((payload_json::jsonb #>> '{metadata,projectName}'))
+			WHEN COALESCE(jsonb_array_length(
+				CASE
+					WHEN jsonb_typeof(payload_json::jsonb #> '{metadata,projectIds}') = 'array'
+						THEN payload_json::jsonb #> '{metadata,projectIds}'
+					ELSE '[]'::jsonb
+				END
+			), 0) > 0
+				THEN '` + userAssetLinkedProjectLabel + `'
+			ELSE '` + userAssetUnlinkedProjectLabel + `'
+		END`
+	}
 	return `CASE
 		WHEN TRIM(COALESCE(CAST(json_extract(payload_json, '$.metadata.projectName') AS TEXT), '')) != ''
 			THEN TRIM(CAST(json_extract(payload_json, '$.metadata.projectName') AS TEXT))
