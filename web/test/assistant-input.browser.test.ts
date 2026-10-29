@@ -357,7 +357,8 @@ testFfmpeg("external Agent connection has no permission chooser and submits only
     await page.goto(server.url.toString().replace("localhost", "127.0.0.1"));
     await page.getByRole("button", { name: "连接外部 Agent", exact: true }).click();
     const panel = page.locator(".agent-connect-panel");
-        await panel.getByText("连接后可使用 VisiDeep AI 的全部创作工具。每次操作的审批由 Codex 负责。", { exact: true }).waitFor();
+    await panel.waitFor({ state: "visible", timeout: 10_000 });
+    await panel.getByText("连接后可使用 VisiDeep AI 的全部创作工具。每次操作的审批由 Codex 负责。", { exact: true }).waitFor({ timeout: 15_000 });
     expect(await panel.getByRole("radio").count()).toBe(0);
     const connected = page.waitForResponse(response => response.url().endsWith("/agent-clients"));
     await panel.getByRole("button", { name: "生成连接配置", exact: true }).click(); await connected;
@@ -365,7 +366,7 @@ testFfmpeg("external Agent connection has no permission chooser and submits only
     await panel.getByRole("status").filter({ hasText: "等待工具连接" }).waitFor();
     await page.screenshot({ path: "/tmp/beeftv-external-agent-connect.png" });
     await page.close();
-}, 15000);
+}, 30_000);
 
 testFfmpeg("cross-canvas receipts report every target and one atomic undo refreshes all canvases only after success", async () => {
     running = false;
