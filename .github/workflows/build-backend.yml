@@ -1,0 +1,29 @@
+name: Build backend binary
+
+on:
+  push:
+    branches:
+      - ci/validate-v7426
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Build server binary
+        working-directory: backend
+        run: CGO_ENABLED=1 go build -trimpath -o "$RUNNER_TEMP/infinite-canvas-backend" ./cmd/server
+      - uses: actions/upload-artifact@v4
+        with:
+          name: infinite-canvas-backend-v7426-5569477
+          path: ${{ runner.temp }}/infinite-canvas-backend
+          if-no-files-found: error
