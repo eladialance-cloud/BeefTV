@@ -64,14 +64,16 @@ func (s *systemStatus) snapshot(ctx context.Context) systemStatusSnapshot {
 	}
 	if s.db != nil {
 		snapshot.Checks.Database = s.db.WithContext(ctx).Exec("SELECT 1").Error == nil
+		// 托管库不写本地结构台账，也跑不了 SQLite 专用的 PRAGMA 校验，
+		// 所以托管形态用托管表清单判定结构是否就绪。
 		if s.local {
 			if err := database.RequireLocalSchema(s.db); err == nil {
 				snapshot.Schema = database.SchemaStatus{Current: 1, Expected: 1, Ready: true}
 				snapshot.Checks.Schema = true
 			}
-		} else if schema, err := database.ReadSchemaStatus(s.db); err == nil {
-			snapshot.Schema = schema
-			snapshot.Checks.Schema = schema.Ready
+		} else if err := database.RequireHostedSchema(s.db); err == nil {
+			snapshot.Schema = database.SchemaStatus{Current: 1, Expected: 1, Ready: true}
+			snapshot.Checks.Schema = true
 		}
 	}
 	snapshot.Ready = snapshot.Started && !snapshot.Draining && snapshot.Checks.Database && snapshot.Checks.Runtime && snapshot.Checks.Schema

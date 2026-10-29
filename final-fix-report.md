@@ -102,6 +102,40 @@ ok  infinite-canvas/backend/cmd/server           4.037s
 This confirms the requested packages compile and test with no reliance on
 untracked worktree files.
 
+## Dependency Closure Follow-up
+
+The first clean archive was scoped to the Go packages above and did not prove a
+complete frontend build. A second exact-tree verification found and closed the
+web dependency gap:
+
+- Added the existing Manju page dependencies for artifact editing, Canvas
+  tables, Manju packages, style references, model catalog, credits, account
+  chrome, login routing, and project/canvas baseline modules.
+- Made server schema selection follow `ProfileServer` even on SQLite so hosted
+  account tables are migrated before `/register` or `/login`.
+- Removed the PostgreSQL service from the primary local Compose file.
+- Fixed Windows path matching, browser executable selection, and temporary
+  SQLite process cleanup in the affected tests.
+- Kept tests that require unavailable platform tools visible:
+  `ffmpeg`-dependent browser suites and POSIX `rsync` release-boundary tests are
+  skipped on this Windows host.
+
+Exact staged-tree frontend result:
+
+```text
+bun run lint       passed
+bun run typecheck  passed
+bun run test       3694 pass, 43 skip, 0 fail
+```
+
+The full Go suite was also rerun. `internal/hostedapi`, `internal/manju`, and
+`cmd/server` pass. The repository-wide run is not green on this Windows host:
+379 tests fail, predominantly because SQLite files remain locked during
+`TempDir` cleanup, POSIX `0600` permissions cannot be represented, symlink
+creation requires elevated privilege, `/bin/sh` is absent, and external network
+tests time out. These environment failures must be resolved or rerun in the
+Ubuntu CI environment before claiming a repository-wide green result.
+
 ## Concerns
 
 - The worktree still contains unrelated pre-existing changes outside this

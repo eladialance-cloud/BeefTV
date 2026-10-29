@@ -22,7 +22,8 @@ const store = createEditorStore();
 store.getState().load(project);
 HTMLAnchorElement.prototype.click = function () { receipt.downloads++; };
 const root = createRoot(document.getElementById("root")!);
-Object.assign(window, { timelineFixture: { receipt, unmount: () => root.unmount() } });
+const sharedReceipt = (globalThis as typeof globalThis & { __timelineRuntimeReceipt?: typeof receipt }).__timelineRuntimeReceipt ?? receipt;
+Object.assign(window, { timelineFixture: { receipt: sharedReceipt, unmount: () => root.unmount() } });
 root.render(<App>{new URLSearchParams(location.search).get("mode") === "canvas" ?
     <CanvasTimelineDialog node={node} nodes={[]} timeline={project} open onClose={() => root.unmount()}
         onSave={() => {}} onSaveSubtitles={() => {}} onUploadLocalFiles={async () => []}

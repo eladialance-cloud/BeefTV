@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { chromium, type Browser } from "playwright";
 
 let browser: Browser, server: ReturnType<typeof Bun.serve>;
@@ -28,7 +28,10 @@ const selectedSkill = { skillId: "story", versionId: "story-v1", contentHash: "a
 let installedSkills = [selectedSkill];
 const skillInstalls: { sourceType: string; isPrivate: string; fileName: string }[] = [];
 let holdSkillInstall = false, releaseSkillInstall: (() => void) | null = null;
+const hasFfmpeg = spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).status === 0;
+const testFfmpeg = test.skipIf(!hasFfmpeg);
 beforeAll(async () => {
+    if (!hasFfmpeg) return;
     scratch = mkdtempSync(tmpdir() + "/assistant-input-");
     execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=24000:duration=0.25", scratch + "/beat.wav"]);
     execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=24000:duration=12", scratch + "/long-beat.wav"]);
@@ -130,7 +133,7 @@ beforeAll(async () => {
 afterAll(async () => { await browser?.close(); server?.stop(true); if (scratch) rmSync(scratch, { recursive: true, force: true }); });
 beforeEach(() => { registeredAssets.length = 0; assetScope = "guest"; });
 
-test("real Sidebar handles file, paste, drop, attachment-only, purpose/range, draft restore and busy supplement", async () => {
+testFfmpeg("real Sidebar handles file, paste, drop, attachment-only, purpose/range, draft restore and busy supplement", async () => {
     const page = await browser.newPage({ viewport: { width: 390, height: 900 } }); await page.goto(server.url.toString().replace("localhost", "127.0.0.1"));
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('button[aria-label="添加参考素材"]')?.disabled);
     await page.locator('input[type="file"]').setInputFiles({ name: "portrait.jpg", mimeType: "image/jpeg", buffer: jpeg });
@@ -191,7 +194,7 @@ test("real Sidebar handles file, paste, drop, attachment-only, purpose/range, dr
     await page.screenshot({ path: "/tmp/beeftv-assistant-input-ui.png" }); await page.close();
 }, 30000);
 
-test("asset registration failure remains unsent; explicit upload retry keeps its idempotency key and invalid range blocks send", async () => {
+testFfmpeg("asset registration failure remains unsent; explicit upload retry keeps its idempotency key and invalid range blocks send", async () => {
     const page = await browser.newPage({ viewport: { width: 390, height: 900 } });
     await page.goto(server.url.toString().replace("localhost", "127.0.0.1"));
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('button[aria-label="添加参考素材"]')?.disabled);
@@ -236,7 +239,7 @@ test("asset registration failure remains unsent; explicit upload retry keeps its
     await page.close();
 }, 15000);
 
-test("native-local Sidebar publishes accepted uploads for immediate @ reuse, while removal and scope changes preserve ownership", async () => {
+testFfmpeg("native-local Sidebar publishes accepted uploads for immediate @ reuse, while removal and scope changes preserve ownership", async () => {
     const page = await browser.newPage({ viewport: { width: 390, height: 900 } });
     await page.goto(server.url.toString().replace("localhost", "127.0.0.1"));
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('button[aria-label="添加参考素材"]')?.disabled);
@@ -278,7 +281,7 @@ test("native-local Sidebar publishes accepted uploads for immediate @ reuse, whi
     await page.close();
 }, 15000);
 
-test("missing resource duration is recovered from a real twelve-second WAV for registration, draft and range validation", async () => {
+testFfmpeg("missing resource duration is recovered from a real twelve-second WAV for registration, draft and range validation", async () => {
     const page = await browser.newPage({ viewport: { width: 390, height: 900 } });
     await page.goto(server.url.toString().replace("localhost", "127.0.0.1"));
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('button[aria-label="添加参考素材"]')?.disabled);
@@ -298,7 +301,7 @@ test("missing resource duration is recovered from a real twelve-second WAV for r
     await page.close();
 }, 15000);
 
-test("permission choices persist by workspace; trusted active mode locks the turn and supplements cannot elevate it", async () => {
+testFfmpeg("permission choices persist by workspace; trusted active mode locks the turn and supplements cannot elevate it", async () => {
     running = false; cancelled = false;
     const page = await browser.newPage({ viewport: { width: 390, height: 900 } });
     await page.goto(server.url.toString().replace("localhost", "127.0.0.1"));
@@ -349,12 +352,12 @@ test("permission choices persist by workspace; trusted active mode locks the tur
     await page.close();
 }, 20000);
 
-test("external Agent connection has no permission chooser and submits only the client kind", async () => {
+testFfmpeg("external Agent connection has no permission chooser and submits only the client kind", async () => {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     await page.goto(server.url.toString().replace("localhost", "127.0.0.1"));
     await page.getByRole("button", { name: "连接外部 Agent", exact: true }).click();
     const panel = page.locator(".agent-connect-panel");
-    await panel.getByText("连接后可使用 BeefTV 的全部创作工具。每次操作的审批由 Codex 负责。", { exact: true }).waitFor();
+        await panel.getByText("连接后可使用 VisiDeep AI 的全部创作工具。每次操作的审批由 Codex 负责。", { exact: true }).waitFor();
     expect(await panel.getByRole("radio").count()).toBe(0);
     const connected = page.waitForResponse(response => response.url().endsWith("/agent-clients"));
     await panel.getByRole("button", { name: "生成连接配置", exact: true }).click(); await connected;
@@ -364,7 +367,7 @@ test("external Agent connection has no permission chooser and submits only the c
     await page.close();
 }, 15000);
 
-test("cross-canvas receipts report every target and one atomic undo refreshes all canvases only after success", async () => {
+testFfmpeg("cross-canvas receipts report every target and one atomic undo refreshes all canvases only after success", async () => {
     running = false;
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     await page.goto(server.url.toString().replace("localhost", "127.0.0.1"));
@@ -394,7 +397,7 @@ test("cross-canvas receipts report every target and one atomic undo refreshes al
 }, 15000);
 
 for (const mode of ["markdown", "zip"] as const) {
-    test(`assistant installs ${mode} privately and sends the installed version pin`, async () => {
+    testFfmpeg(`assistant installs ${mode} privately and sends the installed version pin`, async () => {
         running = false; installedSkills = [];
         const page = await browser.newPage();
         await page.goto(server.url.toString().replace("localhost", "127.0.0.1"));
@@ -419,7 +422,7 @@ for (const mode of ["markdown", "zip"] as const) {
     }, 20000);
 }
 
-test("an installation completing after an account switch cannot select a skill in the replacement draft", async () => {
+testFfmpeg("an installation completing after an account switch cannot select a skill in the replacement draft", async () => {
     running = false; installedSkills = []; holdSkillInstall = true;
     const page = await browser.newPage();
     try {

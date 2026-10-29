@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { chromium, type Browser } from "playwright";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 
 let browser: Browser, server: ReturnType<typeof Bun.serve>, scratch: string;
@@ -12,8 +12,11 @@ let taskHold = false, taskResolve: ((response: Response) => void) | null = null;
 const queriedStatuses: string[] = [];
 let lateResolve: ((response: Response) => void) | null = null;
 const mediaReads: { resource: string; token: string | null }[] = [];
+const hasFfmpeg = spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).status === 0;
+const testFfmpeg = test.skipIf(!hasFfmpeg);
 beforeEach(() => { phase = "running"; reads = 0; held = false; historyEmpty = false; taskHold = false; taskResolve = null; lateResolve = null; mediaReads.length = 0; queriedStatuses.length = 0; });
 beforeAll(async () => {
+    if (!hasFfmpeg) return;
     scratch = mkdtempSync(tmpdir() + "/beeftv-output-");
     for (const [name, color] of [["first", "red"], ["second", "blue"]]) execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", `color=${color}:s=64x48:r=24:d=0.5`, "-c:v", "libx264", "-pix_fmt", "yuv420p", scratch + "/" + name + ".mp4"]);
     const build = await Bun.build({ entrypoints: [import.meta.dir + "/fixtures/assistant-outputs-harness.tsx"], target: "browser", define: {
@@ -47,11 +50,12 @@ beforeAll(async () => {
         }
         return ok({});
     } });
-    browser = await chromium.launch({ headless: true, executablePath: ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Chromium.app/Contents/MacOS/Chromium"].find(existsSync) });
+    const executablePath = [process.env.CHROME_PATH, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Chromium.app/Contents/MacOS/Chromium"].find((path): path is string => Boolean(path && existsSync(path)));
+    browser = await chromium.launch({ headless: true, executablePath });
 });
 afterAll(async () => { await browser?.close(); server?.stop(true); if (scratch) rmSync(scratch, { recursive: true, force: true }); });
 
-test("real restored hook outputs poll queued/running to ready and play distinct authenticated resources", async () => {
+testFfmpeg("real restored hook outputs poll queued/running to ready and play distinct authenticated resources", async () => {
     phase = "queued";
     const page = await browser.newPage(); await page.goto(server.url.href);
     await page.getByText("这是之前已完成的版本；后一次正在合成。").waitFor();
@@ -78,7 +82,7 @@ test("real restored hook outputs poll queued/running to ready and play distinct 
     expect(await page.getByRole("button", { name: "播放成片" }).count()).toBe(2);
     await page.close();
 }, 15000);
-test("later failed rendering preserves ready earlier version without claiming newest success", async () => {
+testFfmpeg("later failed rendering preserves ready earlier version without claiming newest success", async () => {
     phase = "failed"; const page = await browser.newPage(); await page.goto(server.url.href);
     await page.getByText("合成未完成", { exact: true }).waitFor();
     expect(await page.getByRole("button", { name: "播放成片" }).count()).toBe(1);
@@ -86,7 +90,7 @@ test("later failed rendering preserves ready earlier version without claiming ne
     expect(await page.getByText("已就绪", { exact: true }).count()).toBe(1);
     await page.close();
 }, 15000);
-test("initial loading and unread latest task do not falsely claim synthesis or latest failure", async () => {
+testFfmpeg("initial loading and unread latest task do not falsely claim synthesis or latest failure", async () => {
     taskHold = true; phase = "succeeded";
     const page = await browser.newPage(); await page.goto(server.url.href);
     await page.getByText("正在读取状态", { exact: true }).nth(1).waitFor();
@@ -99,7 +103,7 @@ test("initial loading and unread latest task do not falsely claim synthesis or l
     expect(await page.getByRole("button", { name: "播放成片" }).count()).toBe(1);
     await page.close();
 }, 15000);
-test("account switch abandons late authenticated media and never creates an old-owner URL", async () => {
+testFfmpeg("account switch abandons late authenticated media and never creates an old-owner URL", async () => {
     phase = "succeeded"; held = true; const page = await browser.newPage();
     await page.addInitScript(() => { const original = URL.createObjectURL; Object.assign(window, { createdMediaURLs: [] }); URL.createObjectURL = blob => { const url = original(blob); (window as any).createdMediaURLs.push(url); return url; }; });
     await page.goto(server.url.href);
@@ -111,7 +115,7 @@ test("account switch abandons late authenticated media and never creates an old-
     expect(await page.evaluate(() => (window as any).createdMediaURLs)).toEqual([]);
     await page.close();
 }, 15000);
-test("real streamed turn_end retains trusted output task without waiting for history", async () => {
+testFfmpeg("real streamed turn_end retains trusted output task without waiting for history", async () => {
     historyEmpty = true; phase = "succeeded";
     const page = await browser.newPage(); await page.goto(server.url.href);
     await page.getByRole("button", { name: "发送合成要求" }).click();

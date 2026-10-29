@@ -24,6 +24,7 @@ export type WorkspaceAssetLinkOptions = {
     category?: AssetCategory;
     folderId?: string;
     source?: "uploaded" | "canvas";
+    forceRemote?: boolean;
     signal?: AbortSignal;
     expectedScope?: CapturedUserScope;
 };
@@ -162,7 +163,7 @@ async function commitTrackedAssetDraft(id: string, expected: CapturedUserScope, 
 }
 
 /** Single boundary for local asset persistence and optional project linking. */
-export async function persistWorkspaceAssetLink({ asset, domainProjectId, category, folderId, source, signal, expectedScope }: WorkspaceAssetLinkOptions) {
+export async function persistWorkspaceAssetLink({ asset, domainProjectId, category, folderId, source, forceRemote = false, signal, expectedScope }: WorkspaceAssetLinkOptions) {
     const expected = expectedScope ?? captureUserScope();
     throwIfAborted(signal);
     assertUserScope(expected);
@@ -173,7 +174,7 @@ export async function persistWorkspaceAssetLink({ asset, domainProjectId, catego
         throw new WorkspaceAssetMediaPendingError();
     }
 
-    if (usesBrowserLocalResourceStore()) {
+    if (usesBrowserLocalResourceStore() && !forceRemote) {
         if (domainProjectId) {
             const projectIds = linkedProjectIds(asset, domainProjectId);
             useAssetStore.getState().updateAsset(asset.id, { metadata: { ...asset.metadata, projectIds } });

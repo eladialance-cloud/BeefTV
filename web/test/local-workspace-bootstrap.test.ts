@@ -21,9 +21,10 @@ test("local workspace bootstrap is the product startup contract", () => {
     expect(hydrator).toContain("createLocalWorkspacePayload");
     expect(hydrator).toContain("applySession: applyUserSession");
     expect(hydrator).toContain("restoreModelConfig: hydrateLocalModelConfig");
+    expect(hydrator).toContain("isPublicAuthPath");
     expect(workspaceApi).toContain('"/workspace/bootstrap"');
-    expect(router).not.toContain('path: "/login"');
-    expect(router).not.toContain('path: "/register"');
+    expect(router).toContain('path: "/login"');
+    expect(router).toContain('path: "/register"');
     expect(router).not.toContain("AuthScene");
     expect(router).toContain("createWorkspaceRouter");
     expect(router).toContain('path: "/tasks"');

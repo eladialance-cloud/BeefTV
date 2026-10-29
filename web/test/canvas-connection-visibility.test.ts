@@ -28,7 +28,7 @@ describe("LibTV canvas connection visibility", () => {
         expect(zoomControls).toContain('{ id: "zoom-connections", label: showConnections ? "隐藏节点连线" : "显示节点连线"');
         expect(zoomControls).toContain('{ id: "zoom-minimap", label: "切换小地图", icon: <Map />');
         expect(project).toContain("showConnections={showConnections}");
-        expect(project).toContain("onToggleConnections={() => setShowConnections");
+        expect(project).toMatch(/onToggleConnections=\{\(\)\s*=>\s*setShowConnections\(/);
     });
 
     test("keeps canvas cleanup in the view dock and moves grid snapping out of the main creation dock", () => {

@@ -1,8 +1,10 @@
 let capabilitySnapshot: WorkspaceCapabilityContract | null = null;
 
+export type WorkspaceProfile = "local" | "remote";
+
 export type WorkspaceCapabilityContract = {
     contractVersion: number;
-    profile: "local";
+    profile: WorkspaceProfile;
     capabilities: {
         localAssets: boolean;
         providerCalls: boolean;
@@ -11,7 +13,11 @@ export type WorkspaceCapabilityContract = {
 
 /** Central runtime boundary shared by local workspace UI and hosted sync. */
 export function isLocalWorkspaceMode() {
-    return true;
+    return capabilitySnapshot?.profile !== "remote";
+}
+
+export function isRemoteWorkspaceMode() {
+    return capabilitySnapshot?.profile === "remote";
 }
 
 /**
@@ -19,11 +25,13 @@ export function isLocalWorkspaceMode() {
  * available, but make the local-first contract explicit instead of repeating
  * storageMode/username checks throughout pages.
  */
-export type WorkspaceCapabilities = { local: true; localAssets: boolean; providerCalls: boolean };
+export type WorkspaceCapabilities = { local: boolean; remote: boolean; localAssets: boolean; providerCalls: boolean };
 
 export function workspaceCapabilities(): WorkspaceCapabilities {
+    const remote = isRemoteWorkspaceMode();
     return {
-        local: true,
+        local: !remote,
+        remote,
         localAssets: capabilitySnapshot?.capabilities.localAssets ?? true,
         providerCalls: capabilitySnapshot?.capabilities.providerCalls ?? true,
     };

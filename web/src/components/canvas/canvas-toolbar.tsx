@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import { Hand, MousePointer2, ScanFace } from "lucide-react";
+import { Clapperboard, Hand, MousePointer2, ScanFace, ShoppingBag } from "lucide-react";
 
 import { FloatingDock, type FloatingDockCommand } from "@/components/ui/aceternity/floating-dock";
 import { SpotlightSurface } from "@/components/ui/aceternity/spotlight-surface";
@@ -59,6 +59,8 @@ export function CanvasToolbar({
     onOpenMyAssets,
     onOpenProjectCharacters,
     onOpenGenerationHistory,
+    onCreateShortDramaPipeline,
+    onCreateEcommercePipeline,
     shortcutRequestNonce,
 }: {
     selectedCount: number;
@@ -102,6 +104,8 @@ export function CanvasToolbar({
     onOpenMyAssets: () => void;
     onOpenProjectCharacters: () => void;
     onOpenGenerationHistory: () => void;
+    onCreateShortDramaPipeline?: () => void;
+    onCreateEcommercePipeline?: () => void;
     shortcutRequestNonce: number;
 }) {
     const rootRef = useRef<HTMLDivElement>(null);
@@ -290,7 +294,26 @@ export function CanvasToolbar({
     ];
 
     // 中央空白起点与主工具栏共用同一份命令解析，避免素材类型和插件节点逐渐分叉。
-    const createCommands = useCanvasCreateCommands(ctx, runAddAction);
+    const baseCreateCommands = useCanvasCreateCommands(ctx, runAddAction);
+    const workflowTemplateCommands: CanvasCreateCommand[] = [
+        ...(onCreateShortDramaPipeline ? [{
+            id: "template-short-drama",
+            label: "短剧画布",
+            icon: <Clapperboard />,
+            badge: "模板",
+            section: "workflow" as const,
+            onClick: () => runAddAction(onCreateShortDramaPipeline),
+        }] : []),
+        ...(onCreateEcommercePipeline ? [{
+            id: "template-ecommerce",
+            label: "电商画布",
+            icon: <ShoppingBag />,
+            badge: "模板",
+            section: "workflow" as const,
+            onClick: () => runAddAction(onCreateEcommercePipeline),
+        }] : []),
+    ];
+    const createCommands = [...workflowTemplateCommands, ...baseCreateCommands];
 
     return (
         <div ref={rootRef} data-onboarding="canvas-tools" data-canvas-no-zoom className={`canvas-main-toolbar pointer-events-none absolute inset-x-[var(--canvas-inset-x)] bottom-[var(--canvas-inset-y)] flex justify-center${libtvChrome ? " canvas-libtv-compat-toolbar" : ""}`} style={{ zIndex }} onPointerDownCapture={bringToFront} onFocusCapture={bringToFront}>

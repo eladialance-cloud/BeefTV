@@ -1,16 +1,18 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser, type Page } from "playwright";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
 beforeAll(async () => {
+    const runtimePath = import.meta.dir + "/fixtures/timeline-ui-runtime.ts";
     const build = await Bun.build({
         entrypoints: [import.meta.dir + "/fixtures/timeline-ui-harness.tsx"], target: "browser",
         define: { "import.meta.env": "{}", "process.env.NODE_ENV": '"production"' },
         plugins: [{ name: "encoder-task-failure-boundaries", setup(build) {
-            build.onResolve({ filter: /^(?:@\/lib\/timeline\/timeline-export|@\/services\/api\/(?:task-center|timeline-tasks)|file-saver)$/ }, () => ({ path: import.meta.dir + "/fixtures/timeline-ui-runtime.ts" }));
+            build.onResolve({ filter: /^(?:@\/lib\/timeline\/timeline-export|@\/services\/api\/(?:task-center|timeline-tasks)|file-saver)$/ }, () => ({ path: runtimePath }));
+            build.onLoad({ filter: /(?:lib[\\/]timeline[\\/]timeline-export|services[\\/]api[\\/](?:task-center|timeline-tasks))\.ts$/ }, () => ({ contents: readFileSync(runtimePath, "utf8"), loader: "ts" }));
             // Resolve remaining source aliases explicitly on the CI-pinned Bun 1.3.9.
             build.onResolve({ filter: /^@\// }, (args) => ({ path: Bun.resolveSync(resolve(import.meta.dir, "../src", args.path.slice(2)), import.meta.dir) }));
         } }],

@@ -5,6 +5,8 @@ import { nanoid } from "nanoid";
 import { captureUserScope, userScopeMatches } from "@/lib/user-scope-guard";
 
 import { promoteLegacyBatchTableSize } from "@/lib/canvas/canvas-batch-table";
+import { cleanupManjuInternalConnections } from "@/lib/canvas/canvas-manju-asset-table";
+import { normalizeManjuCanvasLayout, removeObsoleteManjuReferenceNodes, repairManjuAssetNames, repairManjuAssetTablePrompts, repairRecoveredManagedTableLinks } from "@/lib/canvas/canvas-manju";
 import { persistCanvasDocument } from "@/services/local-workspace-repository";
 import { cancelGenerationTask, type GenerationTask } from "@/services/api/task-center";
 import { canvasTaskConfirmation } from "./canvas-task-confirmation";
@@ -15,15 +17,7 @@ import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData, type Position } from "@/types/canvas";
 
-import {
-    createImageNodeFromTextSource,
-    createInsertingHistoryGate,
-    rebaseInsertedCanvasNode,
-    reconcileImageBatchRootNodes,
-    runImageBatchChildRetry,
-    runOwnedCanvasHistoryInsert,
-    selectRetryableImageBatchChildren,
-} from "./canvas-generation-orchestration";
+import { createImageNodeFromTextSource, createInsertingHistoryGate, rebaseInsertedCanvasNode, reconcileImageBatchRootNodes, runImageBatchChildRetry, runOwnedCanvasHistoryInsert, selectRetryableImageBatchChildren } from "./canvas-generation-orchestration";
 import { readOwnedCanvasNodes, useCanvasOwnerLifetime } from "./canvas-owner-epoch";
 import { useCanvasBatchTable } from "./use-canvas-batch-table";
 import { useCanvasGeneration } from "./use-canvas-generation";
@@ -138,6 +132,9 @@ export function useCanvasGenerationOrchestration({
     const {
         addReferenceColumn: addBatchReferenceColumn,
         addRow: addBatchRow,
+        addManjuRow,
+        adoptManjuAssetInput,
+        deleteManjuAssetResult,
         fillRowsFromConnections,
         generateRows: generateBatchRows,
         moveReferenceCell: moveBatchReferenceCell,
@@ -159,18 +156,36 @@ export function useCanvasGenerationOrchestration({
     useEffect(() => {
         if (!projectLoaded) return;
         setNodes((current) => {
-            let changed = false;
-            const next = current.map((node) => {
-                const promoted = promoteLegacyBatchTableSize(node);
-                if (promoted !== node) changed = true;
-                return promoted;
+            const recoveredLinksRepaired = repairRecoveredManagedTableLinks(current);
+            const referencesCleaned = removeObsoleteManjuReferenceNodes(recoveredLinksRepaired);
+            const promptRepaired = repairManjuAssetTablePrompts(referencesCleaned);
+            const namesRepaired = repairManjuAssetNames(promptRepaired);
+            const normalized = normalizeManjuCanvasLayout(namesRepaired);
+            let changed = recoveredLinksRepaired !== current || referencesCleaned !== recoveredLinksRepaired || promptRepaired !== referencesCleaned || namesRepaired !== promptRepaired || normalized !== namesRepaired;
+            const next = normalized.map((node) => {
+                let nextNode = promoteLegacyBatchTableSize(node);
+                if (nextNode.metadata?.manjuSharedStyleNode && nextNode.metadata.locked) {
+                    nextNode = { ...nextNode, metadata: { ...nextNode.metadata, locked: false } };
+                }
+                if (nextNode !== node) changed = true;
+                return nextNode;
             });
             return changed ? next : current;
         });
-        nodesRef.current.filter((node) => node.type === CanvasNodeType.BatchTable).forEach((node) => {
-            syncRowsFromConnections(node.id, true);
-        });
+        nodesRef.current
+            .filter((node) => node.type === CanvasNodeType.BatchTable)
+            .forEach((node) => {
+                syncRowsFromConnections(node.id, true);
+            });
     }, [connections, nodesRef, projectLoaded, setNodes, syncRowsFromConnections]);
+
+    useEffect(() => {
+        if (!projectLoaded) return;
+        setConnections((current) => {
+            const cleaned = cleanupManjuInternalConnections(nodes, current);
+            return cleaned === current ? current : cleaned;
+        });
+    }, [nodes, projectLoaded, setConnections]);
 
     const {
         addScriptRow,
@@ -259,13 +274,14 @@ export function useCanvasGenerationOrchestration({
                     center: getCanvasCenter(),
                     nodes: nodesRef.current,
                     assets: useAssetStore.getState().assets,
-                    readLiveNodes: () => readOwnedCanvasNodes({
-                        owner,
-                        liveCanvasId: projectIdRef.current,
-                        liveLifetime: lifetime.current(),
-                        pageNodes: nodesRef.current,
-                        storedNodes: useCanvasStore.getState().openProject(owner.canvasId)?.nodes,
-                    }),
+                    readLiveNodes: () =>
+                        readOwnedCanvasNodes({
+                            owner,
+                            liveCanvasId: projectIdRef.current,
+                            liveLifetime: lifetime.current(),
+                            pageNodes: nodesRef.current,
+                            storedNodes: useCanvasStore.getState().openProject(owner.canvasId)?.nodes,
+                        }),
                     persist: (persisted) => persistCanvasDocument(owner.canvasId, { nodes: persisted }),
                     ensureAsset: (item) => ensureCanvasNodeAsset({ canvasId: owner.canvasId, domainProjectId, node: item, source: "canvas-generation", taskId: task.id }),
                     onCommit: (node) => {
@@ -356,6 +372,9 @@ export function useCanvasGenerationOrchestration({
         stopRemainingBatchItems,
         addBatchReferenceColumn,
         addBatchRow,
+        addManjuRow,
+        adoptManjuAssetInput,
+        deleteManjuAssetResult,
         fillRowsFromConnections,
         generateBatchRows,
         moveBatchReferenceCell,

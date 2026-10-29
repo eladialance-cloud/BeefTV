@@ -135,7 +135,7 @@ describe("canvas workspace project grouping", () => {
     test("duplicates the live editor snapshot when the selected canvas is currently open", () => {
         const editor = readFileSync(new URL("../src/pages/canvas/project.tsx", import.meta.url), "utf8");
 
-        expect(editor).toContain("const sourceSnapshot = canvasId === projectId");
+        expect(editor).toMatch(/const sourceSnapshot\s*=\s*canvasId === projectId/);
         expect(editor).toContain("nodes: nodesRef.current");
         expect(editor).toContain("connections: connectionsRef.current");
         expect(editor).toContain("chatSessions: chatSessionsRef.current");

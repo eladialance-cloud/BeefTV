@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { chromium, type Browser, type Page } from "playwright";
 
 let browser: Browser;
@@ -32,7 +33,8 @@ beforeAll(async () => {
         if (path.startsWith("/api/")) return Response.json({ code: 0, data: [] });
         return new Response('<div id="root"></div><script type="module" src="/harness.js"></script>', { headers: { "Content-Type": "text/html" } });
     } });
-    browser = await chromium.launch({ headless: true });
+    const executablePath = [process.env.CHROME_PATH, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"].find((path): path is string => Boolean(path && existsSync(path)));
+    browser = await chromium.launch({ executablePath, headless: true });
 }, 30_000);
 
 beforeEach(async () => { await page?.close(); stage = "正在取回结果"; writes = []; holdCancellation = false; releaseCancellation = undefined; page = await browser.newPage(); });

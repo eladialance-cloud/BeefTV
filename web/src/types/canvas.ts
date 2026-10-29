@@ -64,7 +64,27 @@ export type CanvasGenerationBatchMode = "storyboard_image" | "storyboard_video" 
 export type CanvasGenerationBatchStatus = "queued" | "running" | "partial_failed" | "completed" | "cancelled";
 export type CanvasGenerationBatchItemStatus = "waiting" | "submitting" | "queued" | "running" | "succeeded" | "failed" | "cancelled";
 export type CanvasImageGenerationType = "generation" | "edit";
-export type CanvasWorkflowKind = "free" | "script" | "story_input" | "character" | "scene" | "storyboard" | "shot" | "final" | "styleboard" | "reference_set" | "reference_video" | "action_board" | "video_retake";
+export type CanvasWorkflowKind =
+    | "free"
+    | "script"
+    | "story_input"
+    | "character"
+    | "scene"
+    | "storyboard"
+    | "shot"
+    | "final"
+    | "styleboard"
+    | "reference_set"
+    | "reference_video"
+    | "action_board"
+    | "video_retake"
+    | "ecommerce_product"
+    | "ecommerce_main"
+    | "ecommerce_detail"
+    | "ecommerce_scene"
+    | "ecommerce_social"
+    | "ecommerce_batch"
+    | "ecommerce_video";
 export type CanvasVideoEditOperation = "text_to_video" | "image_to_video" | "reference_to_video" | "extend" | "inpaint" | "replace_element" | "camera_motion" | "style_transfer" | "audio_to_video" | "compare_versions" | "concat";
 export type CanvasSkillCategory = "writing" | "storyboard" | "image" | "video" | "utility";
 export type CanvasSkillOutputMode = "text" | "json" | "image_prompt" | "workflow";
@@ -167,9 +187,61 @@ export type CanvasGenerationBatch = {
 };
 
 export type CanvasBatchOperation = "try_on" | "creative";
-export type CanvasBatchRow = { id: string; enabled: boolean; inputNodeIds: string[]; prompt: string; outputNodeId?: string };
+export type CanvasManjuAssetKind = "character" | "scene" | "prop";
+export type CanvasManjuAssetRowMeta = {
+    taskId: string;
+    code: string;
+    kind: CanvasManjuAssetKind;
+    name: string;
+};
+export type CanvasManjuAssetTableMeta = {
+    version: 1;
+    projectId: string;
+    assetRunId?: string;
+    sourceStage: "p2_assets";
+    promptRepairVersion?: number;
+};
+export type CanvasManjuStoryboardRowMeta = {
+    taskId: string;
+    code: string;
+    title: string;
+    group: "storyboard" | "plot-grid";
+    referenceCodes?: string[];
+};
+export type CanvasManjuStoryboardTableMeta = {
+    version: 1;
+    projectId: string;
+    productionRunId?: string;
+    sourceStage: "p3_images";
+};
+export type CanvasGenerationSettings = {
+    model?: string;
+    size?: string;
+    quality?: string;
+    count?: number;
+};
+export type CanvasBatchRow = {
+    id: string;
+    enabled: boolean;
+    inputNodeIds: string[];
+    prompt: string;
+    outputNodeId?: string;
+    manjuAsset?: CanvasManjuAssetRowMeta;
+    manjuStoryboard?: CanvasManjuStoryboardRowMeta;
+    manjuGeneration?: CanvasGenerationSettings;
+};
 export type CanvasBatchReferenceColumn = { id: string; label: string };
-export type CanvasBatchTableData = { operation: CanvasBatchOperation; concurrency: number; globalPrompt?: string; referenceColumns?: CanvasBatchReferenceColumn[]; rows: CanvasBatchRow[] };
+export type CanvasBatchTableData = {
+    operation: CanvasBatchOperation;
+    concurrency: number;
+    globalPrompt?: string;
+    referenceColumns?: CanvasBatchReferenceColumn[];
+    rows: CanvasBatchRow[];
+    manjuAssetTable?: CanvasManjuAssetTableMeta;
+    manjuStoryboardTable?: CanvasManjuStoryboardTableMeta;
+    manjuGenerationDefaults?: CanvasGenerationSettings;
+    manjuCategoryGeneration?: Partial<Record<CanvasManjuAssetKind, CanvasGenerationSettings>>;
+};
 
 export type CanvasSkillSnapshot = {
     id: string;
@@ -211,6 +283,15 @@ export type CanvasNodeMetadata = {
               nodeId: string;
               batchId: string;
               sourceType?: string;
+          }
+        | {
+              provider: "manju";
+              projectId: string;
+              stage: "p2_assets" | "p3_images" | "p4_videos";
+              taskId?: string;
+              taskCode?: string;
+              sourceArtifact?: string;
+              packageHash?: string;
           };
     content?: string;
     previewContent?: string;
@@ -294,6 +375,24 @@ export type CanvasNodeMetadata = {
     workflowKind?: CanvasWorkflowKind;
     workflowTitle?: string;
     workflowDescription?: string;
+    /** Stable task identity from a Manju canvas package. */
+    manjuProjectId?: string;
+    manjuStage?: "p2_assets" | "p3_images" | "p4_videos";
+    manjuRunId?: string;
+    manjuPackageHash?: string;
+    manjuTaskId?: string;
+    manjuTaskCode?: string;
+    manjuAssetCode?: string;
+    manjuAssetTableId?: string;
+    manjuAssetRowId?: string;
+    manjuAssetActiveKind?: CanvasManjuAssetKind;
+    manjuLayoutVersion?: number;
+    manjuSourceArtifact?: string;
+    manjuReferenceCodes?: string[];
+    manjuGlobalStylePrompt?: string;
+    manjuSharedStyleNode?: boolean;
+    manjuSharedStyleReference?: boolean;
+    manjuStyleReferenceAnalysis?: string;
     /** 本地视觉回归夹具标记，不参与生成或远程同步语义。 */
     fixture?: string;
     stylePresetId?: string;

@@ -42,7 +42,7 @@ const { useAssetStore } = await import("@/stores/use-asset-store");
 const { useCanvasStore } = await import("@/stores/canvas/use-canvas-store");
 
 const backendDir = resolve(import.meta.dir, "../../backend");
-const serverBin = join(tmpdir(), `beeftv-archive-restore-server-${process.pid}`);
+const serverBin = join(tmpdir(), `beeftv-archive-restore-server-${process.pid}${process.platform === "win32" ? ".exe" : ""}`);
 const videoBytes = new Uint8Array([9, 8, 7, 6]);
 const audioBytes = new Uint8Array([5, 4, 3, 2, 1]);
 const drawingPreviewBytes = new Uint8Array([11, 12, 13, 14, 15]);
@@ -126,13 +126,63 @@ async function startServer(dataDir: string): Promise<RunningServer> {
 
 async function stopServer(server: RunningServer | undefined) {
     if (!server) return;
-    server.process.kill();
+    if (process.platform === "win32") {
+        // Bun 的 kill() 在 Windows 上不能可靠结束这个 Go 子进程，残留进程会锁住
+        // SQLite 目录与可执行镜像，所以这里直接结束进程树。
+        Bun.spawnSync(["taskkill", "/PID", String(server.process.pid), "/T", "/F"], { stdout: "pipe", stderr: "pipe" });
+    } else {
+        server.process.kill();
+    }
     await Promise.race([server.process.exited, Bun.sleep(5_000)]);
 }
 
-function connect(port: number) {
+// Windows 在进程退出后仍会短暂占用 SQLite 文件与可执行镜像，删除要留重试窗口。
+async function removePath(target: string, attempts = 40) {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+        try {
+            rmSync(target, { recursive: true, force: true });
+            return;
+        } catch (error) {
+            if (attempt === attempts - 1) throw error;
+            await Bun.sleep(250);
+        }
+    }
+}
+
+// 多用户改造后 server 形态要求登录会话，画布接口不再匿名可用。
+const testAccount = {
+    username: `canvas-restore-${process.pid}`,
+    displayName: "归档还原测试",
+    password: "canvas-restore-test-password",
+};
+
+function sessionCookie(response: Response) {
+    const raw = typeof response.headers.getSetCookie === "function" ? response.headers.getSetCookie() : [];
+    const values = (raw.length > 0 ? raw : [response.headers.get("set-cookie") ?? ""])
+        .map((value) => value.split(";")[0]!.trim())
+        .filter((value) => value.startsWith("beeftv_session="));
+    if (values.length === 0) throw new Error("注册未返回 beeftv_session 会话 cookie");
+    return values.join("; ");
+}
+
+async function authenticate(port: number) {
+    const post = (path: string) => fetch(`http://127.0.0.1:${port}/api${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(testAccount),
+    });
+    // 同一个数据目录会跨后端重启复用，第二次只能登录不能重注册。
+    const login = await post("/login");
+    if (login.ok) return sessionCookie(login);
+    const register = await post("/register");
+    if (!register.ok) throw new Error(`注册失败：${register.status} ${await register.text()}`);
+    return sessionCookie(register);
+}
+
+async function connect(port: number) {
     configureApiRuntime(`http://127.0.0.1:${port}/api`, "");
     apiClient.defaults.timeout = 20_000;
+    apiClient.defaults.headers.common.Cookie = await authenticate(port);
 }
 
 async function listProjects() {
@@ -260,12 +310,13 @@ beforeEach(() => {
 });
 afterEach(() => {
     configureApiRuntime("/api", "");
+    delete apiClient.defaults.headers.common.Cookie;
     resetStores();
     globalThis.window = originalWindow;
 });
 
-afterAll(() => {
-    rmSync(serverBin, { force: true });
+afterAll(async () => {
+    await removePath(serverBin);
 });
 
 test("valid archive restores into isolated SQLite, survives backend restart, and keeps media bytes plus timeline", async () => {
@@ -273,7 +324,7 @@ test("valid archive restores into isolated SQLite, survives backend restart, and
     let server: RunningServer | undefined;
     try {
         server = await startServer(dataDir);
-        connect(server.port);
+        await connect(server.port);
         resetStores();
         const zip = await fixtureZip();
         const result = await restoreCanvasArchive(zip);
@@ -346,7 +397,7 @@ test("valid archive restores into isolated SQLite, survives backend restart, and
         expect(retried.nodes[0].metadata?.storageKey).toStartWith("resource:");
     } finally {
         await stopServer(server);
-        rmSync(dataDir, { recursive: true, force: true });
+        await removePath(dataDir);
     }
 }, 180_000);
 
@@ -355,7 +406,7 @@ test("canonical readback still rejects lost nodes, connections, or title and rol
     let server: RunningServer | undefined;
     try {
         server = await startServer(dataDir);
-        connect(server.port);
+        await connect(server.port);
         resetStores();
         const zip = await fixtureZip();
         for (const patch of [{ nodes: [] }, { connections: [] }, { title: "" }]) {
@@ -373,7 +424,7 @@ test("canonical readback still rejects lost nodes, connections, or title and rol
         }
     } finally {
         await stopServer(server);
-        rmSync(dataDir, { recursive: true, force: true });
+        await removePath(dataDir);
     }
 }, 180_000);
 
@@ -382,7 +433,7 @@ test("missing archive entry and persist failure do not create a saved SQLite can
     let server: RunningServer | undefined;
     try {
         server = await startServer(dataDir);
-        connect(server.port);
+        await connect(server.port);
         resetStores();
         const missing = await createZip([{
             name: "projects.json",
@@ -420,6 +471,6 @@ test("missing archive entry and persist failure do not create a saved SQLite can
         expect(assets.assets).toEqual([]);
     } finally {
         await stopServer(server);
-        rmSync(dataDir, { recursive: true, force: true });
+        await removePath(dataDir);
     }
 }, 180_000);

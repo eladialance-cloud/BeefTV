@@ -37,6 +37,7 @@ type Service struct {
 	repo                     *repository.Repository
 	dataDir                  string
 	mode                     serviceMode
+	hostedProfile            bool
 	cancelMu                 sync.Mutex
 	storageMu                sync.Mutex
 	workerRuntimeMu          sync.Mutex
@@ -141,6 +142,19 @@ func NewLocalWithBlobResolver(repo *repository.Repository, dataDir string, resol
 // method instead of inferring the runtime mode from a storage detail.
 func (s *Service) IsLocalMode() bool {
 	return s != nil && s.mode == serviceModeLocal
+}
+
+// SetHostedProfile marks the browser-hosted server. The hosted shell reuses
+// the local kernel for project/media execution, but model policy comes from
+// the admin-managed hosted database.
+func (s *Service) SetHostedProfile(hosted bool) {
+	if s != nil {
+		s.hostedProfile = hosted
+	}
+}
+
+func (s *Service) IsHostedProfile() bool {
+	return s != nil && s.hostedProfile
 }
 
 // serviceOptions makes the runtime profile explicit at the construction

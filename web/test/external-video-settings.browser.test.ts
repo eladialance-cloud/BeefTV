@@ -25,7 +25,7 @@ beforeAll(async () => {
     const providers = [
         { id: "newapi", name: "OpenAI Videos / Sora", create: "POST /v1/videos", poll: "GET /v1/videos/{task_id}", contentType: "multipart/form-data" },
         { id: "video-generations-json", name: "视频生成 JSON · ratio / duration", create: "POST /v1/video/generations", poll: "GET /v1/video/generations/{task_id}", contentType: "application/json" },
-    ].map((provider) => ({ ...provider, version: "1.0.0", vendor: "BeefTV", categories: ["video"], scopes: ["user.custom-channel"], enabled: true }));
+    ].map((provider) => ({ ...provider, version: "1.0.0", vendor: "VisiDeep AI", categories: ["video"], scopes: ["user.custom-channel"], enabled: true }));
     server = Bun.serve({ port: 0, fetch(request) {
         const url = new URL(request.url);
         if (url.pathname === "/harness.js") return new Response(js, { headers: { "Content-Type": "application/javascript" } });
@@ -37,7 +37,7 @@ beforeAll(async () => {
     } });
     const executablePath = [process.env.CHROME_PATH, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"].find((path): path is string => Boolean(path && existsSync(path)));
     browser = await chromium.launch({ executablePath, headless: true });
-}, 60000);
+}, 180000);
 afterAll(async () => { server?.stop(true); await browser?.close(); }, 30000);
 
 test("an unconfigured model displays, tests and saves its explicitly selected channel protocol", async () => {

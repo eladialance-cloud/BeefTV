@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { Dropdown } from "antd";
-import { AlignLeft, ArrowRight, AudioLines, Check, ChevronDown, ChevronUp, CircleUserRound, Clapperboard, FolderKanban, ImagePlus, Images, MoreHorizontal, MousePointer2, Palette, Pencil, Plus, PlusCircle, ScanLine, Sparkles, Type, Upload, Video, X } from "lucide-react";
+import { AlignLeft, ArrowRight, AudioLines, Check, ChevronDown, ChevronUp, CircleUserRound, Clapperboard, FolderKanban, ImagePlus, Images, MoreHorizontal, MousePointer2, Palette, Pencil, Plus, PlusCircle, ScanLine, ShoppingBag, Sparkles, Type, Upload, Video, X } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import type { CanvasCreateCommand } from "@/components/canvas/canvas-create-menu";
@@ -24,8 +24,9 @@ export function CanvasLinkedProjectEmptyState({ projectName, hasChapter, onAddFi
     );
 }
 
-export function CanvasShortDramaEmptyState({ onCreatePipeline, onStartFreeform, onUpload, onAddText, onAddScript }: {
+export function CanvasShortDramaEmptyState({ onCreatePipeline, onCreateEcommercePipeline, onStartFreeform, onUpload, onAddText, onAddScript }: {
     onCreatePipeline: () => void;
+    onCreateEcommercePipeline?: () => void;
     onStartFreeform: () => void;
     onUpload: () => void;
     onAddText: () => void;
@@ -40,7 +41,7 @@ export function CanvasShortDramaEmptyState({ onCreatePipeline, onStartFreeform, 
                     <h2 className="text-lg font-semibold">从哪里开始？</h2>
                     <p className="mt-1 text-sm" style={{ color: theme.node.muted }}>选择一条主路径，之后仍可随时切换。</p>
                 </div>
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className={`grid gap-3 ${onCreateEcommercePipeline ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
                     <PathCard
                         icon={<Clapperboard className="size-5" />}
                         title="自己创作"
@@ -51,6 +52,18 @@ export function CanvasShortDramaEmptyState({ onCreatePipeline, onStartFreeform, 
                         focusStyle={focusStyle}
                         onClick={onCreatePipeline}
                     />
+                    {onCreateEcommercePipeline ? (
+                        <PathCard
+                            icon={<ShoppingBag className="size-5" />}
+                            title="电商出图"
+                            description="商品图、场景图、批量表和小视频放在同一条链上。"
+                            action="创建电商流水线"
+                            accent="#6ecf9b"
+                            theme={theme}
+                            focusStyle={focusStyle}
+                            onClick={onCreateEcommercePipeline}
+                        />
+                    ) : null}
                     <PathCard
                         icon={<Plus className="size-5" />}
                         title="自由空白画布"
@@ -83,7 +96,7 @@ export function CanvasShortDramaEmptyState({ onCreatePipeline, onStartFreeform, 
     );
 }
 
-export function CanvasFreeformEmptyState({ commands, onOpenAssistant }: { commands: CanvasCreateCommand[]; onOpenAssistant?: () => void }) {
+export function CanvasFreeformEmptyState({ commands, onOpenAssistant, onCreateShortDramaPipeline, onCreateEcommercePipeline }: { commands: CanvasCreateCommand[]; onOpenAssistant?: () => void; onCreateShortDramaPipeline?: () => void; onCreateEcommercePipeline?: () => void }) {
     const theme = canvasThemes[useActiveTheme()];
     const [connectionsHintOpen, setConnectionsHintOpen] = useState(true);
     useEffect(() => {
@@ -117,6 +130,30 @@ export function CanvasFreeformEmptyState({ commands, onOpenAssistant }: { comman
                     </span>
                     <span>双击画布 <span className="mx-1 opacity-45">·</span> 自由生成节点</span>
                 </div>
+                {onCreateShortDramaPipeline || onCreateEcommercePipeline ? (
+                    <div className="pointer-events-auto mt-6 grid w-full max-w-[560px] grid-cols-1 gap-2 sm:grid-cols-2">
+                        {onCreateShortDramaPipeline ? (
+                            <WorkflowTemplateButton
+                                icon={<Clapperboard className="size-4" />}
+                                title="短剧画布"
+                                description="画风、故事、分镜和视频"
+                                accent="#ff7a7d"
+                                theme={theme}
+                                onClick={onCreateShortDramaPipeline}
+                            />
+                        ) : null}
+                        {onCreateEcommercePipeline ? (
+                            <WorkflowTemplateButton
+                                icon={<ShoppingBag className="size-4" />}
+                                title="电商画布"
+                                description="商品图、场景图、批量表和视频"
+                                accent="#6ecf9b"
+                                theme={theme}
+                                onClick={onCreateEcommercePipeline}
+                            />
+                        ) : null}
+                    </div>
+                ) : null}
                 {onOpenAssistant ? (
                     <button
                         type="button"
@@ -198,6 +235,32 @@ function PathCard({ icon, title, description, action, accent, theme, focusStyle,
                 <span>{action}</span><ArrowRight className="size-4" />
             </button>
         </section>
+    );
+}
+
+function WorkflowTemplateButton({ icon, title, description, accent, theme, onClick }: {
+    icon: ReactNode;
+    title: string;
+    description: string;
+    accent: string;
+    theme: (typeof canvasThemes)[keyof typeof canvasThemes];
+    onClick: () => void;
+}) {
+    return (
+        <button
+            type="button"
+            className="pointer-events-auto flex min-h-14 min-w-0 items-center gap-3 rounded-lg border px-3 py-2 text-left shadow-sm outline-none transition hover:-translate-y-0.5 hover:brightness-105 focus-visible:ring-2 motion-reduce:hover:translate-y-0"
+            style={{ background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text, "--tw-ring-color": accent } as CSSProperties}
+            onDoubleClick={(event) => event.stopPropagation()}
+            onClick={onClick}
+        >
+            <span className="grid size-9 shrink-0 place-items-center rounded-md" style={{ background: `${accent}18`, color: accent }}>{icon}</span>
+            <span className="min-w-0 flex-1">
+                <span className="block text-xs font-semibold">{title}</span>
+                <span className="mt-0.5 block truncate text-[var(--fs-tiny)]" style={{ color: theme.node.muted }}>{description}</span>
+            </span>
+            <ArrowRight className="size-3.5 shrink-0 opacity-60" />
+        </button>
     );
 }
 

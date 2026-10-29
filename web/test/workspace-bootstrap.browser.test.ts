@@ -11,14 +11,18 @@ beforeAll(async () => {
         "@/lib/user-session": 'import { useUserStore } from "@/stores/use-user-store"; export const localWorkspaceConfig = value => value; export async function applyUserSession() { useUserStore.getState().setHydrated(true); window.sessionReady = true; }',
         "@/services/api/workspace": 'export async function getWorkspaceBootstrap() { return {}; }',
         "@/services/model-config-repository": 'export const commitModelConfig = async () => { window.writes = (window.writes || 0) + 1; }; export const flushModelConfig = async () => {}; export const hydrateModelConfig = () => new Promise((resolve, reject) => { window.finishRestore = () => resolve({config:{channels:[{id:"fixture",apiKey:"restored"}]},health:"ready"}); window.failRestore = () => reject(new Error("read failed")); });',
-        "@/lib/app-routing": 'export const appPathname = () => "/";',
+        "@/lib/app-routing": 'export const appPathname = () => "/"; export const appSearch = () => "";',
         "@/lib/workspace-route-modules": 'export const preloadWorkspaceRoute = () => {};',
         "@/components/ui/aceternity/full-screen-loader": 'export const FullScreenLoader = ({label}) => <div role="status">{label}</div>;',
         "@/components/layout/workspace-state": 'export const WorkspaceErrorState = ({title,onRetry}) => <div role="alert">{title}<button onClick={onRetry}>重新加载</button></div>;',
     };
     const build = await Bun.build({
         entrypoints: [import.meta.dir + "/fixtures/workspace-bootstrap-harness.tsx"], target: "browser",
-        define: { "process.env.NODE_ENV": '"production"' },
+        define: {
+            "process.env.NODE_ENV": '"production"',
+            "import.meta.env": '{"VITE_CANVAS_LOCAL_MODE":"true"}',
+            "import.meta.env.VITE_CANVAS_LOCAL_MODE": '"true"',
+        },
         plugins: [{ name: "bootstrap-dependencies", setup(builder) {
             builder.onResolve({ filter: /^@\// }, args => args.path in stubs
                 ? { path: args.path, namespace: "bootstrap-test" }
@@ -37,7 +41,9 @@ beforeAll(async () => {
 afterAll(async () => { await browser?.close(); server?.stop(true); });
 
 test("session-ready cannot expose generation until canonical credentials are restored", async () => {
-    const page = await browser.newPage(); await page.goto(server.url.toString());
+    const page = await browser.newPage();
+    page.on("pageerror", (error) => console.error("workspace-bootstrap-pageerror", error));
+    await page.goto(server.url.toString());
     await page.waitForFunction(() => (window as any).sessionReady && (window as any).finishRestore);
     expect(await page.getByRole("button", { name: "开始创作" }).count()).toBe(0);
     expect(await page.getByRole("status").textContent()).toContain("正在准备");

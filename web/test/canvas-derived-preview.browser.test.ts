@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
 import { chromium, type Browser, type Page } from "playwright";
 
 let browser: Browser, page: Page, server: ReturnType<typeof Bun.serve>, dir: string;
@@ -8,7 +9,10 @@ let writes = 0, videoReads = 0;
 let retryReads = 0;
 let releaseSlow: (() => void) | undefined;
 let slow: Promise<void>;
+const hasFfmpeg = spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).status === 0;
+const testFfmpeg = test.skipIf(!hasFfmpeg);
 beforeAll(async () => {
+    if (!hasFfmpeg) return;
     dir = mkdtempSync(`${tmpdir()}/beeftv-derived-preview-`);
     for (const color of ["red", "blue"]) {
         const result = Bun.spawnSync(["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", `color=c=${color}:s=320x180:d=1`, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", `${dir}/${color}.mp4`]);
@@ -33,9 +37,9 @@ beforeAll(async () => {
     browser = await chromium.launch({ executablePath, headless: true });
 }, 60000);
 beforeEach(async () => { await page?.close(); writes = videoReads = retryReads = 0; slow = new Promise((resolve) => { releaseSlow = resolve; }); page = await browser.newPage(); await page.goto(server.url.toString()); await page.waitForFunction(() => Boolean((window as any).previewHarness)); });
-afterAll(async () => { releaseSlow?.(); await browser?.close(); server?.stop(true); rmSync(dir, { recursive: true, force: true }); });
+afterAll(async () => { releaseSlow?.(); await browser?.close(); server?.stop(true); if (dir) rmSync(dir, { recursive: true, force: true }); });
 async function enter() { await page.evaluate(() => window.scrollTo(0, 3000)); }
-test("failed first decode retries for the next consumer; old release cannot erase success", async () => {
+testFfmpeg("failed first decode retries for the next consumer; old release cannot erase success", async () => {
     expect(await page.evaluate(() => (window as any).previewHarness.retry())).toEqual({ failed: null, succeeded: true, sameAfterOldRelease: true });
     expect(retryReads).toBe(2); expect(writes).toBe(0);
     const state = await page.evaluate(() => (window as any).previewHarness.state());
@@ -43,7 +47,7 @@ test("failed first decode retries for the next consumer; old release cannot eras
 });
 async function ready() { await page.waitForFunction(() => { const image = document.querySelector("img"); return image?.src.startsWith("blob:") && image.complete && image.naturalWidth === 320; }); }
 async function color() { return page.evaluate(() => { const canvas = document.createElement("canvas"); canvas.width = canvas.height = 1; const ctx = canvas.getContext("2d")!; ctx.drawImage(document.querySelector("img")!, 0, 0, 1, 1); return Array.from(ctx.getImageData(0, 0, 1, 1).data); }); }
-test("real near-viewport MP4 poster makes no node or backend writes and releases on unmount", async () => {
+testFfmpeg("real near-viewport MP4 poster makes no node or backend writes and releases on unmount", async () => {
     await page.waitForTimeout(350); expect(videoReads).toBe(0);
     await enter(); await ready();
     expect((await color())[0]).toBeGreaterThan(200);
@@ -52,7 +56,7 @@ test("real near-viewport MP4 poster makes no node or backend writes and releases
     await page.evaluate(() => (window as any).previewHarness.unmount());
     await page.waitForFunction(() => (window as any).previewHarness.state().revoked.length === 1);
 });
-test("changed source revokes old poster and decodes new bytes", async () => {
+testFfmpeg("changed source revokes old poster and decodes new bytes", async () => {
     await enter(); await ready(); const old = await page.locator("img").getAttribute("src");
     await page.evaluate(() => (window as any).previewHarness.source("/blue.mp4")); await ready();
     await page.waitForFunction((old) => document.querySelector("img")?.getAttribute("src") !== old, old);
@@ -60,7 +64,7 @@ test("changed source revokes old poster and decodes new bytes", async () => {
     expect(await page.evaluate(() => (window as any).previewHarness.state().revoked.includes((window as any).previewHarness.state().created[0]))).toBe(true);
     expect(writes).toBe(0);
 });
-test("A→B→A aborts late old-source completion without displaying it", async () => {
+testFfmpeg("A→B→A aborts late old-source completion without displaying it", async () => {
     await page.evaluate(() => (window as any).previewHarness.source("/slow.mp4")); await enter();
     for (let i = 0; i < 40 && !videoReads; i += 1) await page.waitForTimeout(50);
     expect(videoReads).toBeGreaterThan(0);
@@ -69,16 +73,16 @@ test("A→B→A aborts late old-source completion without displaying it", async 
     expect((await color())[2]).toBeGreaterThan(200);
     expect(state.created).toHaveLength(1); expect(state.writes).toBe(0); expect(writes).toBe(0);
 });
-test("shared leases retain URL until the final consumer releases", async () => {
+testFfmpeg("shared leases retain URL until the final consumer releases", async () => {
     expect(await page.evaluate(() => (window as any).previewHarness.shared())).toEqual({ same: true, revokedBeforeLast: false, revokedAfterLast: true });
     expect(writes).toBe(0);
 });
-test("release during object URL creation revokes a rejected late result", async () => {
+testFfmpeg("release during object URL creation revokes a rejected late result", async () => {
     expect(await page.evaluate(() => (window as any).previewHarness.releaseRace())).toBeNull();
     const state = await page.evaluate(() => (window as any).previewHarness.state());
     expect(state.created).toHaveLength(1); expect(state.revoked).toEqual(state.created); expect(writes).toBe(0);
 });
-test("existing durable poster is retained without rehydrating and cache is bounded", async () => {
+testFfmpeg("existing durable poster is retained without rehydrating and cache is bounded", async () => {
     await page.evaluate(() => (window as any).previewHarness.oldPoster()); await enter();
     await page.waitForFunction(() => document.querySelector("img")?.src.endsWith("/poster.svg"));
     expect(videoReads).toBe(0); expect(await page.evaluate(() => (window as any).previewHarness.state().node.metadata.videoPreview.sourceKey)).toBe("/red.mp4");

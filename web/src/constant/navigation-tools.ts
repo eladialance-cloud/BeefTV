@@ -14,6 +14,12 @@ export const navigationTools = [
         section: "创作空间",
     },
     {
+        slug: "manju",
+        label: "漫剧工作室",
+        icon: Clapperboard,
+        section: "创作空间",
+    },
+    {
         slug: "canvas",
         label: "画布",
         icon: PanelsTopLeft,

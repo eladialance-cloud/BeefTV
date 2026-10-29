@@ -17,8 +17,8 @@ let diagnosticInputs: any[];
 beforeAll(async () => {
     const plugin: BunPlugin = { name: "repair-harness", setup(builder) {
         builder.onResolve({ filter: /^@\// }, args => ({ path: Bun.resolveSync("../src/" + args.path.slice(2), import.meta.dir) }));
-        builder.onLoad({ filter: /src\/components\/model-logo\.tsx$/ }, () => ({ contents: "export function ModelLogo() { return null; }", loader: "js" }));
-        builder.onLoad({ filter: /src\/lib\/canvas\/canvas-export\.ts$/ }, () => ({ loader: "js", contents: `export async function exportCanvasProjects(projects, title, options) { window.__repairHarness.downloads.push({projects, title, options}); return "saved"; }` }));
+        builder.onLoad({ filter: /src[\\/]components[\\/]model-logo\.tsx$/ }, () => ({ contents: "export function ModelLogo() { return null; }", loader: "js" }));
+        builder.onLoad({ filter: /src[\\/]lib[\\/]canvas[\\/]canvas-export\.ts$/ }, () => ({ loader: "js", contents: `export async function exportCanvasProjects(projects, title, options) { window.__repairHarness.downloads.push({projects, title, options}); return "saved"; }` }));
         builder.onLoad({ filter: /\.(svg|png|jpe?g|gif|webp|woff2?)$/ }, () => ({ contents: "export default ''", loader: "js" }));
     } };
     const build = await Bun.build({ entrypoints: [import.meta.dir + "/fixtures/canvas-pr108-repair-harness.tsx"], plugins: [plugin], target: "browser",

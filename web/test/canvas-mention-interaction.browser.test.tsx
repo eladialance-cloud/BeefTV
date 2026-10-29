@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import type { BunPlugin } from "bun";
 import { chromium, type Browser, type Page } from "playwright";
 
@@ -98,7 +99,8 @@ beforeAll(async () => {
         },
     });
 
-    browser = await chromium.launch({ headless: true });
+    const executablePath = [process.env.CHROME_PATH, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"].find((path): path is string => Boolean(path && existsSync(path)));
+    browser = await chromium.launch({ executablePath, headless: true });
     page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     page.on("pageerror", (err) => console.error("PAGE ERROR:", err));
     await page.goto(`http://127.0.0.1:${server.port}/`);

@@ -7,7 +7,6 @@ const root = resolve(import.meta.dir, "..");
 describe("local-only source boundary", () => {
     test("hosted UI and API entrypoints are physically absent", () => {
         for (const path of [
-            "src/services/api/auth.ts",
             "src/services/api/wallet.ts",
             "src/services/api/announcements.ts",
             "src/services/user-data-sync.ts",

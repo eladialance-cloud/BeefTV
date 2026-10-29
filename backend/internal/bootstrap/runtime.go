@@ -95,17 +95,21 @@ func Open(_ context.Context, raw Config) (result *Runtime, openErr error) {
 		cleanupDB()
 		return nil, err
 	}
+	// 结构选择跟随形态而不是驱动：server 形态是本地表的超集，按 driver 判断会让
+	// SQLite 上的托管库走本地迁移，既不建 users/user_identities/payment_orders，
+	// 又会在 retire-hosted-schema 里把托管表删掉。desktop 形态仍然只建本地表。
+	hostedSchema := cfg.Profile == ProfileServer || !database.IsSQLite(cfg.DatabaseDriver)
 	if cfg.AutoMigrate {
-		if database.IsSQLite(cfg.DatabaseDriver) {
-			err = database.MigrateLocalSchema(db)
-		} else {
+		if hostedSchema {
 			err = database.MigrateHostedSchema(db)
+		} else {
+			err = database.MigrateLocalSchema(db)
 		}
 	} else {
-		if database.IsSQLite(cfg.DatabaseDriver) {
-			err = database.RequireLocalSchema(db)
-		} else {
+		if hostedSchema {
 			err = database.RequireHostedSchema(db)
+		} else {
+			err = database.RequireLocalSchema(db)
 		}
 	}
 	if err != nil {
@@ -127,6 +131,7 @@ func Open(_ context.Context, raw Config) (result *Runtime, openErr error) {
 	} else {
 		svc = app.NewLocal(repo, cfg.DataDir)
 	}
+	svc.SetHostedProfile(cfg.Profile == ProfileServer)
 	cleanupService := func() {
 		_ = svc.Close()
 		cleanupDB()
@@ -241,7 +246,7 @@ func Open(_ context.Context, raw Config) (result *Runtime, openErr error) {
 	agentops.EnsureAgentCredentials(svc.DataDir())
 	assistantHost := assistantruntime.New(assistantruntime.OptionsFromService(svc))
 	api := router.Group("/api")
-	status := newSystemStatus(db, svc, true)
+	status := newSystemStatus(db, svc, cfg.Profile == ProfileDesktop)
 	registerSystemStatusRoutes(api, status)
 	canvasHandler.RegisterDesktopCanvasAPIWithDependencies(api, svc, canvasHandler.RuntimeDependencies{
 		RequestCoordinator: localKernel,

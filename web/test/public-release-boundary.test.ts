@@ -7,6 +7,7 @@ import { dirname, join, resolve } from "node:path";
 const repoRoot = resolve(import.meta.dir, "../..");
 const exportScript = join(repoRoot, "scripts/public-release-export.sh");
 const auditScript = join(repoRoot, "scripts/public-release-audit.sh");
+const hasPosixReleaseTools = process.platform !== "win32";
 const workspaces: string[] = [];
 
 function temporaryDirectory(prefix: string) {
@@ -27,7 +28,7 @@ afterEach(() => {
     }
 });
 
-describe("public release boundary", () => {
+describe.skipIf(!hasPosixReleaseTools)("public release boundary", () => {
     test("exports source while excluding private state and generated artifacts", () => {
         const source = temporaryDirectory("beeftv-public-source-");
         const destinationParent = temporaryDirectory("beeftv-public-destination-");

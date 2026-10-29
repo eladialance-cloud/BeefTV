@@ -6,6 +6,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { BrandLogoFrame } from "@/components/brand/brand-logo";
 import { WorkspaceSidebarUpdate } from "@/components/layout/workspace-sidebar-update";
 import { WorkspaceSidebarSocialLinks } from "@/components/layout/workspace-sidebar-social-links";
+import { WorkspaceAccountMenu } from "@/components/layout/workspace-account-menu";
 import { Kbd } from "@/components/ui/base/kbd";
 import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
 import { aceternityMotion } from "@/lib/aceternity-motion";
@@ -15,8 +16,10 @@ import { useUserStore, type FeatureAvailability } from "@/stores/use-user-store"
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { getDesktopAppBinding } from "@/services/desktop-runtime";
+import { isRemoteWorkspaceMode } from "@/services/workspace-mode";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { OnboardingEntry } from "@/components/onboarding/first-creation-guide";
+import { WalletChip } from "@/components/billing/wallet-chip";
 
 export type WorkspaceNavItem = {
     id: string;
@@ -40,21 +43,23 @@ function toolItem(slug: NavigationToolSlug, to: string): WorkspaceNavItem {
     return { id: slug, title: tool?.label ?? slug, icon: tool?.icon, to };
 }
 
-function buildNav(features: FeatureAvailability): { groups: WorkspaceNavGroup[]; footer: WorkspaceNavItem[] } {
+function buildNav(features: FeatureAvailability, localMode: boolean, mcpSupported: boolean): { groups: WorkspaceNavGroup[]; footer: WorkspaceNavItem[] } {
     const groups: WorkspaceNavGroup[] = [
         {
             items: [
-                { id: "new", title: "新建项目", icon: Plus, to: "/canvas?mode=new" },
+                { id: "new", title: "新建画布", icon: Plus, to: "/canvas?mode=new" },
             ],
         },
         {
             items: [
                 { id: "home", title: "首页", icon: Home, to: "/" },
-                { ...toolItem("canvas", "/project"), title: "项目" },
+                toolItem("manju", "/manju"),
+                { ...toolItem("projects", "/projects"), title: "项目" },
+                toolItem("canvas", "/canvas"),
                 { ...toolItem("assets", "/assets"), title: "资产" },
-                { id: "settings:channels", title: "模型配置", icon: Settings2, to: "/settings?section=channels" },
+                ...(localMode ? [{ id: "settings:channels", title: "模型配置", icon: Settings2, to: "/settings?section=channels" }] : []),
                 ...(getDesktopAppBinding()?.StorageSettings ? [{ id: "settings:storage", title: "存储设置", icon: HardDrive, to: "/settings?section=storage" }] : []),
-                { id: "agents", title: "BeefTV MCP", icon: Plug, to: "/agents" },
+                ...(mcpSupported ? [{ id: "agents", title: "VisiDeep AI MCP", icon: Plug, to: "/agents" }] : []),
             ],
         },
     ];
@@ -81,7 +86,7 @@ function WorkspaceSwitcher({ collapsed, onNavigate, onExpand, onCollapse }: { co
         <div className="app-workspace-sidebar-brand-row relative shrink-0 px-3 pt-3">
             <Link to="/" onClick={onNavigate} className="app-workspace-sidebar-brand-button group" aria-label={`${appearance.brandName}首页`}>
                 <span className="flex min-w-0 items-center gap-2">
-                    <BrandLogoFrame className="app-workspace-brand-mark grid size-8 shrink-0 place-items-center rounded-[var(--r-sm)] shadow-sm" logoClassName="size-5 object-contain" alt="" fallback={<span className="app-workspace-brand-placeholder" aria-hidden>B</span>} />
+                                    <BrandLogoFrame className="app-workspace-brand-mark grid size-8 shrink-0 place-items-center rounded-[var(--r-sm)] shadow-sm" logoClassName="size-5 object-contain" alt="" fallback={<span className="app-workspace-brand-placeholder" aria-hidden>V</span>} />
                     <span className="flex min-w-0">
                         <span className="app-workspace-brand-wordmark truncate text-[var(--fs-body)] leading-none font-semibold">{appearance.brandName}</span>
                     </span>
@@ -259,7 +264,13 @@ export function WorkspaceSidebarNav({ collapsed, onNavigate, onOpenSearch, onExp
     const { pathname } = useLocation();
     const [searchParams] = useSearchParams();
     const features = useUserStore((state) => state.features);
-    const { groups, footer } = useMemo(() => buildNav(features), [features]);
+    const user = useUserStore((state) => state.user);
+    const storageMode = useUserStore((state) => state.storageMode);
+    // 托管账号的 storageMode 是 remote；只有本地工作区才显示渠道维护入口。
+    const localMode = !isRemoteWorkspaceMode() && (storageMode !== "remote" || Boolean(user && user.username === "local"));
+    const managedMode = isRemoteWorkspaceMode();
+    const mcpSupported = !managedMode;
+    const { groups, footer } = useMemo(() => buildNav(features, localMode, mcpSupported), [features, localMode, mcpSupported]);
 
     const rawSlug = pathname.split("/").filter(Boolean)[0] || "home";
     // `/project` is the LibTV-compatible alias for the existing canvas library route.
@@ -308,14 +319,26 @@ export function WorkspaceSidebarNav({ collapsed, onNavigate, onOpenSearch, onExp
                     </div>
                 ) : null}
                 <div className={cn("app-workspace-sidebar-contact-row", collapsed && "is-collapsed")}>
-                    <WorkspaceSidebarSocialLinks />
+                    {!managedMode ? <WorkspaceSidebarSocialLinks /> : null}
                 </div>
                 <div className={cn("app-workspace-sidebar-utility-row", collapsed && "is-collapsed")}>
-                    <WorkspaceSidebarUpdate collapsed={collapsed} />
+                    {!managedMode ? <WorkspaceSidebarUpdate collapsed={collapsed} /> : null}
                     <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} aria-label={theme === "dark" ? "切换到浅色模式" : "切换到深色模式"} title={theme === "dark" ? "切换到浅色模式" : "切换到深色模式"} className="app-workspace-theme-action">
                         {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
                     </AnimatedThemeToggler>
                 </div>
+                {!collapsed && user ? (
+                    <div className={cn("app-workspace-sidebar-account-row", "mt-2 flex items-center justify-between gap-2")}>
+                        {pathname === "/" ? (
+                            <span className="min-w-0" data-home-account-menu-version="1">
+                                <WorkspaceAccountMenu showName />
+                            </span>
+                        ) : (
+                            <span className="app-workspace-sidebar-account-name min-w-0 truncate text-[12px] text-foreground/55" title={user.displayName || user.username}>{user.displayName || user.username}</span>
+                        )}
+                        <WalletChip compact />
+                    </div>
+                ) : null}
             </div>
         </div>
     );

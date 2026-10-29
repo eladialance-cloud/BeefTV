@@ -18,7 +18,7 @@ beforeAll(async () => {
         builder.onResolve({ filter: /^@\// }, args => ({ path: Bun.resolveSync("../src/" + args.path.slice(2), import.meta.dir) }));
         // Delay only test persistence, keeping the actual store flush implementation.
         // This exposes the real hook's await boundary without replacing its save API.
-        builder.onLoad({ filter: /stores\/canvas\/use-canvas-store\.ts$/ }, args => ({
+        builder.onLoad({ filter: /stores[\\/]canvas[\\/]use-canvas-store\.ts$/ }, args => ({
             loader: "ts",
             contents: readFileSync(args.path, "utf8").replace("export async function flushCanvasStorePersistence()", "async function originalFlushCanvasStorePersistence()") + `
                 export async function flushCanvasStorePersistence() {

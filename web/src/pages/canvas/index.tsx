@@ -21,7 +21,7 @@ import { restoreCanvasArchive } from "@/lib/canvas/canvas-archive-restore";
 import { createCanvasLibraryFolder, deleteCanvasLibraryFolder, hydrateCanvasLibraryFolders, persistCanvasFolderCover, renameCanvasLibraryFolder } from "@/lib/canvas/canvas-folder-storage";
 import { reportOwnedMediaSave } from "@/services/desktop-media-save";
 import { loadCanvasProjectForEditing, saveRemoteUserDataNow } from "@/services/local-workspace-sync";
-import { isLocalWorkspaceMode } from "@/services/workspace-mode";
+import { isLocalWorkspaceMode, isRemoteWorkspaceMode } from "@/services/workspace-mode";
 import { usesBrowserLocalResourceStore } from "@/services/workspace-resource-storage";
 import { beginLocalCanvasProject, deleteLocalCanvasProjects, hydrateLocalCanvasProjectsFromBackend, syncLocalCanvasProjectToBackend } from "@/services/local-workspace-repository";
 import { createWorkspaceCanvasProject } from "@/services/workspace-project-repository";
@@ -65,10 +65,10 @@ export default function CanvasPage() {
     // The sync layer is the source of truth: it also recognizes the synthetic
     // local identity, which protects the library from stale session state after
     // a desktop reload or HMR cycle.
-    // The default BeefTV build is local-only even when a stale/embedded browser
+    // The default VisiDeep AI build is local-only even when a stale/embedded browser
     // session still contains a logged-in user. Cloud project APIs are opt-in via
     // the explicit hosted build flag, never inferred from login state.
-    const remoteMode = import.meta.env.VITE_CANVAS_LOCAL_MODE === "false" && Boolean(userId) && !isLocalWorkspaceMode();
+    const remoteMode = isRemoteWorkspaceMode();
     useEffect(() => {
         if (!hydrated || !isLocalWorkspaceMode()) return;
         void hydrateLocalCanvasProjectsFromBackend();
@@ -275,7 +275,7 @@ export default function CanvasPage() {
             setCreationError(true);
             message.error(error instanceof Error ? error.message : "创建项目失败，请重试");
         });
-    }, [hydrated, message, mode, projects, remoteMode, sessionHydrated, libraryQuery.isSuccess,canvasHealth]);
+    }, [hydrated, message, mode, projects, remoteMode, sessionHydrated, libraryQuery.isSuccess, canvasHealth, enterProject]);
 
     if (!creationError && !libraryQuery.isError && !(canvasHealth.error && !remoteMode) && (mode === "new" || mode === "recent" || mode === "handoff")) return <main className="flex h-full items-center justify-center bg-background text-sm text-stone-500">正在打开画布...</main>;
 
