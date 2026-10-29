@@ -661,9 +661,8 @@ func (s *Service) ManualCorrectProductionArtifact(
 				return err
 			}
 		}
-		run.Status = model.ManjuProductionRunStatusActive
 		run.CurrentStage = stageKey
-		if err := tx.SaveManjuProductionRun(run); err != nil {
+		if err := tx.ActivateManjuProductionRun(run); err != nil {
 			return err
 		}
 		return createManualCorrectionAudit(

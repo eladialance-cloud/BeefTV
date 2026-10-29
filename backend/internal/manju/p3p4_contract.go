@@ -1247,15 +1247,49 @@ func validateP0BForbiddenZoneDecision(section []string) error {
 		issues = append(issues, "构图雷区白名单缺少 B 类判定")
 	}
 	explicitlyNeverHazards := make(map[string]bool, len(p0bBHazards))
+	contradictoryNeverHazards := make(map[string]bool, len(p0bBHazards))
 	for _, line := range section {
 		if !p0bLineContainsBHazard(line) {
 			continue
 		}
-		if strings.Contains(line, "永不解锁") {
-			for _, hazard := range p0bBHazards {
-				if strings.Contains(line, hazard) {
-					explicitlyNeverHazards[hazard] = true
+		positions := make([]int, len(p0bBHazards))
+		firstHazardIndex := -1
+		lastHazardEnd := -1
+		for index, hazard := range p0bBHazards {
+			positions[index] = strings.Index(line, hazard)
+			if positions[index] < 0 {
+				continue
+			}
+			if firstHazardIndex < 0 || positions[index] < firstHazardIndex {
+				firstHazardIndex = positions[index]
+			}
+			if end := positions[index] + len(hazard); end > lastHazardEnd {
+				lastHazardEnd = end
+			}
+		}
+		if firstHazardIndex < 0 || lastHazardEnd < 0 {
+			continue
+		}
+		sharedPositive := p0bPositiveNeverUnlockAssertion(line[:firstHazardIndex]) ||
+			p0bPositiveNeverUnlockAssertion(line[lastHazardEnd:])
+		for index, hazard := range p0bBHazards {
+			start := positions[index]
+			if start < 0 {
+				continue
+			}
+			end := len(line)
+			for _, other := range positions {
+				if other > start && other < end {
+					end = other
 				}
+			}
+			local := line[start:end]
+			if p0bNeverUnlockContradiction(local) {
+				contradictoryNeverHazards[hazard] = true
+				continue
+			}
+			if sharedPositive || p0bPositiveNeverUnlockAssertion(local) {
+				explicitlyNeverHazards[hazard] = true
 			}
 		}
 		if strings.Contains(line, "白名单理由") || strings.Contains(line, "配套") {
@@ -1263,7 +1297,9 @@ func validateP0BForbiddenZoneDecision(section []string) error {
 		}
 	}
 	for _, hazard := range p0bBHazards {
-		if !explicitlyNeverHazards[hazard] {
+		if contradictoryNeverHazards[hazard] {
+			issues = append(issues, "B 类技术雷区 "+hazard+" 的“永不解锁”判定被否定或表述为可解锁")
+		} else if !explicitlyNeverHazards[hazard] {
 			issues = append(issues, "B 类技术雷区 "+hazard+" 必须显式列为永不解锁")
 		}
 	}
@@ -1324,6 +1360,47 @@ func validateP0BForbiddenZoneDecision(section []string) error {
 		return errors.New(strings.Join(issues, "；"))
 	}
 	return nil
+}
+
+func p0bPositiveNeverUnlockAssertion(value string) bool {
+	const marker = "永不解锁"
+	for offset := 0; offset < len(value); {
+		relative := strings.Index(value[offset:], marker)
+		if relative < 0 {
+			return false
+		}
+		start := offset + relative
+		end := start + len(marker)
+		if !p0bTokenOccurrenceNegated(value, start, end) {
+			return true
+		}
+		offset = end
+	}
+	return false
+}
+
+func p0bNeverUnlockContradiction(value string) bool {
+	const marker = "永不解锁"
+	for offset := 0; offset < len(value); {
+		relative := strings.Index(value[offset:], marker)
+		if relative < 0 {
+			break
+		}
+		start := offset + relative
+		end := start + len(marker)
+		if p0bTokenOccurrenceNegated(value, start, end) {
+			return true
+		}
+		offset = end
+	}
+	for _, unlocked := range []string{
+		"可解锁", "可以解锁", "可被解锁", "允许解锁", "可解除", "允许解除",
+	} {
+		if strings.Contains(value, unlocked) {
+			return true
+		}
+	}
+	return false
 }
 
 func p0bLineUnlocks(value string) bool {

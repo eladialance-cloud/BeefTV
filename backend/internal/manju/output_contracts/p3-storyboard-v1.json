@@ -5,32 +5,32 @@
     {
       "role": "storyboard-engine",
       "path": "sd-storyboard-engine/SKILL.md",
-      "sha256": "9c94001309f0771c1b13394285923dff8b96ebbf7aa218ecf0618055ae651a8b"
+      "sha256": "ad613e48c19c4158e727f5b6cf8759d164b6749dad41c94ebea2e0688a8d33d3"
     },
     {
       "role": "storyboard-template",
       "path": "sd-storyboard-engine/references/storyboard-sheet-template.md",
-      "sha256": "7c975d04c573acec62ddf752ff81298f4689145c81c49dc868ba5b02346b486a"
+      "sha256": "ea5a46f16b5f711b179f0fab83597aa292769bb4e428302c92c80975677dddb3"
     },
     {
       "role": "prompt-feeding-checklist",
       "path": "short-drama-director/references/prompt-feeding-checklist.md",
-      "sha256": "edbe306b4bc000d62f3dd2e5a61dbf3c4205cef1af89a952fcad83948b7707ec"
+      "sha256": "73e70f2e47a57af29b275030122b28644126961b3e391aa956b5c285ecb7c4ce"
     },
     {
       "role": "feed-compiler",
       "path": "short-drama-director/scripts/compile_feed.py",
-      "sha256": "322979c2321cd4d7e883f14b3328f277a6a902c8454d1961d7dfd16d8abb0338"
+      "sha256": "9beb597008172efd5ea34d5f171547a832841c0958171c40ad65464bf7e9c50d"
     },
     {
       "role": "prompt-validator",
       "path": "short-drama-director/scripts/validate_prompt.py",
-      "sha256": "2d8776e1116ff9ac84416ffb363ede8c017f87282e91d26611bf10c269cee53d"
+      "sha256": "abd6b8bae7e7a137ebddcf454b192ec3e7869c61d2c0263a34d1783db98584dc"
     },
     {
       "role": "contract-auditor",
       "path": "short-drama-director/scripts/audit_contract.py",
-      "sha256": "02e4ff48114798f392730e564421788bf08242e622e37e2996714ad760d46739"
+      "sha256": "8ad95097abac085876ef11d29a47b8802ef7c4527afe2a19ddb4d2ddeba33b71"
     }
   ],
   "requiredSections": [

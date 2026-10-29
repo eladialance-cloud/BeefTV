@@ -3183,8 +3183,18 @@ function ProductionPipeline({ detail, activeStage, onChanged }: { detail: ManjuP
     const productionRuns = useMemo(() => (productionRunsQuery.data?.items || []).filter((run) => isCurrentLockRevision(run.lockRevision, detail.lock?.revision)), [productionRunsQuery.data?.items, detail.lock?.revision]);
     const completedProductionRuns = useMemo(() => productionRuns.filter((run) => run.status === "COMPLETED"), [productionRuns]);
     const selectableProductionRuns = useMemo(
-        () => productionRuns.filter((run) => run.status === "ACTIVE" || completedProductionRuns.some((completed) => completed.id === run.id)),
+        () => productionRuns.filter((run) =>
+            run.status === "ACTIVE" ||
+            run.status === "COMPLETED" ||
+            (run.status === "SUPERSEDED" && run.hasDeliverables),
+        ),
         [completedProductionRuns, productionRuns],
+    );
+    const preferredProductionRun = useMemo(
+        () => productionRuns.find((run) => run.status === "ACTIVE") ||
+            productionRuns.find((run) => run.status === "COMPLETED") ||
+            selectableProductionRuns[0],
+        [productionRuns, selectableProductionRuns],
     );
     const hasActiveProduction = productionRuns.some((run) => run.status === "ACTIVE");
 
@@ -3195,11 +3205,11 @@ function ProductionPipeline({ detail, activeStage, onChanged }: { detail: ManjuP
         }
     }, [completedAssetRuns, selectedAssetRunId]);
     useEffect(() => {
-        if (!selectedProductionRunId && productionRuns[0]) setSelectedProductionRunId(productionRuns[0].id);
-        if (selectedProductionRunId && !productionRuns.some((run) => run.id === selectedProductionRunId) && productionRuns[0]) {
-            setSelectedProductionRunId(productionRuns[0].id);
+        if (!selectedProductionRunId && preferredProductionRun) setSelectedProductionRunId(preferredProductionRun.id);
+        if (selectedProductionRunId && !selectableProductionRuns.some((run) => run.id === selectedProductionRunId) && preferredProductionRun) {
+            setSelectedProductionRunId(preferredProductionRun.id);
         }
-    }, [productionRuns, selectedProductionRunId]);
+    }, [preferredProductionRun, selectableProductionRuns, selectedProductionRunId]);
 
     const productionRunQuery = useQuery({
         queryKey: ["manju", "production-run", detail.project.id, selectedProductionRunId],
@@ -3261,14 +3271,14 @@ function ProductionPipeline({ detail, activeStage, onChanged }: { detail: ManjuP
                 <section className="manju-production-run-selector" aria-label="历史生产链选择">
                     <div>
                         <span>历史生产链</span>
-                        <small>切换只读查看相同 P0 revision 下已完成的旧生产链。</small>
+                        <small>切换只读查看相同 P0 revision 下已完成或已有锁定交付的旧生产链。</small>
                     </div>
                     <Select
                         aria-label="选择生产链版本"
                         value={selectedProductionRunId}
                         options={selectableProductionRuns.map((run) => ({
                             value: run.id,
-                            label: `${run.status === "COMPLETED" ? "已完成" : "进行中"} · ${run.id.slice(0, 8)} · P0 revision ${run.lockRevision}`,
+                            label: `${run.status === "COMPLETED" ? "已完成" : run.status === "SUPERSEDED" ? "历史交付" : "进行中"} · ${run.id.slice(0, 8)} · P0 revision ${run.lockRevision}`,
                         }))}
                         onChange={(runId) => setSelectedProductionRunId(runId)}
                     />
@@ -3724,7 +3734,7 @@ function ProductionStageCard({
             {stage.key === "qc_handoff" && canvasImportsQuery.isError ? (
                 <InlineNotice tone="error">项目画布状态读取失败，请刷新后重试。</InlineNotice>
             ) : null}
-            {stage.key === "qc_handoff" && detail.run.status === "COMPLETED" ? (
+            {stage.key === "qc_handoff" && (detail.run.status === "COMPLETED" || detail.run.status === "SUPERSEDED") ? (
                 <section className="manju-production-deliverables" aria-label="P5 已持久化交付物">
                     <header>
                         <Download />

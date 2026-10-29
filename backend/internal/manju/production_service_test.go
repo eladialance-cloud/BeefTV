@@ -355,6 +355,15 @@ func TestP0BRejectsMalformedAndAuthorityViolations(t *testing.T) {
 			),
 			expected: "B 类技术雷区不得出现在解锁雷区",
 		},
+		{
+			name: "negated B class never unlock assertion",
+			content: strings.Replace(validP0BArtifact(),
+				"- B类 · 永不解锁：物体穿身、角色服装突变、杂乱前景刺眼物、比例失调、重复元素无重点、空鸡蛋构图、道具状态突变。",
+				"- B类 · 物体穿身并非永不解锁，角色服装突变、杂乱前景刺眼物、比例失调、重复元素无重点、空鸡蛋构图、道具状态突变永不解锁。",
+				1,
+			),
+			expected: "B 类技术雷区 物体穿身",
+		},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -1393,7 +1402,8 @@ func prepareP4AwaitingConfirmation(t *testing.T, f fixture) *manju.ProductionRun
 	if err := f.db.Create(&model.ManjuProjectStateSnapshot{
 		ID: "state-production-p45", ProjectID: f.projectID, LockRevision: projectDetail.Lock.Revision,
 		StageKey: "production:director_storyboard", SchemaVersion: "7.4.23",
-		StateJSON: stateJSON, ContentHash: "state-production-p45", CreatedBy: f.ownerID,
+		ArtifactID: lockedP3ArtifactIDForTest(t, f, run.Run.ID),
+		StateJSON:  stateJSON, ContentHash: "state-production-p45", CreatedBy: f.ownerID,
 		CreatedAt: time.Now().Add(time.Second),
 	}).Error; err != nil {
 		t.Fatal(err)
@@ -1414,6 +1424,51 @@ func prepareP4AwaitingConfirmation(t *testing.T, f fixture) *manju.ProductionRun
 	}
 	setP4MachineCheckProofForTest(t, f, run.Run.ID, lockedP3ArtifactIDForTest(t, f, run.Run.ID))
 	return detail
+}
+
+func TestP4ReadsProjectStateBoundToLockedP3Artifact(t *testing.T) {
+	f := newFixture(t)
+	run := prepareP4AwaitingConfirmation(t, f)
+	p3ArtifactID := lockedP3ArtifactIDForTest(t, f, run.Run.ID)
+	projectDetail, err := f.service.ProjectDetail(f.ownerID, f.projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoyState := `{"schema_version":"7.4.23","locks":{"asset_mode":"M1","model":"2.0","aspect":"9:16"},"characters":{},"scenes":{},"props":{},"segments":[{"seg_id":"段1","scene":"旧宅","shots":[]}]}`
+	if err := f.db.Create(&model.ManjuProjectStateSnapshot{
+		ID: "state-decoy-newer", ProjectID: f.projectID, LockRevision: projectDetail.Lock.Revision,
+		StageKey: "production:director_storyboard", ArtifactID: "artifact-from-another-p3",
+		SchemaVersion: "7.4.23", StateJSON: decoyState, ContentHash: "state-decoy-newer",
+		CreatedBy: f.ownerID, CreatedAt: time.Now().Add(2 * time.Hour),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	task := &model.Task{
+		ID: "production-p4-state-binding", UserID: f.ownerID, ProjectID: f.projectID,
+		Type: "canvas_text", Status: model.TaskStatusQueued,
+	}
+	if err := f.db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	f.service.SetScriptTaskCreator((&sequentialScriptTaskCreator{tasks: []*model.Task{task}}).create)
+
+	if _, err := f.service.RegenerateProductionArtifact(
+		f.ownerID,
+		f.projectID,
+		run.Run.ID,
+		manju.ProductionStageFeed,
+		manju.ProductionStageRunInput{},
+	); err != nil {
+		t.Fatalf("P4 must read the project_state snapshot bound to locked P3 %s, got %v", p3ArtifactID, err)
+	}
+	succeedManjuTask(t, f, task.ID, validFeedArtifact())
+	detail, err := f.service.ProductionRunDetail(f.ownerID, f.projectID, run.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stage := findProductionStage(t, detail, manju.ProductionStageFeed); stage.Status != model.ManjuProductionStageStatusAwaitingConfirmation {
+		t.Fatalf("P4 state-bound compile should produce an awaiting-confirmation artifact: %+v", stage)
+	}
 }
 
 func validP45Artifact() string {

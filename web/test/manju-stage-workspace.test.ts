@@ -76,10 +76,13 @@ test("P5 deliverables render only persisted backend rows", () => {
     expect(page).toContain("downloadManjuDeliverable(deliverable)");
 });
 
-test("P5 can switch to an older completed current-lock production run", () => {
+test("P5 can switch to older completed or deliverable-backed superseded current-lock runs", () => {
     expect(page).toContain("const completedProductionRuns");
+    expect(page).toContain('run.status === "SUPERSEDED" && run.hasDeliverables');
     expect(page).toContain("setSelectedProductionRunId(runId)");
     expect(page).toContain("历史生产链");
+    expect(page).toContain("历史交付");
+    expect(page).toContain('detail.run.status === "COMPLETED" || detail.run.status === "SUPERSEDED"');
     expect(page).toContain("P0 revision ${run.lockRevision}");
     expect(page).toContain("getManjuProductionRunDeliverables(projectId, detail.run.id)");
 });

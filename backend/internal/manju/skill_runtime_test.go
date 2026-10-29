@@ -1230,7 +1230,7 @@ func TestEmbeddedCompileFeedMatchesAuthoritativeV7426(t *testing.T) {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256(data)
-	const authoritativeHash = "322979c2321cd4d7e883f14b3328f277a6a902c8454d1961d7dfd16d8abb0338"
+	const authoritativeHash = "9beb597008172efd5ea34d5f171547a832841c0958171c40ad65464bf7e9c50d"
 	if got := fmt.Sprintf("%x", sum); got != authoritativeHash {
 		t.Fatalf("内嵌 compile_feed.py 未与权威 V7.4.26 对齐: got %s want %s", got, authoritativeHash)
 	}

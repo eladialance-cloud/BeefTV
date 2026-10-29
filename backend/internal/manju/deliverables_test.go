@@ -135,6 +135,39 @@ func TestProjectDeliverablesKeepAllRunsAndRunScopedRetrievalWorks(t *testing.T) 
 	assertDeliverableKinds(t, scoped, "markdown")
 }
 
+func TestSupersededCompletedRunWithDeliverablesRemainsHistoryVisible(t *testing.T) {
+	f := newFixture(t)
+	detail := completeProjectThroughP5ForTest(t, f, manju.DeliveryBoth)
+	if err := f.db.Model(&model.ManjuProductionRun{}).
+		Where("id = ?", detail.Run.ID).
+		Update("status", model.ManjuProductionRunStatusSuperseded).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	runs, err := f.service.ProductionRuns(f.ownerID, f.projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, run := range runs {
+		if run.ID != detail.Run.ID {
+			continue
+		}
+		found = true
+		if run.Status != model.ManjuProductionRunStatusSuperseded || !run.HasDeliverables {
+			t.Fatalf("superseded completed run must stay selectable as immutable history: %+v", run)
+		}
+	}
+	if !found {
+		t.Fatal("superseded completed run disappeared from the production run list")
+	}
+	rows, err := f.service.ProductionRunDeliverables(f.ownerID, f.projectID, detail.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDeliverableKinds(t, rows, "markdown", "board", "previs", "manifest")
+}
+
 func TestCompletedRunBackfillIncludesQCArtifactExactlyOnce(t *testing.T) {
 	f := newFixture(t)
 	detail := completeProjectThroughP5ForTest(t, f, manju.DeliveryBoard)

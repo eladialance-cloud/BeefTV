@@ -646,18 +646,30 @@ func (s *Service) p4CanvasPackage(projectID, runID string, snapshot LockSnapshot
 	if err != nil || len(segments) == 0 {
 		return nil, fmt.Errorf("%w: %v", ErrCanvasPackageUnready, ErrProductionVideoInvalid)
 	}
-	state, _, _ := latestManjuProjectStateMap(s.repo, projectID, run.LockRevision)
-	stateSegments := make(map[string]map[string]any)
-	for _, raw := range anySlice(state["segments"]) {
-		segment := anyMap(raw)
-		stateSegments[normalizeProductionSegmentCode(anyString(segment["seg_id"]))] = segment
-	}
 	p3Stage, err := s.repo.ManjuProductionStage(runID, ProductionStageStoryboard)
 	if err != nil {
 		return nil, err
 	}
 	if p3Stage == nil || p3Stage.Status != model.ManjuProductionStageStatusLocked || strings.TrimSpace(p3Stage.ArtifactID) == "" {
 		return nil, ErrProductionStageNotReady
+	}
+	state, stateSnapshot, err := manjuProjectStateMapForArtifact(
+		s.repo,
+		projectID,
+		run.LockRevision,
+		"production:director_storyboard",
+		p3Stage.ArtifactID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if stateSnapshot == nil {
+		return nil, ErrProjectStateUnavailable
+	}
+	stateSegments := make(map[string]map[string]any)
+	for _, raw := range anySlice(state["segments"]) {
+		segment := anyMap(raw)
+		stateSegments[normalizeProductionSegmentCode(anyString(segment["seg_id"]))] = segment
 	}
 	readyStoryboards, err := s.currentProductionStoryboardCodes(runID, p3Stage.ArtifactID)
 	if err != nil {

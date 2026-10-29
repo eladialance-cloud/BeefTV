@@ -26,7 +26,7 @@ var embeddedManjuSkill embed.FS
 
 const manjuSkillVersion = "V7.4.26"
 
-const manjuSkillContentHash = "7cee02bbea5bc6d66f1232c3626184f80c59f8c672f5bfc09b058e4af1f95213"
+const manjuSkillContentHash = "3f505ee09eabb4d414cb93f1724014ed2aa277951eaaa275a3f605a30c4a8c4f"
 
 type ManjuSkillRuntime struct {
 	once sync.Once

@@ -82,15 +82,16 @@ type ProductionConfirmInput struct {
 }
 
 type ProductionRunView struct {
-	ID           string    `json:"id"`
-	ProjectID    string    `json:"projectId"`
-	AssetRunID   string    `json:"assetRunId"`
-	Status       string    `json:"status"`
-	CurrentStage string    `json:"currentStage"`
-	LockRevision int64     `json:"lockRevision"`
-	CreatedBy    string    `json:"createdBy"`
-	CreatedAt    time.Time `json:"createdAt"`
-	UpdatedAt    time.Time `json:"updatedAt"`
+	ID              string    `json:"id"`
+	ProjectID       string    `json:"projectId"`
+	AssetRunID      string    `json:"assetRunId"`
+	Status          string    `json:"status"`
+	CurrentStage    string    `json:"currentStage"`
+	LockRevision    int64     `json:"lockRevision"`
+	HasDeliverables bool      `json:"hasDeliverables"`
+	CreatedBy       string    `json:"createdBy"`
+	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
 }
 
 type ProductionStageView struct {
@@ -644,8 +645,7 @@ func (s *Service) RegenerateProductionStage(actorID, projectID, runID, stageKey 
 			}
 		}
 
-		run.Status = model.ManjuProductionRunStatusSuperseded
-		if err := tx.SaveManjuProductionRun(run); err != nil {
+		if err := tx.ActivateManjuProductionRun(newRun); err != nil {
 			return err
 		}
 		newRunID = newRun.ID
@@ -774,9 +774,8 @@ func (s *Service) RegenerateProductionArtifact(actorID, projectID, runID, stageK
 				}
 			}
 		}
-		run.Status = model.ManjuProductionRunStatusActive
 		run.CurrentStage = stageKey
-		if err := tx.SaveManjuProductionRun(run); err != nil {
+		if err := tx.ActivateManjuProductionRun(run); err != nil {
 			return err
 		}
 		return nil
@@ -841,9 +840,19 @@ func (s *Service) ProductionRuns(actorID, projectID string) ([]ProductionRunView
 	if err != nil {
 		return nil, err
 	}
+	deliverables, err := s.repo.ManjuDeliverablesForProject(projectID)
+	if err != nil {
+		return nil, err
+	}
+	hasDeliverables := make(map[string]bool, len(deliverables))
+	for _, deliverable := range deliverables {
+		hasDeliverables[deliverable.ProductionRunID] = true
+	}
 	items := make([]ProductionRunView, 0, len(runs))
 	for _, run := range runs {
-		items = append(items, productionRunView(run))
+		view := productionRunView(run)
+		view.HasDeliverables = hasDeliverables[run.ID]
+		items = append(items, view)
 	}
 	return items, nil
 }
@@ -917,12 +926,22 @@ func (s *Service) runOfficialProductionFeedCompiler(actorID, projectID, runID st
 		if _, err := ensureManjuProjectState(tx, projectID, access.Project.Name, run.LockRevision, actorID); err != nil {
 			return err
 		}
-		state, snapshot, err := latestManjuProjectStateMap(tx, projectID, run.LockRevision)
+		state, snapshot, err := manjuProjectStateMapForArtifact(
+			tx,
+			projectID,
+			run.LockRevision,
+			"production:director_storyboard",
+			upstreamArtifactID,
+		)
 		if err != nil {
 			return err
 		}
 		if snapshot == nil {
-			return ErrProjectStateUnavailable
+			return fmt.Errorf(
+				"%w: 当前锁定 P3 工件 %s 没有对应的 project_state 快照",
+				ErrProjectStateUnavailable,
+				upstreamArtifactID,
+			)
 		}
 		view, err := receiptView(*receipt)
 		if err != nil {
@@ -1130,7 +1149,22 @@ func (s *Service) GenerateProductionPrevis(actorID, projectID, runID string) (*P
 		if binding == nil || strings.TrimSpace(binding.TextChannelID) == "" || strings.TrimSpace(binding.TextModelKey) == "" {
 			return ErrInvalidModelBinding
 		}
-		state, snapshot, err := latestManjuProjectStateMap(tx, projectID, run.LockRevision)
+		p3Stage, err := tx.ManjuProductionStage(runID, ProductionStageStoryboard)
+		if err != nil {
+			return err
+		}
+		if p3Stage == nil ||
+			p3Stage.Status != model.ManjuProductionStageStatusLocked ||
+			strings.TrimSpace(p3Stage.ArtifactID) == "" {
+			return ErrProductionStageNotReady
+		}
+		state, snapshot, err := manjuProjectStateMapForArtifact(
+			tx,
+			projectID,
+			run.LockRevision,
+			"production:director_storyboard",
+			p3Stage.ArtifactID,
+		)
 		if err != nil {
 			return err
 		}
@@ -1316,7 +1350,24 @@ func (s *Service) reconcileProductionPrevis(actorID, projectID, runID string) er
 				item.Error = "P4.5 无法读取生产链锁定版本"
 				return tx.SaveManjuProductionPrevis(item)
 			}
-			state, snapshot, err := latestManjuProjectStateMap(tx, projectID, run.LockRevision)
+			p3Stage, err := tx.ManjuProductionStage(runID, ProductionStageStoryboard)
+			if err != nil {
+				return err
+			}
+			if p3Stage == nil ||
+				p3Stage.Status != model.ManjuProductionStageStatusLocked ||
+				strings.TrimSpace(p3Stage.ArtifactID) == "" {
+				item.Status = model.ManjuProductionPrevisStatusFailed
+				item.Error = "P4.5 无法读取当前锁定的 P3 工件"
+				return tx.SaveManjuProductionPrevis(item)
+			}
+			state, snapshot, err := manjuProjectStateMapForArtifact(
+				tx,
+				projectID,
+				run.LockRevision,
+				"production:director_storyboard",
+				p3Stage.ArtifactID,
+			)
 			if err != nil || snapshot == nil {
 				item.Status = model.ManjuProductionPrevisStatusFailed
 				item.Error = "P4.5 无法读取 P3 project_state"
@@ -2080,8 +2131,14 @@ func (s *Service) ProductionRunDetail(actorID, projectID, runID string) (*Produc
 	if err != nil {
 		return nil, err
 	}
+	deliverables, err := s.repo.ManjuDeliverablesForRun(projectID, runID)
+	if err != nil {
+		return nil, err
+	}
+	runView := productionRunView(*run)
+	runView.HasDeliverables = len(deliverables) > 0
 	detail := &ProductionRunDetail{
-		Run:       productionRunView(*run),
+		Run:       runView,
 		AssetRun:  assetRunView(*assetRun),
 		ScriptRun: scriptRunView(*scriptRun),
 		Stages:    make([]ProductionStageView, 0, len(stages)),

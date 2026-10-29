@@ -1,0 +1,111 @@
+{
+  "schemaVersion": "beef.tv/manju/p4-feed-contract/v1",
+  "rulesVersion": "V7.4.26",
+  "sources": [
+    {
+      "role": "feed-compiler",
+      "path": "short-drama-director/scripts/compile_feed.py",
+      "sha256": "9beb597008172efd5ea34d5f171547a832841c0958171c40ad65464bf7e9c50d"
+    },
+    {
+      "role": "prompt-validator",
+      "path": "short-drama-director/scripts/validate_prompt.py",
+      "sha256": "abd6b8bae7e7a137ebddcf454b192ec3e7869c61d2c0263a34d1783db98584dc"
+    },
+    {
+      "role": "gate-checker",
+      "path": "sd-feed-engine/scripts/gate_check.py",
+      "sha256": "35d4f81dc8d53f95e39a641f3c17596877dc5f407e73f5d23d0e0d6c9ad19b74"
+    },
+    {
+      "role": "contract-auditor",
+      "path": "short-drama-director/scripts/audit_contract.py",
+      "sha256": "8ad95097abac085876ef11d29a47b8802ef7c4527afe2a19ddb4d2ddeba33b71"
+    },
+    {
+      "role": "model-adapters",
+      "path": "short-drama-director/references/model-adapters.md",
+      "sha256": "ff0c78542e1cd8f79554e74e7f7c25c501824d7ceb33a3af0cb3ae861376a6f7"
+    },
+    {
+      "role": "prompt-feeding-checklist",
+      "path": "short-drama-director/references/prompt-feeding-checklist.md",
+      "sha256": "73e70f2e47a57af29b275030122b28644126961b3e391aa956b5c285ecb7c4ce"
+    },
+    {
+      "role": "storyboard-engine",
+      "path": "sd-storyboard-engine/SKILL.md",
+      "sha256": "ad613e48c19c4158e727f5b6cf8759d164b6749dad41c94ebea2e0688a8d33d3"
+    },
+    {
+      "role": "storyboard-template",
+      "path": "sd-storyboard-engine/references/storyboard-sheet-template.md",
+      "sha256": "ea5a46f16b5f711b179f0fab83597aa292769bb4e428302c92c80975677dddb3"
+    }
+  ],
+  "sections": [
+    "【画幅风格】",
+    "【场景资产】",
+    "【核心人物】",
+    "【站位声明】",
+    "【时间轴分镜】",
+    "【音效】",
+    "【强制禁止项】"
+  ],
+  "validator": {
+    "script": "short-drama-director/scripts/validate_prompt.py",
+    "requiredArgs": [
+      "--by-segment",
+      "--json"
+    ],
+    "outputMode": "new",
+    "failClosed": true
+  },
+  "gate": {
+    "script": "sd-feed-engine/scripts/gate_check.py",
+    "mode": "asset-mode",
+    "defaultAssets": 9,
+    "failClosed": true
+  },
+  "executionOrder": [
+    "short-drama-director/scripts/compile_feed.py",
+    "short-drama-director/scripts/validate_prompt.py",
+    "sd-feed-engine/scripts/gate_check.py",
+    "short-drama-director/scripts/audit_contract.py"
+  ],
+  "shotLine": {
+    "requiredElements": [
+      "景别",
+      "焦段",
+      "机位角度",
+      "运镜（用途标签）"
+    ],
+    "soundField": "声音：",
+    "dialogueField": "台词：",
+    "emptyDialogue": "无",
+    "actionIntentLimit": 2
+  },
+  "styleLock": {
+    "injectPosition": "each-unit-text-block",
+    "styleMarker": "【STYLE｜视觉风格 · 全片锁死】",
+    "performanceMarker": "【PERFORMANCE｜表演与动作 · 全片锁死】",
+    "requiredTokens": [
+      "光比",
+      "镜头"
+    ]
+  },
+  "deferredContractIssues": {
+    "owner": "P4.5",
+    "codes": [
+      "CT5-P45"
+    ],
+    "reason": "P4.5 是独立附件并由专用阶段和 check_p45.py 校验，不得反向阻断 P4 文本编译。"
+  },
+  "repairRoutes": {
+    "C23a": "beef_tv_adapter",
+    "C23b": "P3",
+    "C23d2": "beef_tv_adapter",
+    "C23f": "P3",
+    "CT5-P45": "P4.5"
+  }
+}

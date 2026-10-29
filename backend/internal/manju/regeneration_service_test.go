@@ -401,6 +401,83 @@ func TestRegenerateP4ArtifactReusesCurrentProductionRunAndLockedP3(t *testing.T)
 	}
 }
 
+func TestRegenerateProductionStageRetiresSiblingActiveRun(t *testing.T) {
+	f := newFixture(t)
+	oldRunID, oldRun := prepareRegenerableProductionRun(t, f)
+	sibling := &model.ManjuProductionRun{
+		ID: "production-sibling-active", ProjectID: f.projectID, AssetRunID: oldRun.AssetRun.ID,
+		Status: model.ManjuProductionRunStatusActive, CurrentStage: manju.ProductionStageDecisionAnchor,
+		LockRevision: oldRun.Run.LockRevision, CreatedBy: f.ownerID,
+		CreatedAt: time.Now().Add(time.Minute), UpdatedAt: time.Now().Add(time.Minute),
+	}
+	if err := f.db.Create(sibling).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	detail, err := f.service.RegenerateProductionStage(f.ownerID, f.projectID, oldRunID, manju.ProductionStageStoryboard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var active []model.ManjuProductionRun
+	if err := f.db.Where("project_id = ? AND status = ?", f.projectID, model.ManjuProductionRunStatusActive).Find(&active).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(active) != 1 || active[0].ID != detail.Run.ID {
+		t.Fatalf("regeneration must leave exactly the new run active, got %+v", active)
+	}
+	var siblingAfter model.ManjuProductionRun
+	if err := f.db.First(&siblingAfter, "id = ?", sibling.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if siblingAfter.Status != model.ManjuProductionRunStatusSuperseded {
+		t.Fatalf("sibling run must remain as SUPERSEDED history, got %s", siblingAfter.Status)
+	}
+}
+
+func TestRegenerateProductionArtifactRetiresSiblingActiveRun(t *testing.T) {
+	f := newFixture(t)
+	runID, oldRun := prepareRegenerableProductionRun(t, f)
+	sibling := &model.ManjuProductionRun{
+		ID: "production-sibling-before-reactivation", ProjectID: f.projectID, AssetRunID: oldRun.AssetRun.ID,
+		Status: model.ManjuProductionRunStatusActive, CurrentStage: manju.ProductionStageDecisionAnchor,
+		LockRevision: oldRun.Run.LockRevision, CreatedBy: f.ownerID,
+		CreatedAt: time.Now().Add(time.Minute), UpdatedAt: time.Now().Add(time.Minute),
+	}
+	if err := f.db.Create(sibling).Error; err != nil {
+		t.Fatal(err)
+	}
+	task := &model.Task{
+		ID: "regenerate-artifact-exclusive-active-task", UserID: f.ownerID, ProjectID: f.projectID,
+		Type: "canvas_text", Status: model.TaskStatusQueued,
+	}
+	if err := f.db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	f.service.SetScriptTaskCreator((&sequentialScriptTaskCreator{tasks: []*model.Task{task}}).create)
+
+	detail, err := f.service.RegenerateProductionArtifact(
+		f.ownerID, f.projectID, runID, manju.ProductionStageStoryboard,
+		manju.ProductionStageRunInput{Instruction: "保持唯一活动生产链"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var active []model.ManjuProductionRun
+	if err := f.db.Where("project_id = ? AND status = ?", f.projectID, model.ManjuProductionRunStatusActive).Find(&active).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(active) != 1 || active[0].ID != detail.Run.ID {
+		t.Fatalf("artifact reactivation must leave exactly one active run, got %+v", active)
+	}
+	var siblingAfter model.ManjuProductionRun
+	if err := f.db.First(&siblingAfter, "id = ?", sibling.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if siblingAfter.Status != model.ManjuProductionRunStatusSuperseded {
+		t.Fatalf("sibling run must remain as SUPERSEDED history, got %s", siblingAfter.Status)
+	}
+}
+
 func TestRegenerateProductionStageRejectsLiveTask(t *testing.T) {
 	f := newFixture(t)
 	oldRunID, _ := prepareRegenerableProductionRun(t, f)

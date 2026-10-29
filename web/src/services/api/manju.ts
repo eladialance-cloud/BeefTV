@@ -476,6 +476,7 @@ export type ManjuProductionRun = {
     status: "ACTIVE" | "COMPLETED" | "SUPERSEDED";
     currentStage: string;
     lockRevision: number;
+    hasDeliverables?: boolean;
     createdBy: string;
     createdAt: string;
     updatedAt: string;
