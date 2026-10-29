@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -49,14 +50,48 @@ func (a *taskCostAdapter) ReserveTaskCost(request localtask.CostReserveRequest) 
 	if taskID == "" {
 		return nil, kernel.NewAppError(kernel.CodeInvalidArgument, "缺少任务标识")
 	}
-	if strings.TrimSpace(request.LogicalModelID) == "" && strings.TrimSpace(request.ChannelModelID) == "" {
+	input := decodeTaskCostInput(request.InputJSON)
+	logicalModelID := strings.TrimSpace(request.LogicalModelID)
+	channelID := taskCostChannelID(input)
+	channelModelID := strings.TrimSpace(request.ChannelModelID)
+	if channelModelID == "" && channelID != "" {
+		modelKey := strings.TrimPrefix(strings.TrimSpace(taskCostString(input, "model")), "models/")
+		if modelKey == "" {
+			return nil, kernel.NotFound("当前系统渠道未指定模型，无法计价")
+		}
+		channelModel, err := a.repo.ChannelModelByKey(channelID, modelKey)
+		if err != nil {
+			return nil, kernel.NotFound("当前系统渠道未授权该模型，无法计价")
+		}
+		channelModelID = channelModel.ID
+	}
+	capability := taskCostCapability(request.TaskType)
+	identity := credits.QuoteRequest{
+		LogicalModelID: logicalModelID,
+		ChannelID:      channelID,
+		ChannelModelID: channelModelID,
+		ModelKey:       strings.TrimPrefix(strings.TrimSpace(taskCostString(input, "model")), "models/"),
+		Capability:     capability,
+	}
+	if err := enrichPricingQuoteIdentity(&identity, a.repo); err != nil {
+		return nil, err
+	}
+	logicalModelID = identity.LogicalModelID
+	channelID = identity.ChannelID
+	channelModelID = identity.ChannelModelID
+	if logicalModelID == "" && channelModelID == "" && channelID == "" {
 		// Custom-channel and workflow tasks run on the user's own credentials.
 		return &localtask.CostReservation{Free: true}, nil
 	}
-	input := decodeTaskCostInput(request.InputJSON)
-	capability := taskCostCapability(request.TaskType)
-	candidates := taskCostCandidates(capability, input)
 	selector := taskCostSelector(input)
+	fallback := taskCostFallbackSettings(a, channelModelID, capability)
+	if len(selector) == 0 && fallback.DefaultResolution != "" {
+		selector = map[string]string{"quality": strings.ToLower(fallback.DefaultResolution)}
+	}
+	candidates := taskCostCandidates(capability, input)
+	if capability == "video" && len(candidates) == 1 && fallback.DefaultDuration > 0 {
+		candidates = append(candidates, taskCostCandidate{Mode: "per_second", Quantity: int64(fallback.DefaultDuration)})
+	}
 
 	var (
 		quote *credits.Quote
@@ -64,8 +99,9 @@ func (a *taskCostAdapter) ReserveTaskCost(request localtask.CostReserveRequest) 
 	)
 	for _, candidate := range candidates {
 		quoted, err := a.pricing.Quote(credits.QuoteRequest{
-			LogicalModelID: strings.TrimSpace(request.LogicalModelID),
-			ChannelModelID: strings.TrimSpace(request.ChannelModelID),
+			LogicalModelID: logicalModelID,
+			ChannelID:      channelID,
+			ChannelModelID: channelModelID,
 			Capability:     capability,
 			BillingMode:    candidate.Mode,
 			Selector:       selector,
@@ -84,7 +120,14 @@ func (a *taskCostAdapter) ReserveTaskCost(request localtask.CostReserveRequest) 
 		if taskCostIsLocalExecutor(request.TaskType) {
 			return &localtask.CostReservation{Free: true}, nil
 		}
-		return nil, kernel.NotFound("未找到有效的模型价格规则，请联系管理员配置后再提交")
+		quality := strings.TrimSpace(selector["quality"])
+		if quality == "" {
+			quality = "未指定"
+		}
+		return nil, kernel.NotFound(fmt.Sprintf(
+			"未找到有效的模型价格规则，请联系管理员配置后再提交（能力=%s，分辨率=%s，时长=%d秒）",
+			capability, quality, firstTaskCostCandidateQuantity(candidates),
+		))
 	}
 
 	attempt, err := a.repo.NextTaskCostAttempt(taskID)
@@ -126,6 +169,58 @@ func (a *taskCostAdapter) ReserveTaskCost(request localtask.CostReserveRequest) 
 		BillingMode:      mode,
 		EstimatedCredits: quote.EstimatedCredits,
 	}, nil
+}
+
+type taskCostFallback struct {
+	DefaultResolution string
+	DefaultDuration   int
+}
+
+func taskCostFallbackSettings(adapter *taskCostAdapter, channelModelID, capability string) taskCostFallback {
+	if adapter == nil || adapter.repo == nil || strings.TrimSpace(channelModelID) == "" {
+		return taskCostFallback{}
+	}
+	channelModel, err := adapter.repo.ChannelModel(channelModelID)
+	if err != nil || channelModel == nil || strings.TrimSpace(channelModel.CapabilityConfigJSON) == "" {
+		return taskCostFallback{}
+	}
+	return taskCostFallbackSettingsFromJSON(channelModel.CapabilityConfigJSON, capability)
+}
+
+func taskCostFallbackSettingsFromJSON(raw, capability string) taskCostFallback {
+	var config struct {
+		Image struct {
+			Quality struct {
+				Default string `json:"default"`
+			} `json:"quality"`
+		} `json:"image"`
+		Video struct {
+			DefaultResolution string `json:"defaultResolution"`
+			Duration          struct {
+				Default int `json:"default"`
+			} `json:"duration"`
+		} `json:"video"`
+	}
+	if json.Unmarshal([]byte(raw), &config) != nil {
+		return taskCostFallback{}
+	}
+	switch capability {
+	case "image":
+		return taskCostFallback{DefaultResolution: strings.TrimSpace(config.Image.Quality.Default)}
+	case "video":
+		return taskCostFallback{DefaultResolution: strings.TrimSpace(config.Video.DefaultResolution), DefaultDuration: config.Video.Duration.Default}
+	default:
+		return taskCostFallback{}
+	}
+}
+
+func firstTaskCostCandidateQuantity(candidates []taskCostCandidate) int64 {
+	for _, candidate := range candidates {
+		if candidate.Mode != "fixed_request" && candidate.Quantity > 0 {
+			return candidate.Quantity
+		}
+	}
+	return 0
 }
 
 // SettleTaskCost converts the outstanding freeze into real usage. With no
@@ -271,7 +366,7 @@ func taskCostCandidates(capability string, input map[string]any) []taskCostCandi
 	out := []taskCostCandidate{{Mode: "fixed_request", Quantity: 1}}
 	switch capability {
 	case "video":
-		if seconds, ok := taskCostNumber(input, "duration", "durationSeconds", "videoDuration", "seconds"); ok && seconds > 0 {
+		if seconds, ok := taskCostNumber(input, "duration", "durationSeconds", "videoDuration", "videoSeconds", "seconds"); ok && seconds > 0 {
 			out = append(out, taskCostCandidate{Mode: "per_second", Quantity: seconds})
 		}
 	case "image":
@@ -288,9 +383,53 @@ func taskCostCandidates(capability string, input map[string]any) []taskCostCandi
 	case "text":
 		if tokens, ok := taskCostNumber(input, "maxTokens", "tokens", "tokenCount"); ok && tokens > 0 {
 			out = append(out, taskCostCandidate{Mode: "per_1k_tokens", Quantity: int64(math.Ceil(float64(tokens) / 1000.0))})
+		} else if tokens := taskCostEstimatedTextTokens(input); tokens > 0 {
+			// Canvas text tasks do not carry a provider token budget. Reserve a
+			// conservative prompt + output estimate so per-token pricing remains
+			// usable; settlement still re-prices against real upstream usage and is
+			// capped at this authorized freeze.
+			out = append(out, taskCostCandidate{Mode: "per_1k_tokens", Quantity: int64(math.Ceil(float64(tokens) / 1000.0))})
 		}
 	}
 	return out
+}
+
+// taskCostEstimatedTextTokens reserves prompt text plus a conservative output
+// allowance. The estimate is only an authorization ceiling; provider usage
+// settles the final amount when a receipt is available.
+func taskCostEstimatedTextTokens(input map[string]any) int64 {
+	prompt := taskCostString(input, "prompt")
+	if strings.TrimSpace(prompt) == "" {
+		return 0
+	}
+	var ascii, nonASCII int64
+	for _, char := range prompt {
+		if char <= 127 {
+			ascii++
+		} else {
+			nonASCII++
+		}
+	}
+	// Rough tokenizer estimate: four ASCII characters or one non-ASCII
+	// character per token. A 4096-token output allowance mirrors the common
+	// direct-provider default used by the built-in text protocols.
+	return int64(math.Ceil(float64(ascii)/4.0)) + nonASCII + 16 + 4096
+}
+
+func taskCostString(input map[string]any, key string) string {
+	if value, ok := input[key].(string); ok {
+		return value
+	}
+	if config, ok := input["config"].(map[string]any); ok {
+		if value, found := config[key].(string); found {
+			return value
+		}
+	}
+	return ""
+}
+
+func taskCostChannelID(input map[string]any) string {
+	return strings.TrimSpace(taskCostString(input, "channelId"))
 }
 
 // taskCostCapability maps a task type onto the capability string used by the
@@ -328,14 +467,43 @@ func taskCostIsLocalExecutor(taskType string) bool {
 func taskCostSelector(input map[string]any) map[string]string {
 	raw := input
 	if nested, ok := raw["selector"].(map[string]any); ok {
-		return stringifySelector(nested)
+		if selector := stringifySelector(nested); selector != nil {
+			return selector
+		}
 	}
 	if config, ok := raw["config"].(map[string]any); ok {
 		if nested, ok := config["selector"].(map[string]any); ok {
-			return stringifySelector(nested)
+			if selector := stringifySelector(nested); selector != nil {
+				return selector
+			}
 		}
 	}
-	return nil
+	quality := normalizeTaskCostResolution(firstTaskCostString(input, "vquality", "resolution", "quality"))
+	switch quality {
+	case "", "auto", "standard":
+		return nil
+	default:
+		return map[string]string{"quality": quality}
+	}
+}
+
+func normalizeTaskCostResolution(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	switch value {
+	case "480", "720", "768", "1080", "1440", "2160":
+		return value + "p"
+	default:
+		return value
+	}
+}
+
+func firstTaskCostString(input map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value := taskCostString(input, key); strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func stringifySelector(selector map[string]any) map[string]string {
@@ -421,6 +589,11 @@ func lookupTaskCostNumber(input map[string]any, keys ...string) (int64, bool) {
 		case json.Number:
 			if parsed, err := typed.Int64(); err == nil && parsed > 0 {
 				return parsed, true
+			}
+		case string:
+			parsed, err := strconv.ParseFloat(strings.TrimSpace(typed), 64)
+			if err == nil && parsed > 0 {
+				return int64(math.Round(parsed)), true
 			}
 		}
 	}

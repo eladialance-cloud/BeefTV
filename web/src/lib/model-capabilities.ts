@@ -569,6 +569,26 @@ export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = "
         video.watermark = { supported: true, default: false };
         video.operations.push("reference_to_video");
     }
+    if (protocol === "toapis-video") {
+        video.references.maxImages = 9;
+        video.references.maxImageBytes = 30 * 1024 * 1024;
+        video.references.maxVideos = 3;
+        video.references.maxVideoBytes = 50 * 1024 * 1024;
+        video.references.minVideoDurationSeconds = 2;
+        video.references.maxVideoDurationSeconds = 15;
+        video.references.maxAudios = 3;
+        video.references.maxAudioBytes = 15 * 1024 * 1024;
+        video.references.minAudioDurationSeconds = 2;
+        video.references.maxAudioDurationSeconds = 15;
+        video.duration = { selection: "range", min: 4, max: 15, step: 1, default: 5 };
+        video.ratios = ["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"];
+        video.defaultRatio = "16:9";
+        video.resolutions = ["480p", "720p", "1080p", "4k"];
+        video.defaultResolution = "720p";
+        video.generateAudio = { supported: true, default: true };
+        video.watermark = { supported: true, default: false };
+        video.operations.push("reference_to_video");
+    }
     if (protocol === "novita-video") {
         video.references.maxImages = 1;
         video.references.maxImageBytes = 10 * 1024 * 1024;
@@ -675,7 +695,7 @@ export function modelCapabilityConfigFor(
         alignMaterialPixels(fallback.video);
         return fallback;
     }
-    const capabilityConfig = normalizeModelCapabilityConfig(profile.capabilityConfig);
+    const capabilityConfig = repairLegacyToAPISeedanceConfig(protocol, modelName, normalizeModelCapabilityConfig(profile.capabilityConfig));
     const text = capabilityConfig.text ? { ...fallback.text!, ...capabilityConfig.text, references: { ...fallback.text!.references, ...capabilityConfig.text.references } } : fallback.text;
     const video = (capabilityConfig.video ? { ...fallback.video!, ...capabilityConfig.video, references: { ...fallback.video!.references, ...capabilityConfig.video.references } } : fallback.video)!;
     alignMaterialPixels(video);
@@ -706,12 +726,61 @@ export function modelCapabilityConfigFor(
 }
 
 function isSeedance2Family(protocol: ModelProtocol | undefined, modelName: string) {
-    return Boolean(protocol && ["openai", "openai-videos", "newapi", "newapi-channel-2", "volcengine-ark-video", "volcengine-ark-agent-plan-video"].includes(protocol) && String(modelName).toLowerCase().includes("seedance-2"));
+    return Boolean(protocol && ["openai", "openai-videos", "newapi", "newapi-channel-2", "toapis-video", "volcengine-ark-video", "volcengine-ark-agent-plan-video"].includes(protocol) && String(modelName).toLowerCase().includes("seedance-2"));
+}
+
+function repairLegacyToAPISeedanceConfig(protocol: ModelProtocol | undefined, modelName: string, config: ModelCapabilityConfig): ModelCapabilityConfig {
+    if (protocol !== "toapis-video" || !isSeedance2Family(protocol, modelName) || !config.video) return config;
+    const video = config.video;
+    const refs = video.references;
+    const legacyDefaults =
+        refs.maxVideos === 0 &&
+        refs.maxAudios === 0 &&
+        refs.maxVideoBytes === 0 &&
+        refs.maxAudioBytes === 0 &&
+        refs.maxVideoDurationSeconds === 0 &&
+        refs.maxAudioDurationSeconds === 0 &&
+        !video.generateAudio.supported &&
+        !video.operations.includes("reference_to_video") &&
+        !video.operations.includes("audio_to_video");
+    if (!legacyDefaults) return config;
+    const is25 = isSeedance25Model(modelName);
+    const official = overlayOfficialSeedance2References(refs, is25);
+    return {
+        ...config,
+        video: {
+            ...video,
+            references: {
+                ...refs,
+                maxVideos: official.maxVideos,
+                maxVideoBytes: official.maxVideoBytes,
+                minVideoDurationSeconds: official.minVideoDurationSeconds,
+                maxVideoDurationSeconds: official.maxVideoDurationSeconds,
+                maxVideoTotalDurationSeconds: official.maxVideoTotalDurationSeconds,
+                minVideoWidth: official.minVideoWidth,
+                maxVideoWidth: official.maxVideoWidth,
+                minVideoHeight: official.minVideoHeight,
+                maxVideoHeight: official.maxVideoHeight,
+                minVideoAspect: official.minVideoAspect,
+                maxVideoAspect: official.maxVideoAspect,
+                minVideoPixels: official.minVideoPixels,
+                maxVideoPixels: official.maxVideoPixels,
+                maxAudios: official.maxAudios,
+                maxAudioBytes: official.maxAudioBytes,
+                minAudioDurationSeconds: official.minAudioDurationSeconds,
+                maxAudioDurationSeconds: official.maxAudioDurationSeconds,
+                maxAudioTotalDurationSeconds: official.maxAudioTotalDurationSeconds,
+            },
+            generateAudio: { supported: true, default: true },
+            operations: Array.from(new Set([...video.operations, "reference_to_video", ...(is25 ? ["audio_to_video"] : [])])),
+            duration: is25 && video.duration.selection === "range" && (video.duration.max || 0) < 30 ? { ...video.duration, max: 30 } : video.duration,
+        },
+    };
 }
 
 export function isSeedance25Model(modelName: string) {
     const base = String(modelName).trim().toLowerCase().split("/").pop() || "";
-    return /^seedance-2\.5(?:-|$)/.test(base) || /^(?:doubao|dreamina)-seedance-2[.-]5(?:-|$)/.test(base);
+    return /^seedance-2[.-]5(?:-|$)/.test(base) || /^(?:doubao|dreamina)-seedance-2[.-]5(?:-|$)/.test(base);
 }
 
 function overlayOfficialSeedance2References(base: VideoCapabilityConfig["references"], is25: boolean): VideoCapabilityConfig["references"] {

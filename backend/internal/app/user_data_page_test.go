@@ -20,6 +20,12 @@ func TestUserCanvasLibraryPageIsBoundedAndScoped(t *testing.T) {
 	if err := db.Create(&model.CanvasProject{ID: "foreign", UserID: "other", Title: "Foreign", PayloadJSON: `{}`}).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Create(&model.Project{ID: "manju-project", UserID: "owner", Name: "漫剧项目", Type: "manju", Status: model.ProjectStatusActive, Revision: 1}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.CanvasProject{ID: "manju-canvas", UserID: "owner", ProjectID: "manju-project", Title: "漫剧项目画布", PayloadJSON: `{}`}).Error; err != nil {
+		t.Fatal(err)
+	}
 	page, err := service.UserCanvasProjectsPage("owner", 1, 999, "", "", "name")
 	if err != nil {
 		t.Fatal(err)

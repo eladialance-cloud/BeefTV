@@ -1,6 +1,6 @@
-# BeefTV: MiniMax H3 Max Turbo
+# VisiDeep AI: MiniMax H3 Max Turbo
 
-2026-10-13 implementation scope: the managed BeefTV catalog registers exactly `minimax-h3-max-turbo` as a video model using the BeefAPI gateway. fal credentials stay at the gateway. Custom providers with the same name keep their selected protocol.
+2026-10-13 implementation scope: the managed VisiDeep AI catalog registers exactly `minimax-h3-max-turbo` as a video model using the BeefAPI gateway. fal credentials stay at the gateway. Custom providers with the same name keep their selected protocol.
 
 The server catalog supplies whole-second duration (1–15, default 5), resolutions (768p default, 480p, 1080p), ratios and CNY second prices. Native sound has no mute switch; there is no watermark switch or reference-video input. One or two images are keyframes, not subject references. An explicit last frame may be sent without a first frame. One optional audio input pins the soundtrack; video and audio must each be at least two seconds. Model refresh persists the same configuration for desktop and frontend consumers.
 

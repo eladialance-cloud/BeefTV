@@ -13,6 +13,7 @@ import { buildPortraitTexturePrompt } from "@/lib/canvas/canvas-portrait-texture
 import { buildCameraPrompt } from "@/lib/canvas/camera-prompt-library";
 import { buildTextRewritePrompt } from "@/lib/prompts";
 import { resolveCanvasStyleExecution } from "@/lib/canvas/canvas-style-execution";
+import { composeManjuImageExecutionPrompt, composeManjuVideoExecutionPrompt } from "@/lib/canvas/canvas-manju";
 import { generationErrorMessage } from "@/lib/generation-error";
 import { navigateToSettings } from "@/lib/settings-navigation";
 import { modelCompatibilityError, modelGroupReferenceLimits, modelPromptLengthError, modelRequestOptions, type ModelRequirements } from "@/lib/model-selection";
@@ -162,6 +163,12 @@ export function useCanvasGenerationExecutor({
                     const sourceTextContent = sourceNode?.type === CanvasNodeType.Text ? sourceNode.metadata?.content?.trim() || "" : "";
                     const editingTextNode = mode === "text" && Boolean(sourceTextContent);
                     let generationPrompt = mode === "image" && sourceNode?.metadata?.portraitTexture ? buildPortraitTexturePrompt(prompt, sourceNode.metadata.portraitTexture) : prompt;
+                    if (mode === "image" && sourceNode?.metadata?.manjuGlobalStylePrompt) {
+                        generationPrompt = composeManjuImageExecutionPrompt(generationPrompt, sourceNode.metadata.manjuGlobalStylePrompt);
+                    }
+                    if (mode === "video" && sourceNode?.metadata?.manjuStage === "p4_videos") {
+                        generationPrompt = composeManjuVideoExecutionPrompt(generationPrompt, sourceNode.metadata?.manjuGlobalStylePrompt);
+                    }
                     if (mode === "image" && sourceNode?.metadata?.cameraControl?.enabled) {
                         const cameraControl = sourceNode.metadata.cameraControl;
                         const cameraPrompt = buildCameraPrompt({ cameraId: cameraControl.camera, lensId: cameraControl.lens, focalLengthMm: cameraControl.focalLength, apertureF: cameraControl.aperture });

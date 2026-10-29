@@ -318,6 +318,7 @@ func TestListProjectsIsolatesUsersAndCountsUnits(t *testing.T) {
 	svc, db := newTestService(t, nil)
 	mine := seedProject(t, db, model.Project{ID: "mine", UserID: "user-1", Name: "我的"})
 	seedProject(t, db, model.Project{ID: "theirs", UserID: "user-2", Name: "别人的"})
+	seedProject(t, db, model.Project{ID: "manju-private", UserID: "user-1", Name: "漫剧项目", Type: "manju"})
 	if err := db.Create(&model.ProjectUnit{ID: "u1", ProjectID: mine.ID, Title: "一", Status: model.ProjectUnitStatusCompleted}).Error; err != nil {
 		t.Fatal(err)
 	}

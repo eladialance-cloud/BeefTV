@@ -45,6 +45,7 @@ func (r *Repository) UserAssetsPage(userID string, page int, pageSize int, filte
 	// 素材库页面只展示媒体与文本素材；entity 角色卡由项目资产页管理。列表与 facets 必须同口径排除，
 	// 否则 facets 会计入 entity，前端出现“全部计数 30 但列表为空”的矛盾。
 	query := userAssetFilteredQuery(r.db.Model(&model.Asset{}).Where("user_id = ? AND kind <> ?", userID, "entity"), filter, true)
+	query = r.excludeAdminModerated(query, model.AdminModerationTargetAsset, "assets.id")
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}

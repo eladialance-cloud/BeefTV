@@ -3,6 +3,7 @@ package hostedapi
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"infinite-canvas/backend/internal/credits"
@@ -13,16 +14,21 @@ import (
 )
 
 type fakePricingAdminService struct {
-	rules       []model.PricingRule
-	saved       *model.PricingRule
-	deletedID   string
-	gotKind     string
-	gotID       string
-	gotActorID  string
-	gotInput    credits.PricingInput
-	listErr     error
-	saveErr     error
-	deleteError error
+	rules        []model.PricingRule
+	saved        *model.PricingRule
+	deletedID    string
+	gotKind      string
+	gotID        string
+	gotActorID   string
+	gotInput     credits.PricingInput
+	listErr      error
+	saveErr      error
+	deleteError  error
+	quote        *credits.Quote
+	quoteErr     error
+	gotQuote     credits.QuoteRequest
+	quotesByMode map[string]*credits.Quote
+	quoteModes   []string
 }
 
 func (f *fakePricingAdminService) Rules(kind string) ([]model.PricingRule, error) {
@@ -44,6 +50,19 @@ func (f *fakePricingAdminService) Delete(actor *model.User, kind string, id stri
 	f.gotID = id
 	f.deletedID = id
 	return f.deleteError
+}
+
+func (f *fakePricingAdminService) Quote(request credits.QuoteRequest) (*credits.Quote, error) {
+	f.gotQuote = request
+	f.quoteModes = append(f.quoteModes, request.BillingMode)
+	if f.quotesByMode != nil {
+		quote := f.quotesByMode[request.BillingMode]
+		if quote == nil {
+			return nil, kernel.NotFound("未找到有效的模型价格规则")
+		}
+		return quote, nil
+	}
+	return f.quote, f.quoteErr
 }
 
 func newPricingAPITestEnv(t *testing.T) (*gin.Engine, *fakePricingAdminService) {
@@ -70,7 +89,67 @@ func newPricingAPITestEnv(t *testing.T) (*gin.Engine, *fakePricingAdminService) 
 		}
 		return nil
 	})
+	RegisterPricingQuoteRoutes(engine.Group("/api"), service, resolve)
 	return engine, service
+}
+
+func TestPricingQuoteRequiresLoginAndReturnsServerEstimate(t *testing.T) {
+	engine, service := newPricingAPITestEnv(t)
+	service.quote = &credits.Quote{
+		RuleID: "video-1080", RuleKind: model.PricingKindLogicalSKU, BillingMode: "per_second",
+		Quantity: 5, UnitPriceMicrocredits: 500_000, EstimatedCredits: 2_500_000,
+	}
+	body := map[string]any{
+		"logicalModelId": "logical-video",
+		"channelId":      "channel-1",
+		"channelModelId": "video-model",
+		"modelKey":       "video-model",
+		"capability":     "video",
+		"billingMode":    "per_second",
+		"selector":       map[string]string{"quality": "1080p"},
+		"quantity":       5,
+	}
+	anonymous := creditRequest(t, engine, http.MethodPost, "/api/pricing/quote", body, "")
+	if anonymous.Code != http.StatusUnauthorized {
+		t.Fatalf("未登录报价应 401，得到 %d", anonymous.Code)
+	}
+	response := creditRequest(t, engine, http.MethodPost, "/api/pricing/quote", body, "alice")
+	if response.Code != http.StatusOK {
+		t.Fatalf("用户报价应 200，得到 %d: %s", response.Code, response.Body.String())
+	}
+	if response.Header().Get("X-Pricing-Quote-Version") != "2" {
+		t.Fatalf("报价版本头 = %q", response.Header().Get("X-Pricing-Quote-Version"))
+	}
+	if service.gotQuote.LogicalModelID != "logical-video" || service.gotQuote.ModelKey != "video-model" || service.gotQuote.Quantity != 5 || service.gotQuote.Selector["quality"] != "1080p" {
+		t.Fatalf("quote request = %#v", service.gotQuote)
+	}
+	if !strings.Contains(response.Body.String(), `"estimatedCredits":2500000`) {
+		t.Fatalf("quote response = %s", response.Body.String())
+	}
+}
+
+func TestPricingQuoteAutoTriesFixedBeforeUsageBilling(t *testing.T) {
+	engine, service := newPricingAPITestEnv(t)
+	service.quotesByMode = map[string]*credits.Quote{
+		"per_second": {
+			RuleID: "video-seconds", RuleKind: model.PricingKindChannelTier, BillingMode: "per_second",
+			Quantity: 5, UnitPriceMicrocredits: 500_000, EstimatedCredits: 2_500_000,
+		},
+	}
+	response := creditRequest(t, engine, http.MethodPost, "/api/pricing/quote", map[string]any{
+		"channelId": "channel-1", "channelModelId": "video-model",
+		"capability": "video", "billingMode": "auto",
+		"selector": map[string]string{"quality": "1080p"}, "quantity": 5,
+	}, "alice")
+	if response.Code != http.StatusOK {
+		t.Fatalf("自动报价应 200，得到 %d: %s", response.Code, response.Body.String())
+	}
+	if len(service.quoteModes) != 2 || service.quoteModes[0] != "fixed_request" || service.quoteModes[1] != "per_second" {
+		t.Fatalf("自动报价计费顺序 = %#v", service.quoteModes)
+	}
+	if !strings.Contains(response.Body.String(), `"estimatedCredits":2500000`) {
+		t.Fatalf("quote response = %s", response.Body.String())
+	}
 }
 
 func TestPricingAdminRequiresLoginAndAdmin(t *testing.T) {

@@ -12,6 +12,9 @@ func MediaHydrationPolicyFor(ctx context.Context, input Input) MediaHydrationPol
 	if input.Config.InterfaceType == "full-video" {
 		return MediaHydrationPolicy{KeepLocal: true}
 	}
+	if IsToAPIMediaConfig(input.Config) {
+		return MediaHydrationPolicy{ProviderImageUpload: true}
+	}
 	policy := MediaHydrationPolicy{PreferURL: PrefersMediaURLs(input.Config.InterfaceType, input)}
 	if model.IsVolcengineArkVideoProtocol(model.ChannelInterfaceType(input.Config.InterfaceType)) {
 		return MediaHydrationPolicy{PreferHTTPS: true}
@@ -40,6 +43,15 @@ func MediaHydrationPolicyFor(ctx context.Context, input Input) MediaHydrationPol
 		policy.PreferURL = false
 	}
 	return policy
+}
+
+func IsToAPIMediaConfig(config Config) bool {
+	switch strings.TrimSpace(config.InterfaceType) {
+	case "toapis-image", "toapis-video":
+		return true
+	default:
+		return false
+	}
 }
 
 // PrefersMediaURLs lists protocols that accept remote URLs. Multipart/byte

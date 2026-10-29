@@ -44,7 +44,7 @@
 | `create.body.size` | `{"$omitEmpty":{"$if":{"condition":{"$in":[{"$lower":{"$trim":{"$ref":"request.aspectRatio"}}},["","auto"]]},"then":null,"else":{"$ref":"request.aspectRatio"}}}}` |
 | `create.body.quality` | `{"$omitEmpty":{"$switch":{"cases":[{"when":{"$in":[{"$lower":{"$trim":{"$ref":"request.quality"}}},["1k"]]},"then":"low"},{"when":{"$in":[{"$lower":{"$trim":{"$ref":"request.quality"}}},["2k"]]},"then":"medium"},{"when":{"$in":[{"$lower":{"$trim":{"$ref":"request.quality"}}},["4k"]]},"then":"high"},{"when":{"$in":[{"$lower":{"$trim":{"$ref":"request.quality"}}},["","auto"]]},"then":null}],"default":{"$ref":"request.quality"}}}}` |
 | `create.body.background` | `{"$omitEmpty":{"$coalesce":[{"$ref":"request.providerOptions.openai-image.background"},{"$if":{"condition":{"$eq":[{"$ref":"request.extra.transparentBackground"},"true"]},"then":"transparent","else":null}}]}}` |
-| `create.body.output_format` | `{"$omitEmpty":{"$coalesce":[{"$ref":"request.providerOptions.openai-image.output_format"},"png"]}}` |
+| `create.body.output_format` | `{"$omitEmpty":{"$ref":"request.providerOptions.openai-image.output_format"}}` |
 | `create.body.output_compression` | `{"$omitEmpty":{"$ref":"request.providerOptions.openai-image.output_compression"}}` |
 | `create.body.moderation` | `{"$omitEmpty":{"$ref":"request.providerOptions.openai-image.moderation"}}` |
 | `create.body.response_format` | `{"$omitEmpty":{"$ref":"request.providerOptions.openai-image.response_format"}}` |
@@ -385,12 +385,7 @@
             },
             "output_format": {
               "$omitEmpty": {
-                "$coalesce": [
-                  {
-                    "$ref": "request.providerOptions.openai-image.output_format"
-                  },
-                  "png"
-                ]
+                "$ref": "request.providerOptions.openai-image.output_format"
               }
             },
             "output_compression": {

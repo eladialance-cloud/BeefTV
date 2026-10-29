@@ -1,13 +1,15 @@
 # Changelog
 
-All notable public changes to BeefTV are documented in this file.
+All notable public changes to VisiDeep AI are documented in this file.
+
+> 历史条目保留上游 BeefTV 的原始版本记录，便于追溯；产品当前统一使用 VisiDeep AI 品牌。
 
 ## Unreleased
 
 - Built-in BeefAPI can be connected from the desktop app without pasting a key.
 - Prepared the first audited public source snapshot.
 - Added reproducible local builds, automated quality checks, and multi-architecture container publishing.
-- Standardized public artifacts, runtime identifiers, documentation, and repository links on the BeefTV name.
+- Standardized public artifacts, runtime identifiers, documentation, and repository links on the VisiDeep AI name.
 
 ## v1.7.24
 

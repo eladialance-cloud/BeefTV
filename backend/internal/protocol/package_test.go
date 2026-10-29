@@ -42,13 +42,13 @@ func TestParsePluginPackageValidatesWebEntry(t *testing.T) {
 	}
 }
 
-func TestPluginPackageUsesBeefTVFormat(t *testing.T) {
+func TestPluginPackageUsesVisiDeepAIFormat(t *testing.T) {
 	if PluginPackageFormat != "beeftv.plugin/package-v1" {
 		t.Fatalf("package format = %q", PluginPackageFormat)
 	}
 }
 
-func TestPluginPackageUsesBeefTVFileExtension(t *testing.T) {
+func TestPluginPackageUsesVisiDeepAIFileExtension(t *testing.T) {
 	if PluginPackageExtension != ".beeftv-plugin" {
 		t.Fatalf("package extension = %q", PluginPackageExtension)
 	}

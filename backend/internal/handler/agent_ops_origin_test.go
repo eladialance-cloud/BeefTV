@@ -41,6 +41,22 @@ func TestIsLoopbackRequestOriginRules(t *testing.T) {
 	}
 }
 
+func TestTrustedHostedOriginAcceptsLoopbackProxyForwardedHost(t *testing.T) {
+	t.Setenv("BEEFTV_ALLOWED_ORIGINS", "")
+	t.Setenv("CANVAS_CORS_ORIGINS", "")
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8080/api/assistant/ui-session", nil)
+	req.RemoteAddr = "127.0.0.1:54321"
+	req.Header.Set("Origin", "http://127.0.0.1:4175")
+	req.Header.Set("X-Forwarded-Host", "127.0.0.1:4175")
+	if !trustedHostedOrigin(req) {
+		t.Fatal("loopback proxy forwarded host should preserve browser same-origin authority")
+	}
+	req.RemoteAddr = "10.0.0.9:54321"
+	if trustedHostedOrigin(req) {
+		t.Fatal("forwarded host must not be trusted from a non-loopback peer")
+	}
+}
+
 func TestWailsOriginRequiresAuthenticatedDesktopTransport(t *testing.T) {
 	for _, origin := range []string{"wails://wails", "http://wails.localhost", "https://wails.localhost", "wails://attacker", "https://evil.example"} {
 		for _, token := range []string{"", "wrong", "test-desktop-token"} {

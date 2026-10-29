@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"infinite-canvas/backend/internal/kernel"
 	"infinite-canvas/backend/internal/localcrypto"
@@ -79,6 +80,26 @@ func (f *fakeRepo) PaymentOrder(id string) (*model.PaymentOrder, error) {
 func (f *fakeRepo) CreatePaymentOrder(item *model.PaymentOrder) error { return nil }
 func (f *fakeRepo) UpdatePaymentOrder(item *model.PaymentOrder) error {
 	return gorm.ErrRecordNotFound
+}
+
+func (f *fakeRepo) ExpirePendingPaymentOrders(cutoff time.Time, reason string, limit int, now time.Time) (int64, error) {
+	return 0, nil
+}
+
+func (f *fakeRepo) PaymentOrderCountsByStatus() (map[string]int64, error) {
+	return map[string]int64{}, nil
+}
+
+func (f *fakeRepo) PaymentOrderSettledTotals() (amountFen int64, credits int64, err error) {
+	return 0, 0, nil
+}
+
+func (f *fakeRepo) PaymentOrderCountsNeedingAttention(cutoff time.Time) (paidUnsettled int64, pendingOverdue int64, err error) {
+	return 0, 0, nil
+}
+
+func (f *fakeRepo) PaymentNotificationCounts() (unprocessed int64, failed int64, err error) {
+	return 0, 0, nil
 }
 func (f *fakeRepo) CreatePaymentNotification(item *model.PaymentNotification) (bool, error) {
 	return true, nil

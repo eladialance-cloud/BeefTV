@@ -22,4 +22,8 @@ type Repository interface {
 	CreateAuthSession(session *model.AuthSession) error
 	AuthSessionByTokenHash(tokenHash string) (*model.AuthSession, bool, error)
 	RevokeAuthSession(id string, revokedAt time.Time) error
+	// UpdatePasswordHash replaces the user's password credential in place.
+	UpdatePasswordHash(userID string, provider string, passwordHash string, updatedAt time.Time) (bool, error)
+	// ConsumeInviteCode 在同一事务里校验邀请码、创建用户与身份并写核销记录。
+	ConsumeInviteCode(code string, user *model.User, identity *model.UserIdentity) error
 }

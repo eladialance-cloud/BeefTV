@@ -23,6 +23,7 @@ function hasMediaResource(node: CanvasNodeData): boolean {
 /** Reads explicit semantics first and falls back to legacy persisted data. */
 export function canvasMediaNodeRole(node: CanvasNodeData | null | undefined): CanvasMediaNodeRole | null {
     if (!node || !isCanvasMediaNode(node)) return null;
+    if (node.metadata?.pluginData?.creationTemplateDynamicRef && !hasMediaResource(node)) return "generator";
     return node.metadata?.nodeRole || (hasMediaResource(node) ? "result" : "generator");
 }
 

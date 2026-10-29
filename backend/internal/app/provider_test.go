@@ -128,6 +128,38 @@ func TestLocalProviderConfigRejectsHostedChannelSelection(t *testing.T) {
 	}
 }
 
+func TestHostedLocalKernelProviderConfigResolvesSystemChannel(t *testing.T) {
+	service, db := newChannelModelTestService(t)
+	service.mode = serviceModeLocal
+	service.SetHostedProfile(true)
+	service.dataDir = t.TempDir()
+	channel := model.ModelChannel{
+		ID: "channel-hosted-local", Scope: model.ChannelScopeSystem, Enabled: true, Name: "Hosted text",
+		BaseURL: "https://8.8.8.8/v1", APIKey: "upstream-secret", APIFormat: "openai",
+	}
+	if err := service.encryptSystemChannelSecrets(&channel); err != nil {
+		t.Fatal(err)
+	}
+	item := model.ChannelModel{
+		ID: "model-hosted-local", ChannelID: channel.ID, ModelKey: "hosted-text", ProviderModelKey: "upstream-text",
+		Capability: "text", Protocol: model.ChannelInterfaceChatCompletion, Enabled: true,
+	}
+	if err := db.Create(&channel).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	config, err := service.resolveProviderConfig(providerConfig{ChannelID: channel.ID, Model: item.ModelKey})
+	if err != nil {
+		t.Fatalf("hosted local kernel rejected an admin-managed system channel: %v", err)
+	}
+	if config.Model != item.ProviderModelKey || config.ChannelModelKey != item.ModelKey {
+		t.Fatalf("resolved config = %#v", config)
+	}
+}
+
 func TestProviderRequestErrorDetails(t *testing.T) {
 	tests := []struct {
 		name string

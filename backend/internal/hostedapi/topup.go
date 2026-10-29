@@ -22,6 +22,9 @@ type TopupService interface {
 	Orders(limit int) ([]model.PaymentOrder, error)
 	MarkPaid(actor *model.User, orderID string, providerTradeNo string) (*model.PaymentOrder, error)
 	ClosePaymentOrder(orderID string, reason string) (*model.PaymentOrder, error)
+	RefundPaymentOrder(actor *model.User, orderID string, reason string, providerRefundNo string) (*model.PaymentOrder, error)
+	ExpirePendingOrders(limit int) (int64, error)
+	Reconcile() (*payment.Reconciliation, error)
 }
 
 // RegisterTopupRoutes mounts the user-facing recharge surface: browse SKUs and
@@ -172,6 +175,48 @@ func RegisterTopupAdminRoutes(r *gin.RouterGroup, svc TopupService, resolve Acto
 			return
 		}
 		writeOK(c, gin.H{"items": items})
+	})
+	orders.GET("/reconciliation", func(c *gin.Context) {
+		if _, ok := admin(c); !ok {
+			return
+		}
+		snapshot, err := svc.Reconcile()
+		if err != nil {
+			writeError(c, err)
+			return
+		}
+		writeOK(c, gin.H{"item": snapshot})
+	})
+	orders.POST("/expire", func(c *gin.Context) {
+		if _, ok := admin(c); !ok {
+			return
+		}
+		closed, err := svc.ExpirePendingOrders(200)
+		if err != nil {
+			writeError(c, err)
+			return
+		}
+		writeOK(c, gin.H{"closed": closed})
+	})
+	orders.POST("/:id/refund", func(c *gin.Context) {
+		actor, ok := admin(c)
+		if !ok {
+			return
+		}
+		var input struct {
+			Reason           string `json:"reason"`
+			ProviderRefundNo string `json:"providerRefundNo"`
+		}
+		if err := c.ShouldBindJSON(&input); err != nil {
+			writeError(c, kernel.BadAuthRequest("退款参数格式错误"))
+			return
+		}
+		item, err := svc.RefundPaymentOrder(actor, c.Param("id"), input.Reason, input.ProviderRefundNo)
+		if err != nil {
+			writeError(c, err)
+			return
+		}
+		writeOK(c, gin.H{"item": item})
 	})
 	orders.POST("/:id/mark-paid", func(c *gin.Context) {
 		actor, ok := admin(c)

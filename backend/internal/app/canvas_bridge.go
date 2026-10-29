@@ -581,10 +581,19 @@ func (s *operationSession) OwnedAsset(userID, assetID string) (*model.Asset, err
 
 func (s *operationSession) BindExistingCanvasNode(userID string, patch canvas.TaskOutputBind) (canvas.TaskOutputBindResult, error) {
 	patch.AllowEmptyVideo = false
+	patch.AllowEmptyImage = false
+	patch.AllowReplaceImage = false
 	patch.DepthClientOperationID = ""
 	task, err := s.repo.TaskForUser(userID, patch.TaskID)
 	if err != nil {
 		return canvas.TaskOutputBindResult{}, err
+	}
+	if trustedEmptyImageBind(task, userID, patch) {
+		patch.AllowEmptyImage = true
+		patch.AllowReplaceImage = true
+	}
+	if trustedEmptyVideoBind(task, userID, patch) {
+		patch.AllowEmptyVideo = true
 	}
 	if task != nil && task.UserID == userID && task.ProjectID == patch.CanvasID && task.Type == model.TaskTypeTimelineRender && task.Provider == "local" && task.Model == "ffmpeg" && task.Status == model.TaskStatusSucceeded {
 		patch.AllowEmptyVideo = true
@@ -596,6 +605,22 @@ func (s *operationSession) BindExistingCanvasNode(userID string, patch canvas.Ta
 		}
 	}
 	return s.canvas.BindTaskOutputToExistingNode(userID, patch)
+}
+
+func trustedEmptyImageBind(task *model.Task, userID string, patch canvas.TaskOutputBind) bool {
+	return trustedEmptyMediaBind(task, userID, patch, "canvas_image")
+}
+
+func trustedEmptyVideoBind(task *model.Task, userID string, patch canvas.TaskOutputBind) bool {
+	return trustedEmptyMediaBind(task, userID, patch, "canvas_video")
+}
+
+func trustedEmptyMediaBind(task *model.Task, userID string, patch canvas.TaskOutputBind, taskType string) bool {
+	if task == nil || task.UserID != userID || task.ProjectID != patch.CanvasID || task.Type != taskType || task.Status != model.TaskStatusSucceeded {
+		return false
+	}
+	target := localtask.TargetBindingFromInput(task.InputJSON)
+	return target.NodeID != "" && target.NodeID == patch.NodeID
 }
 
 func (s *operationSession) conversations() *conversation.Service {

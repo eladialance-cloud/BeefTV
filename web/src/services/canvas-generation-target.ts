@@ -2,13 +2,31 @@ import type { Dispatch, SetStateAction } from "react";
 import { assetResourceId, bindCanvasNodeResourceAsset, canvasNodeResourceId, extractOwnedResourceId } from "@/lib/canvas/canvas-resource-id";
 import { assertUserScope, isUserScopeAbandonedError, type CapturedUserScope } from "@/lib/user-scope-guard";
 import { CanvasStaleScopeError } from "@/services/canvas-revision-conflict";
-import { persistCanvasDocument } from "@/services/local-workspace-repository";
+import { persistCanvasDocument, syncLocalCanvasProjectToBackend } from "@/services/local-workspace-repository";
+import { isRemoteWorkspaceMode } from "@/services/workspace-mode";
 import type { ensureCanvasNodeAsset } from "@/services/project-asset-sync";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useCanvasStore, type CanvasProject } from "@/stores/canvas/use-canvas-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import type { TimelineDirectMedia } from "@/types/timeline";
 import { CanvasGenerationTargetSaveError } from "./canvas-generation-errors";
+
+const remoteTargetSaveTails = new Map<string, Promise<void>>();
+
+function persistRemoteTargetOnce(
+    projectId: string,
+    expectedScope: CapturedUserScope,
+    persistRemote: typeof syncLocalCanvasProjectToBackend,
+) {
+    const key = `${expectedScope.userScope}\0${projectId}`;
+    const existing = remoteTargetSaveTails.get(key);
+    if (existing) return existing;
+    const pending = persistRemote(projectId, expectedScope).finally(() => {
+        if (remoteTargetSaveTails.get(key) === pending) remoteTargetSaveTails.delete(key);
+    });
+    remoteTargetSaveTails.set(key, pending);
+    return pending;
+}
 
 export function isCanvasMediaAssetGuardError(error: unknown) {
     const message = error instanceof Error ? error.message : error && typeof error === "object" && "message" in error && typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : "";
@@ -293,7 +311,9 @@ export async function persistCanvasGenerationTarget(input: {
     expectedScope: CapturedUserScope;
     ensureNodeAsset?: typeof ensureCanvasNodeAsset;
     isCurrent?: () => boolean;
-}, persist: typeof persistCanvasDocument = persistCanvasDocument) {
+}, persist: typeof persistCanvasDocument = persistCanvasDocument,
+    persistRemote: typeof syncLocalCanvasProjectToBackend = syncLocalCanvasProjectToBackend,
+    remoteMode: () => boolean = isRemoteWorkspaceMode) {
     const assertCurrent = () => {
         if (input.signal?.aborted) throw new DOMException("The operation was aborted", "AbortError");
         assertUserScope(input.expectedScope);
@@ -306,8 +326,16 @@ export async function persistCanvasGenerationTarget(input: {
     const project = useCanvasStore.getState().openProject(input.projectId);
     if (!project?.nodes.some((node) => node.id === input.nodeId)) throw new CanvasGenerationTargetSaveError(undefined, "生成节点已不存在，未开始生成");
     syncInMemoryCanvasProjectMediaAssets(project);
+    const persistTargetDocument = async (document: Pick<CanvasProject, "nodes" | "connections"> & Partial<Pick<CanvasProject, "timeline">>) => {
+        await persist(input.projectId, document, input.expectedScope);
+        if (remoteMode()) {
+            assertCurrent();
+            await persistRemoteTargetOnce(input.projectId, input.expectedScope, persistRemote);
+            assertCurrent();
+        }
+    };
     try {
-        await persist(input.projectId, { nodes: project.nodes, connections: project.connections }, input.expectedScope);
+        await persistTargetDocument({ nodes: project.nodes, connections: project.connections });
     } catch (error) {
         rethrowIfControlError(error);
         if (isCanvasMediaAssetGuardError(error)) {
@@ -322,15 +350,11 @@ export async function persistCanvasGenerationTarget(input: {
                 assertCurrent();
                 const current = useCanvasStore.getState().openProject(input.projectId);
                 if (!current) throw new CanvasGenerationTargetSaveError(undefined, "生成节点已不存在，未开始生成");
-                await persist(
-                    input.projectId,
-                    {
-                        nodes: current.nodes,
-                        connections: current.connections,
-                        ...(current.timeline ? { timeline: current.timeline } : {}),
-                    },
-                    input.expectedScope,
-                );
+                await persistTargetDocument({
+                    nodes: current.nodes,
+                    connections: current.connections,
+                    ...(current.timeline ? { timeline: current.timeline } : {}),
+                });
             } catch (retryError) {
                 rethrowIfControlError(retryError);
                 throw new CanvasGenerationTargetSaveError(retryError);
@@ -343,7 +367,7 @@ export async function persistCanvasGenerationTarget(input: {
     const current = useCanvasStore.getState().openProject(input.projectId);
     if (!current?.nodes.some((node) => node.id === input.nodeId)) {
         // 保存期间的删除也必须提交；旧快照的回执不能让节点在下次打开时重现。
-        if (current) await persist(input.projectId, { nodes: current.nodes, connections: current.connections }, input.expectedScope);
+        if (current) await persistTargetDocument({ nodes: current.nodes, connections: current.connections });
         throw new CanvasGenerationTargetSaveError(undefined, "生成节点已不存在，未开始生成");
     }
 }

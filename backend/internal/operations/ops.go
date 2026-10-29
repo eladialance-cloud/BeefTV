@@ -67,6 +67,9 @@ func RegisterDefaultOps(r *Registry) {
 	r.Register(Op{ReplaySafe: true, AssistantCanvas: true, ID: "canvas.task.bind", Summary: "把已交付的任务产物绑定到原画布节点（校验归属与就绪资源，带 revision CAS，幂等回执）", Scope: ScopeCanvas,
 		Params:  json.RawMessage(`{"type":"object","properties":{"canvasId":{"type":"string"},"taskId":{"type":"string"},"nodeId":{"type":"string"},"outputIndex":{"type":"integer"}},"required":["canvasId","taskId","nodeId"]}`),
 		Handler: opCanvasTaskBind, ProjectReplay: projectCanvasTaskBindReplay})
+	r.Register(Op{ReplaySafe: true, ID: "canvas.task.recover", Summary: "把已交付任务产物重新放回画布；原节点不存在时由服务端创建幂等恢复节点", Scope: ScopeCanvas,
+		Params:  json.RawMessage(`{"type":"object","properties":{"canvasId":{"type":"string"},"taskId":{"type":"string"},"outputIndex":{"type":"integer"},"title":{"type":"string"},"position":{"type":"object","properties":{"x":{"type":"number"},"y":{"type":"number"}}}},"required":["canvasId","taskId"]}`),
+		Handler: opCanvasTaskRecover, ProjectReplay: projectCanvasTaskBindReplay})
 	r.Register(Op{ID: "conversation.message.attach", Summary: "把已交付的任务产物绑定到原对话消息（校验归属与就绪资源，带 revision CAS，幂等回执）", Scope: ScopeConversation,
 		Params:  json.RawMessage(`{"type":"object","properties":{"conversationId":{"type":"string"},"taskId":{"type":"string"},"messageId":{"type":"string"},"outputIndex":{"type":"integer"}},"required":["conversationId","taskId","messageId"]}`),
 		Handler: opConversationMessageAttach, ProjectReplay: projectConversationMessageAttachReplay})

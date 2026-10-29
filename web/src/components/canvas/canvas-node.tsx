@@ -7,6 +7,7 @@ import { shouldBlockAutomaticRetry } from "@/lib/generation-error";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { canvasConnectionTilt } from "@/lib/canvas/canvas-connection-tilt";
+import { isManjuManagedTable } from "@/lib/canvas/canvas-manju-asset-table";
 import { storyboardMinNodeHeight } from "@/lib/canvas/canvas-storyboard-layout";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { CanvasNodeType, type CanvasNodeData, type CanvasNodeTypeId, type Position } from "@/types/canvas";
@@ -20,6 +21,7 @@ import { CanvasImageAnnotationEditor } from "./canvas-node-annotation-dialog";
 import { CanvasImageMaskEditor, type CanvasImageMaskEditPayload } from "./canvas-node-mask-edit-dialog";
 import type { AiConfig } from "@/stores/use-config-store";
 import { canvasMediaNodeOrigin, canvasMediaNodeRole } from "@/lib/canvas/canvas-node-semantics";
+import { CachedResourceImage } from "@/components/cached-resource-image";
 
 type ResizeCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 type CanvasTheme = (typeof canvasThemes)[keyof typeof canvasThemes];
@@ -40,6 +42,7 @@ type CanvasNodeProps = {
     readOnly?: boolean;
     resourceLabel?: CanvasResourceReference;
     mentionReferences?: CanvasResourceReference[];
+    resourceRevision?: string;
     renderNodeContent?: (node: CanvasNodeData) => ReactNode;
     drawingProjectId?: string;
     batchCount?: number;
@@ -85,6 +88,18 @@ type CanvasNodeProps = {
     onContextMenu: (event: React.MouseEvent, nodeId: string) => void;
 };
 
+const MemoizedManjuTableContent = React.memo(function MemoizedManjuTableContent({
+    data,
+    contentRevision,
+    renderNodeContent,
+}: {
+    data: CanvasNodeData;
+    contentRevision?: string;
+    renderNodeContent?: (node: CanvasNodeData) => ReactNode;
+}) {
+    return <>{renderNodeContent?.(data)}</>;
+});
+
 export const CanvasNode = React.memo(function CanvasNode({
     data,
     dragOffset,
@@ -99,6 +114,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     reduceMediaEffects = false,
     readOnly = false,
     mentionReferences = [],
+    resourceRevision,
     renderNodeContent,
     drawingProjectId,
     batchCount = 0,
@@ -433,32 +449,40 @@ export const CanvasNode = React.memo(function CanvasNode({
                     {data.metadata?.status && data.metadata.status !== "idle" && data.metadata.status !== "success" && data.type !== CanvasNodeType.Frame ? (
                         <NodeStatusBadge status={data.metadata.status} resultPending={data.metadata.taskStatus === "succeeded" && data.metadata.resourceReloadAvailable === true} />
                     ) : null}
-                    <CanvasNodeContent
-                        node={data}
-                        theme={theme}
-                        isEditingContent={isEditingContent}
-                        textareaRef={textareaRef}
-                        isBatchRoot={isBatchRoot}
-                        batchCount={batchCount}
-                        batchPreviewNodes={batchPreviewNodes}
-                        batchExpanded={batchExpanded}
-                        batchOpening={batchOpening}
-                        batchRecovering={batchRecovering}
-                        renderNodeContent={renderNodeContent}
-                        drawingProjectId={drawingProjectId}
-                        mentionReferences={mentionReferences}
-                        onContentChange={onContentChange}
-                        onStopEditing={() => setIsEditingContent(false)}
-                        onRetry={onRetry}
-                        onReloadResource={onReloadResource}
-                        onOpenTaskDetails={onOpenTaskDetails}
-                        onCancelTask={onCancelTask}
-                        onToggleBatch={() => onToggleBatch?.(data.id)}
-                        reduceMediaEffects={reduceMediaEffects}
-                        mediaActive={mediaActive}
-                        scale={scale}
-                        onMediaPlayRequest={onMediaPlayRequest}
-                    />
+                    {isManjuManagedTable(data) ? (
+                        <MemoizedManjuTableContent data={data} contentRevision={resourceRevision} renderNodeContent={renderNodeContent} />
+                    ) : (
+                        <CanvasNodeContent
+                            node={data}
+                            theme={theme}
+                            isEditingContent={isEditingContent}
+                            textareaRef={textareaRef}
+                            isBatchRoot={isBatchRoot}
+                            batchCount={batchCount}
+                            batchPreviewNodes={batchPreviewNodes}
+                            batchExpanded={batchExpanded}
+                            batchOpening={batchOpening}
+                            batchRecovering={batchRecovering}
+                            renderNodeContent={renderNodeContent}
+                            drawingProjectId={drawingProjectId}
+                            mentionReferences={mentionReferences}
+                            contentRevision={resourceRevision}
+                            onContentChange={onContentChange}
+                            onStopEditing={() => setIsEditingContent(false)}
+                            onRetry={onRetry}
+                            onReloadResource={onReloadResource}
+                            onOpenTaskDetails={onOpenTaskDetails}
+                            onCancelTask={onCancelTask}
+                            onToggleBatch={() => onToggleBatch?.(data.id)}
+                            reduceMediaEffects={reduceMediaEffects}
+                            mediaActive={mediaActive}
+                            scale={scale}
+                            onMediaPlayRequest={onMediaPlayRequest}
+                        />
+                    )}
+                    {data.metadata?.manjuStage === "p3_images" || data.metadata?.manjuStage === "p4_videos" ? (
+                        <ManjuInternalReferenceStrip references={mentionReferences} />
+                    ) : null}
                     {imageCropActive && hasImageContent ? (
                         <CanvasImageCropEditor
                             imageUrl={data.metadata?.content || ""}
@@ -616,6 +640,7 @@ function areCanvasNodePropsEqual(previous: CanvasNodeProps, next: CanvasNodeProp
         previous.readOnly === next.readOnly &&
         previous.resourceLabel === next.resourceLabel &&
         previous.mentionReferences === next.mentionReferences &&
+        previous.resourceRevision === next.resourceRevision &&
         (!usesCustomNodeContentRenderer(next.data) || previous.renderNodeContent === next.renderNodeContent) &&
         previous.drawingProjectId === next.drawingProjectId &&
         previous.batchCount === next.batchCount &&
@@ -822,6 +847,39 @@ function nodeTypeIcon(type: CanvasNodeTypeId) {
     if (type === CanvasNodeType.Skill) return BookOpenCheck;
     if (type === ART_CRITIQUE_NODE_TYPE) return ScanSearch;
     return FileText;
+}
+
+function ManjuInternalReferenceStrip({ references = [] }: { references?: CanvasResourceReference[] }) {
+    const visible = references.filter((reference) => reference.kind === "image" || reference.kind === "video" || reference.kind === "character").slice(0, 4);
+    if (!visible.length) return null;
+    return (
+        <div className="pointer-events-none absolute bottom-2 left-2 z-20 flex max-w-[calc(100%-16px)] items-end gap-1" aria-label="本次生成读取的内部参考素材">
+            {visible.map((reference) => (
+                <span
+                    key={`${reference.id}:${reference.nodeId}`}
+                    className="relative size-9 shrink-0 overflow-hidden rounded-md border bg-black/45 shadow-sm backdrop-blur-sm"
+                    style={{ borderColor: "color-mix(in srgb, white 45%, transparent)" }}
+                    title={`${reference.label} · ${reference.title}`}
+                >
+                    {reference.previewUrl ? (
+                        <CachedResourceImage
+                            eager
+                            src={reference.previewUrl}
+                            storageKey={reference.previewStorageKey || reference.storageKey}
+                            alt={reference.title}
+                            className="size-full object-cover"
+                            fallback={<ImageIcon className="m-auto size-3.5 text-white/75" />}
+                        />
+                    ) : (
+                        <span className="grid size-full place-items-center text-white/75">
+                            <ImageIcon className="size-3.5" />
+                        </span>
+                    )}
+                    <span className="absolute inset-x-0 bottom-0 truncate bg-black/55 px-1 text-center text-[7px] leading-3 text-white/90">{reference.label}</span>
+                </span>
+            ))}
+        </div>
+    );
 }
 
 // 节点状态徽章（对应 #97 决策2：左上角状态指示，loading/success/error）

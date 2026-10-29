@@ -113,17 +113,17 @@ func TestStartIsNoopWithoutConfig(t *testing.T) {
 func TestBundledAgentHostCommandFollowsAppLayout(t *testing.T) {
 	for _, goos := range []string{"darwin", "windows", "linux"} {
 		t.Run(goos, func(t *testing.T) {
-			root := filepath.Join(t.TempDir(), "Program Files", "BeefTV")
-			executable := filepath.Join(root, "Contents", "MacOS", "BeefTV")
+			root := filepath.Join(t.TempDir(), "Program Files", "VisiDeepAI")
+			executable := filepath.Join(root, "Contents", "MacOS", "VisiDeepAI")
 			hostDir := filepath.Join(root, "Contents", "Resources", "agent-host")
 			node := filepath.Join(hostDir, "runtime", "bin", "node")
 			if goos == "linux" {
-				executable = filepath.Join(root, "BeefTV")
+				executable = filepath.Join(root, "VisiDeepAI")
 				hostDir = filepath.Join(root, "agent-host")
 				node = filepath.Join(hostDir, "runtime", "bin", "node")
 			}
 			if goos == "windows" {
-				executable = filepath.Join(root, "BeefTV.exe")
+				executable = filepath.Join(root, "VisiDeepAI.exe")
 				hostDir = filepath.Join(root, "agent-host")
 				node = filepath.Join(hostDir, "runtime", "node.exe")
 			}

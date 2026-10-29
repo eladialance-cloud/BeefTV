@@ -71,6 +71,17 @@ func TestBindGenerationRuntimeAlwaysBindsTypedPorts(t *testing.T) {
 	}
 }
 
+func TestHostedLocalKernelDoesNotUseDesktopMediaLocalMode(t *testing.T) {
+	desktop := appResourcePort{service: &Service{mode: serviceModeLocal}}
+	if !desktop.LocalMode() {
+		t.Fatal("desktop local kernel must keep local-file media policy")
+	}
+	hosted := appResourcePort{service: &Service{mode: serviceModeLocal, hostedProfile: true}}
+	if hosted.LocalMode() {
+		t.Fatal("hosted server with COS blob resolver must not be treated as a desktop local-file workspace")
+	}
+}
+
 func TestCanonicalCallMetaUsesGenerationRequestKind(t *testing.T) {
 	ctx := withProviderAnalytics(context.Background(), nil, model.Task{
 		ID: "task-1", UserID: "user-1", Type: "canvas_video", TraceID: "trace-1",

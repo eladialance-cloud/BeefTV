@@ -7,7 +7,7 @@ import (
 )
 
 // NormalizeCatalogVideoCapability copies a gateway video_capabilities object
-// using the existing BeefTV VideoCapabilityConfig field names and bounds.
+// using the existing VisiDeep AI VideoCapabilityConfig field names and bounds.
 // Omitted nested limits stay omitted so callers do not persist implicit zeros.
 func NormalizeCatalogVideoCapability(raw json.RawMessage) (map[string]any, bool) {
 	if len(strings.TrimSpace(string(raw))) == 0 || strings.TrimSpace(string(raw)) == "null" {

@@ -31,6 +31,17 @@ const sorted = (value) => ({ $sortByOrder: value });
 const mediaWithRoles = (path, roles) => filter(sorted(ref(path)), "media", { $in: [ref("media.role"), roles] });
 const firstMediaWithRoles = (path, roles) => first(mediaWithRoles(path, roles));
 const firstMediaFieldWithRoles = (path, roles, field) => first(map(mediaWithRoles(path, roles), "media", ref(`media.${field}`)));
+const toapiImageResolution = (quality) => ({
+  $switch: {
+    cases: [
+      { when: { $in: [lower(trim(quality)), ["0.5k"]] }, then: "0.5K" },
+      { when: { $in: [lower(trim(quality)), ["2k"]] }, then: "2K" },
+      { when: { $in: [lower(trim(quality)), ["3k"]] }, then: "3K" },
+      { when: { $in: [lower(trim(quality)), ["4k"]] }, then: "4K" }
+    ],
+    default: "1K"
+  }
+});
 
 const textParams = [
   ["model", "string", true, "model", "上游模型 ID。"],
@@ -286,7 +297,7 @@ add({
         ref("request.providerOptions.openai-image.background"),
         conditional(eq(ref("request.extra.transparentBackground"), "true"), "transparent", null)
       )),
-      output_format: omit(coalesce(ref("request.providerOptions.openai-image.output_format"), "png")),
+      output_format: omit(ref("request.providerOptions.openai-image.output_format")),
       output_compression: omit(ref("request.providerOptions.openai-image.output_compression")),
       moderation: omit(ref("request.providerOptions.openai-image.moderation")),
       response_format: omit(ref("request.providerOptions.openai-image.response_format")),
@@ -313,6 +324,33 @@ add({
       dataUrl: conditional(ref("item.b64_json"), { $concat: ["data:image/png;base64,", ref("item.b64_json")] })
     }),
     usage: ref("response.usage"), errorPaths: ["error.code"], messagePaths: ["error.message"]
+  }
+});
+
+add({
+  id: "toapis-image", providerId: "toapis-image", name: "ToAPI Images", vendor: "ToAPIs", capability: "image",
+  baseUrl: "https://toapis.com", auth: bearer, params: imageParams, requiresPublicMediaUrls: true,
+  notes: "ToAPI 图片生成是异步任务：创建后轮询 GET /v1/images/generations/{taskId}。size 使用宽高比，分辨率使用 metadata.resolution。参考图只接受公开 URL；本地图片需先通过 ToAPI 上传接口获取 URL。",
+  create: jsonCreate("/v1/images/generations", {
+    model: ref("request.model"),
+    prompt: ref("request.prompt"),
+    size: omit(ref("request.aspectRatio")),
+    n: conditional(gt(ref("request.imageCount"), 0), ref("request.imageCount"), 1),
+    image_urls: omit(map(sorted(ref("request.images")), "media", ref("media.value"))),
+    metadata: {
+      resolution: toapiImageResolution(ref("request.quality"))
+    }
+  }),
+  poll: { method: "GET", path: "/v1/images/generations/{{taskId}}" },
+  response: {
+    taskId: coalesce(ref("response.id"), ref("response.task_id"), ref("taskId")),
+    status: coalesce(ref("response.status"), "pending"),
+    message: coalesce(ref("response.error.message"), ref("response.message")),
+    images: map(coalesce(ref("response.result.data"), ref("response.data")), "item", {
+      url: ref("item.url")
+    }),
+    errorPaths: ["error.code"],
+    resultEphemeral: true
   }
 });
 

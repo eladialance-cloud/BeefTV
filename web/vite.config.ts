@@ -43,7 +43,9 @@ export default defineConfig({
         proxy: {
             "/api": {
                 target: apiProxyTarget,
-                changeOrigin: true,
+                // Keep the browser Host so the backend can verify the hosted
+                // page is same-origin before issuing an assistant UI session.
+                changeOrigin: false,
                 xfwd: true,
                 ...(desktopLaunchToken ? { headers: { "X-Desktop-Token": desktopLaunchToken } } : {}),
             },

@@ -5,6 +5,7 @@ import { canvasGenerationFailureMetadata, canvasGenerationRetryBlocked, canvasGe
 import { isCanvasNodeGenerating } from "@/lib/canvas/canvas-node-task-state";
 import { ApiError } from "@/services/api/request";
 import { CanvasGenerationDurableAckError, persistCanvasGenerationTarget } from "@/services/canvas-generation-consumer";
+import { CanvasGenerationTargetSaveError } from "@/services/canvas-generation-errors";
 import { CanvasBackendSubmitPausedError } from "@/services/canvas-revision-conflict";
 import type { GenerationTask } from "@/services/api/task-center";
 import { useCanvasStore, type CanvasProject } from "@/stores/canvas/use-canvas-store";
@@ -15,6 +16,12 @@ import type { CanvasGenerationExecution } from "@/pages/canvas/canvas-generation
 const project: CanvasProject = { id: "canvas-1", title: "画布", createdAt: "2026-01-01", updatedAt: "2026-01-01", revision: 3, nodes: [{ id: "new-image", type: CanvasNodeType.Image, title: "新结果", position: { x: 0, y: 0 }, width: 320, height: 320, metadata: { status: "loading" } }], connections: [], chatSessions: [], activeChatId: null, backgroundMode: "grid", showImageInfo: false, viewport: { x: 0, y: 0, k: 1 }, directorScenes: [] };
 const input = { projectId: project.id, nodeId: "new-image", mode: "image" as const, prompt: "小猫", config: {} as never, clientOperationId: "test-image-save" };
 const task: GenerationTask = { id: "task-original", type: "canvas_image", status: "succeeded", prompt: input.prompt, attempts: 1, createdAt: "2026-01-01", updatedAt: "2026-01-01", failureDiagnostics: { source: "unknown", requests: [{ operation: "image_generate", method: "POST", dispatched: true, outcome: "response_received", httpStatus: 200, startedAt: "2026-01-01", durationMs: 10 }] } };
+
+test("target save errors expose the underlying canvas save reason", () => {
+    const error = new CanvasGenerationTargetSaveError(new Error("画布已被其他入口修改，本次改动未提交"));
+    expect(error.message).toContain("画布尚未保存");
+    expect(error.message).toContain("画布已被其他入口修改");
+});
 
 beforeEach(() => useCanvasStore.setState({ projects: [structuredClone(project)] }));
 
@@ -59,6 +66,35 @@ test("image submission waits for the target node save and shares one submission 
     expect(events).toEqual(["save"]);
     release(); await Promise.all([first, second]);
     expect(events).toEqual(["save", "saved", "submit", "consume"]);
+});
+
+test("hosted target save reaches the remote canvas before submission", async () => {
+    const events: string[] = [];
+    await persistCanvasGenerationTarget(
+        { ...input, expectedScope: captureUserScope() },
+        async () => { events.push("local"); },
+        async () => { events.push("remote"); },
+        () => true,
+    );
+    expect(events).toEqual(["local", "remote"]);
+});
+
+test("concurrent hosted target saves share one remote canvas commit", async () => {
+    let remoteCalls = 0;
+    let releaseRemote!: () => void;
+    const remoteGate = new Promise<void>((resolve) => { releaseRemote = resolve; });
+    const options = { ...input, expectedScope: captureUserScope() };
+    const persistRemote = async () => {
+        remoteCalls += 1;
+        await remoteGate;
+    };
+    const first = persistCanvasGenerationTarget(options, async () => undefined, persistRemote, () => true);
+    const second = persistCanvasGenerationTarget(options, async () => undefined, persistRemote, () => true);
+    for (let attempt = 0; attempt < 20 && remoteCalls === 0; attempt += 1) await Promise.resolve();
+    expect(remoteCalls).toBe(1);
+    releaseRemote();
+    await Promise.all([first, second]);
+    expect(remoteCalls).toBe(1);
 });
 
 for (const error of [new ApiError("保存冲突", { status: 409, reason: "conflict" }), new CanvasBackendSubmitPausedError(), new Error("disk failure")]) {

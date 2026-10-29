@@ -5,12 +5,10 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
 )
@@ -33,22 +31,10 @@ func (p *S3Prober) Probe(ctx context.Context, target Target) error {
 	if strings.TrimSpace(target.Bucket) == "" {
 		return fmt.Errorf("缺少 Bucket")
 	}
-	region := strings.TrimSpace(target.Region)
-	if region == "" {
-		region = "us-east-1"
+	if normalizedProvider(target.Provider) == "cos" {
+		return p.probeCOS(ctx, target)
 	}
-	options := s3.Options{
-		Region:       region,
-		Credentials:  credentials.NewStaticCredentialsProvider(target.AccessKeyID, target.SecretAccessKey, ""),
-		UsePathStyle: target.PathStyle,
-	}
-	if endpoint := strings.TrimSpace(target.Endpoint); endpoint != "" {
-		options.BaseEndpoint = aws.String(endpoint)
-	}
-	if p.Timeout > 0 {
-		options.HTTPClient = &http.Client{Timeout: p.Timeout}
-	}
-	client := s3.New(options)
+	client := newS3Client(target, p.Timeout)
 
 	prefix := strings.Trim(strings.TrimSpace(target.Prefix), "/")
 	objectKey := ".beeftv-connectivity-" + uuid.NewString()

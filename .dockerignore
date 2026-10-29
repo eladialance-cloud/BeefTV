@@ -35,3 +35,6 @@ web/out
 .settings-key
 .env*
 !.env.example
+build
+_tools
+**/node_modules

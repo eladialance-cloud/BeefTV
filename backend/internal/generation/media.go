@@ -16,9 +16,16 @@ func HydrateMedia(ctx context.Context, userID string, input *Input, policy Media
 		return nil
 	}
 	groups := [][]Media{input.ReferenceImages, input.ReferenceVideos, input.ReferenceAudios}
-	for _, group := range groups {
+	for groupIndex, group := range groups {
 		for index := range group {
-			if err := HydrateOne(ctx, userID, &group[index], policy); err != nil {
+			mediaPolicy := policy
+			if policy.ProviderImageUpload && groupIndex > 0 {
+				// ToAPI uploads images through its image endpoint, while video and
+				// audio roles require public media URLs. Never inline those bytes
+				// into the paid generation-create request.
+				mediaPolicy = MediaHydrationPolicy{RequireURL: true, PreferURL: true, PreferHTTPS: true}
+			}
+			if err := HydrateOne(ctx, userID, &group[index], mediaPolicy); err != nil {
 				return err
 			}
 		}

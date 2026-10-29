@@ -7,6 +7,7 @@ import { navigateToSettings } from "@/lib/settings-navigation";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { isLocalWorkspaceMode } from "@/services/workspace-mode";
+import { isRemoteWorkspaceMode } from "@/services/workspace-mode";
 
 export function ModelSetupGuide({ hidden = false }: { hidden?: boolean }) {
     const reducedMotion = useReducedMotion();
@@ -17,8 +18,8 @@ export function ModelSetupGuide({ hidden = false }: { hidden?: boolean }) {
     const storageMode = useUserStore((state) => state.storageMode);
     const localMode = isLocalWorkspaceMode() || storageMode === "local" || user?.username === "local";
     const models = useConfigStore((state) => state.config.models);
-    // BeefTV 本地工作区不显示阻塞式模型引导浮层；模型配置入口已经固定在侧边栏。
-    if (hidden || dismissed || !hydrated || !user || localMode || user.role === "admin" || (!registrationGuide && models.length > 0)) return null;
+    // VisiDeep AI 本地工作区不显示阻塞式模型引导浮层；模型配置入口已经固定在侧边栏。
+    if (hidden || dismissed || !hydrated || !user || localMode || isRemoteWorkspaceMode() || user.role === "admin" || (!registrationGuide && models.length > 0)) return null;
 
     const close = () => {
         window.sessionStorage.removeItem("infinite-canvas:model-setup-guide");

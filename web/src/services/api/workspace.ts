@@ -6,17 +6,17 @@ import type { FeatureAvailability, LocalUser, RuntimeLimits } from "@/stores/use
 export type LocalWorkspace = {
     id: string;
     name: string;
-    owner: "local";
-    storage: "sqlite";
+    owner: string;
+    storage: "sqlite" | "server";
 };
 
 export type WorkspaceBootstrapPayload = {
     contractVersion: number;
-    profile: "local";
+    profile: WorkspaceCapabilityContract["profile"];
     capabilities: WorkspaceCapabilityContract["capabilities"];
     user: LocalUser;
     workspace: LocalWorkspace;
-    storageMode: "local";
+    storageMode: "local" | "remote";
     runtimeLimits?: RuntimeLimits;
     features?: FeatureAvailability;
 };

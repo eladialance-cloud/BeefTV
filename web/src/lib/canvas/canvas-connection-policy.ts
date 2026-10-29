@@ -1,9 +1,10 @@
 import { maxModelInputCapacity, type ModelInputSummary } from "@/lib/model-selection";
 import { getNodeAcceptedInputKinds, getNodeGenerationMode, getNodeInputKind, getNodeMaxInputCount } from "@/lib/canvas/node-registry";
+import { isManjuManagedTable, manjuAssetRowIdFromHandle } from "@/lib/canvas/canvas-manju-asset-table";
 import type { AiConfig } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
 
-type ConnectionCandidate = Pick<CanvasConnection, "fromNodeId" | "toNodeId">;
+type ConnectionCandidate = Pick<CanvasConnection, "fromNodeId" | "toNodeId"> & Pick<Partial<CanvasConnection>, "fromHandleId">;
 type CanvasConnectionPolicyOptions = {
     // 仅跳过参考素材数量上限，媒体类型不兼容仍然拒绝。
     ignoreCapacity?: boolean;
@@ -15,11 +16,9 @@ export function canvasConnectionError(config: AiConfig, nodes: CanvasNodeData[],
     const acceptedInputKinds = getNodeAcceptedInputKinds(target.type);
     if (acceptedInputKinds.length) {
         const source = nodes.find((node) => node.id === candidate.fromNodeId);
-        const sourceKind = source ? getNodeInputKind(source.type) : undefined;
+        const sourceKind = source ? connectionSourceKind(source, candidate.fromHandleId) : undefined;
         const isMediaConversion = target.type === CanvasNodeType.MediaConversion;
-        const hasAcceptedSource = isMediaConversion
-            ? source?.type === CanvasNodeType.Image || source?.type === CanvasNodeType.Video
-            : Boolean(sourceKind && acceptedInputKinds.includes(sourceKind));
+        const hasAcceptedSource = isMediaConversion ? source?.type === CanvasNodeType.Image || source?.type === CanvasNodeType.Video : Boolean(sourceKind && acceptedInputKinds.includes(sourceKind));
         if (!sourceKind || !hasAcceptedSource) {
             const labels = acceptedInputKinds.map(acceptedInputKindLabel).join("或");
             const targetLabel = isMediaConversion ? "转换" : target.type === CanvasNodeType.BatchTable ? "批量创作表" : labels;
@@ -27,11 +26,7 @@ export function canvasConnectionError(config: AiConfig, nodes: CanvasNodeData[],
         }
         const maxInputCount = getNodeMaxInputCount(target.type);
         if (maxInputCount) {
-            const inputCount = new Set(
-                [...connections, { id: "candidate", ...candidate }]
-                    .filter((connection) => connection.toNodeId === target.id)
-                    .map((connection) => connection.fromNodeId),
-            ).size;
+            const inputCount = new Set([...connections, { id: "candidate", ...candidate }].filter((connection) => connection.toNodeId === target.id).map((connection) => connection.fromNodeId)).size;
             if (inputCount > maxInputCount) return `${isMediaConversion ? "转换" : "当前"}节点最多连接 ${maxInputCount} 个输入`;
         }
     }
@@ -63,20 +58,30 @@ function acceptedInputKindLabel(kind: "image" | "video" | "audio" | "text" | "ta
 }
 
 export function connectionInputSummary(targetNodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[], candidate?: ConnectionCandidate): ModelInputSummary {
-    const sourceIds = new Set([...connections, ...(candidate ? [{ id: "candidate", ...candidate }] : [])].filter((connection) => connection.toNodeId === targetNodeId).map((connection) => connection.fromNodeId));
+    const matchedConnections = [...connections, ...(candidate ? [{ id: "candidate", ...candidate }] : [])].filter((connection) => connection.toNodeId === targetNodeId);
+    const seen = new Set<string>();
     const input: ModelInputSummary = { textCount: 0, imageCount: 0, videoCount: 0, audioCount: 0, characterCount: 0 };
-    sourceIds.forEach((sourceId) => {
-        const source = nodes.find((node) => node.id === sourceId);
+    matchedConnections.forEach((connection) => {
+        if (seen.has(connection.fromNodeId)) return;
+        seen.add(connection.fromNodeId);
+        const source = nodes.find((node) => node.id === connection.fromNodeId);
         if (!source) return;
         // 生成配置与背板不是参考素材，不参与容量计数——这一步必须早于角色卡判定，
         // 否则一个带角色元数据的配置/背板节点会被多算成角色。
-        const inputKind = getNodeInputKind(source.type);
+        const inputKind = connectionSourceKind(source, connection.fromHandleId);
         if (!inputKind) return;
         // 角色卡是跨类型覆盖：落在可计数类型上时改记为角色。
         if (source.metadata?.workflowKind === "character") input.characterCount += 1;
         else if (inputKind !== "table_data") input[`${inputKind}Count`] += 1;
     });
     return input;
+}
+
+function connectionSourceKind(source: CanvasNodeData, fromHandleId?: string) {
+    if (source.type === CanvasNodeType.BatchTable && isManjuManagedTable(source) && manjuAssetRowIdFromHandle(fromHandleId, "output")) {
+        return "image" as const;
+    }
+    return getNodeInputKind(source.type);
 }
 
 function capacityError(config: AiConfig, capability: "image" | "video", kind: "image" | "video" | "audio", count: number, label: string) {

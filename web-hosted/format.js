@@ -42,6 +42,15 @@ export function formatMicrocredits(value) {
     return `${sign}${Number(whole).toLocaleString("zh-CN")}${fraction ? `.${fraction}` : ""}`;
 }
 
+export function normalizeRmbCost(amount, billingMode, quoteUnit) {
+    const value = Number(amount);
+    if (!Number.isFinite(value) || value <= 0) return 0;
+    if (billingMode === "per_1k_tokens" && quoteUnit === "per_million_tokens") {
+        return value / 1000;
+    }
+    return value;
+}
+
 
 export function stageLabel(stage) {
     return STAGE_LABELS[stage] || stage || "-";

@@ -9,7 +9,11 @@ import (
 	"strings"
 )
 
-const locationFile = "storage-location.json"
+const (
+	locationFile    = "storage-location.json"
+	currentRootName = "VisiDeepAI"
+	legacyRootName  = "BeefTV"
+)
 
 type Location struct {
 	DataDir       string            `json:"dataDir"`
@@ -22,7 +26,48 @@ func DefaultRoot() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(root, "BeefTV"), nil
+	current := filepath.Join(root, currentRootName)
+	legacy := filepath.Join(root, legacyRootName)
+	if hasWorkspaceContent(current) {
+		return current, nil
+	}
+	if hasWorkspaceContent(legacy) {
+		if err := os.MkdirAll(root, 0700); err != nil {
+			return "", err
+		}
+		if err := os.Rename(legacy, current); err == nil {
+			return current, nil
+		}
+		// A failed earlier start can leave an empty VisiDeepAI directory behind.
+		// Remove only that empty directory and retry, never a populated one.
+		if entries, readErr := os.ReadDir(current); readErr == nil && len(entries) == 0 {
+			if removeErr := os.Remove(current); removeErr == nil {
+				if err := os.Rename(legacy, current); err == nil {
+					return current, nil
+				}
+			}
+		}
+		// If another process or a file lock blocks the rename, keep using the
+		// legacy workspace so existing projects are never orphaned.
+		return legacy, nil
+	}
+	return current, nil
+}
+
+func hasWorkspaceContent(path string) bool {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		switch entry.Name() {
+		case "cache", "logs", "tmp", "startup-error.log":
+			continue
+		default:
+			return true
+		}
+	}
+	return false
 }
 
 // The pointer stays in the system profile, independent of the selected data volume.
@@ -92,7 +137,7 @@ func saveLocation(root string, location Location) error {
 func canonical(path string) (string, error) {
 	path = strings.TrimSpace(path)
 	if !filepath.IsAbs(path) || filepath.Dir(filepath.Clean(path)) == filepath.Clean(path) {
-		return "", errors.New("请选择磁盘中的文件夹，例如 D:\\BeefTV")
+		return "", errors.New("请选择磁盘中的文件夹，例如 D:\\VisiDeepAI")
 	}
 	path = filepath.Clean(path)
 	missing := []string{}

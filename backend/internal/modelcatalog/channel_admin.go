@@ -204,7 +204,7 @@ func PublicChannel(channel model.ModelChannel, admin bool, channelModels []model
 				capabilityConfig = normalized
 			}
 		}
-		modelProfiles = append(modelProfiles, PublicChannelModelProfile{Model: item.ModelKey, DisplayName: item.DisplayName, Icon: item.Icon, Capability: item.Capability, Protocol: item.Protocol, CapabilityConfig: capabilityConfig})
+		modelProfiles = append(modelProfiles, PublicChannelModelProfile{ID: item.ID, Model: item.ModelKey, DisplayName: item.DisplayName, Icon: item.Icon, Capability: item.Capability, Protocol: item.Protocol, CapabilityConfig: capabilityConfig})
 	}
 	if len(models) == 0 {
 		_ = json.Unmarshal([]byte(channel.ModelsJSON), &models)

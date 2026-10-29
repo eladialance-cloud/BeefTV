@@ -8,6 +8,7 @@ import { appQueryClient } from "@/lib/query-client";
 import { referencedAssetIdsInPrompt, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import type { AssistantAttachment, AssistantGenerationProposal, AssistantSkillSelection } from "@/services/api/agent-assistant";
 import { listAddedSkills, type Skill } from "@/services/api/skills";
+import { isRemoteWorkspaceMode } from "@/services/workspace-mode";
 import { SkillInstallModal } from "@/pages/skills/skill-install-modal";
 import { captureUserScope, userScopeMatches } from "@/lib/user-scope-guard";
 import { getActiveUserScope, getActiveUserScopeEpoch, subscribeUserScope } from "@/lib/user-scope";
@@ -126,7 +127,7 @@ export function CanvasAssistantSidebar(props: Props) {
         if (node && followLatestRef.current) node.scrollTop = node.scrollHeight;
     }, [turnCount, assistant.streamed, assistant.pendingUserText, assistant.lifecycleNotice, props.proposalFeedback]);
 
-    const notice = assistant.status && !assistant.status.available && assistant.status.reason !== "host_starting" ? assistantStatusNotice(assistant.status.reason) : null;
+    const notice = assistant.status && !assistant.status.available && assistant.status.reason !== "host_starting" ? assistantStatusNotice(assistant.status.reason, isRemoteWorkspaceMode()) : null;
     const inputReady = draftLoaded && loadedDraftIdentity === draftIdentity;
     const composerDisabled = readOnly || !inputReady;
     const composerReason = readOnly ? "这个画布是只读的，不能让助手改动。" : !draftLoaded ? "正在读取未发送内容…" : loadedDraftIdentity !== draftIdentity ? "未能读取草稿，请重新读取后继续。" : undefined;
@@ -169,7 +170,7 @@ export function CanvasAssistantSidebar(props: Props) {
     const content = (
         <div className="canvas-assistant-panel" data-canvas-no-zoom>
             <header className="canvas-assistant-header">
-                <div className="canvas-assistant-heading"><h2>BeefTV Agent</h2></div>
+                <div className="canvas-assistant-heading"><h2>VisiDeep AI Agent</h2></div>
                 <Tooltip title="新对话">
                     <Button type="text" size="small" aria-label="新对话" disabled={assistant.streaming || assistant.sessionBusy} icon={<MessageSquarePlus className="size-4" />} onClick={() => void assistant.startNewSession()} />
                 </Tooltip>
@@ -315,7 +316,7 @@ export function CanvasAssistantSidebar(props: Props) {
                 closable={false}
                 onClose={() => assistant.setOpen(false)}
                 size="min(380px, 92vw)"
-                aria-label="BeefTV Agent"
+                aria-label="VisiDeep AI Agent"
             >
                 {content}
             </AppDrawer>
@@ -323,7 +324,7 @@ export function CanvasAssistantSidebar(props: Props) {
     }
 
     return (
-        <aside ref={sidebarRef} className="canvas-assistant-sidebar" aria-label="BeefTV Agent" style={{ width: assistant.width, flexBasis: assistant.width }}>
+        <aside ref={sidebarRef} className="canvas-assistant-sidebar" aria-label="VisiDeep AI Agent" style={{ width: assistant.width, flexBasis: assistant.width }}>
             <button
                 type="button"
                 className="canvas-assistant-resize"

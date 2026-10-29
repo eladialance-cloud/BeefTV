@@ -35,6 +35,11 @@ type Repository interface {
 	PaymentOrder(id string) (*model.PaymentOrder, error)
 	CreatePaymentOrder(*model.PaymentOrder) error
 	UpdatePaymentOrder(*model.PaymentOrder) error
+	ExpirePendingPaymentOrders(cutoff time.Time, reason string, limit int, now time.Time) (int64, error)
+	PaymentOrderCountsByStatus() (map[string]int64, error)
+	PaymentOrderSettledTotals() (amountFen int64, credits int64, err error)
+	PaymentOrderCountsNeedingAttention(cutoff time.Time) (paidUnsettled int64, pendingOverdue int64, err error)
+	PaymentNotificationCounts() (unprocessed int64, failed int64, err error)
 	CreatePaymentNotification(*model.PaymentNotification) (bool, error)
 	UpdatePaymentNotification(*model.PaymentNotification) error
 	AppendAdminAudit(*model.AdminAuditEvent) error
@@ -49,6 +54,7 @@ type Service struct {
 	httpClient           *http.Client
 	alipayEndpoint       string
 	wechatNativeEndpoint string
+	adjuster             CreditAdjuster
 }
 
 // CreditRecharger is the slice of the credit service the payment flow needs:
@@ -58,11 +64,21 @@ type CreditRecharger interface {
 	Recharge(userID string, amount int64, operatorID string, reason string, idempotencyKey string) error
 }
 
+// CreditAdjuster is the signed ledger write used by refunds. The production
+// adapter implements both interfaces, while tests can provide only the slice
+// they need.
+type CreditAdjuster interface {
+	Adjust(userID string, delta int64, operatorID string, reason string, idempotencyKey string) error
+}
+
 // New wires payment configuration and the recharge flow. credits may be nil
 // when only provider configuration is used; marking an order paid then fails
 // closed instead of silently dropping the points.
 func New(repo Repository, credits CreditRecharger, dataDir string) *Service {
 	service := &Service{repo: repo, credits: credits, dataDir: dataDir, now: func() time.Time { return time.Now().UTC() }}
+	if adjuster, ok := credits.(CreditAdjuster); ok {
+		service.adjuster = adjuster
+	}
 	service.httpClient = outbound.OutboundHTTPClient(15 * time.Second)
 	service.alipayEndpoint = defaultAlipayEndpoint
 	service.wechatNativeEndpoint = defaultWechatNativeEndpoint
@@ -78,6 +94,9 @@ type Input struct {
 	MchID             string `json:"mchId"`
 	MchSerialNo       string `json:"mchSerialNo"`
 	NotifyURL         string `json:"notifyUrl"`
+	ReturnURL         string `json:"returnUrl"`
+	Endpoint          string `json:"endpoint"`
+	PayType           string `json:"payType"`
 	APIKey            string `json:"apiKey"`
 	PrivateKey        string `json:"privateKey"`
 	PlatformPublicKey string `json:"platformPublicKey"`
@@ -95,6 +114,9 @@ type View struct {
 	MchID         string     `json:"mchId"`
 	MchSerialNo   string     `json:"mchSerialNo"`
 	NotifyURL     string     `json:"notifyUrl"`
+	ReturnURL     string     `json:"returnUrl"`
+	Endpoint      string     `json:"endpoint"`
+	PayType       string     `json:"payType"`
 	SecretMasked  string     `json:"secretMasked"`
 	SecretSet     bool       `json:"secretSet"`
 	Enabled       bool       `json:"enabled"`
@@ -118,6 +140,7 @@ const secretMask = "********"
 var supportedProviders = map[string]struct{}{
 	model.PaymentProviderAlipay: {},
 	model.PaymentProviderWeChat: {},
+	model.PaymentProviderEPay:   {},
 }
 
 // ErrUnsupportedProvider is returned when an admin names a gateway family the
@@ -218,6 +241,25 @@ func (s *Service) build(actor *model.User, input Input, existing *model.PaymentP
 	mchID := pick(input.MchID, existing, func(item *model.PaymentProviderConfig) string { return item.MchID })
 	mchSerialNo := pick(input.MchSerialNo, existing, func(item *model.PaymentProviderConfig) string { return item.MchSerialNo })
 	notifyURL := pick(input.NotifyURL, existing, func(item *model.PaymentProviderConfig) string { return item.NotifyURL })
+	returnURL := pick(input.ReturnURL, existing, func(item *model.PaymentProviderConfig) string { return item.ReturnURL })
+	endpoint := pick(input.Endpoint, existing, func(item *model.PaymentProviderConfig) string { return item.Endpoint })
+	payType := strings.ToLower(pick(input.PayType, existing, func(item *model.PaymentProviderConfig) string { return item.PayType }))
+	if provider == model.PaymentProviderEPay {
+		if endpoint == "" {
+			return nil, kernel.BadAuthRequest("请填写易支付网关地址")
+		}
+		if appID == "" {
+			return nil, kernel.BadAuthRequest("请填写易支付商户 PID")
+		}
+		if payType == "" {
+			payType = "alipay"
+		}
+		switch payType {
+		case "alipay", "wxpay", "qqpay":
+		default:
+			return nil, kernel.BadAuthRequest("易支付付款方式仅支持 alipay、wxpay、qqpay")
+		}
+	}
 
 	stored := secrets{}
 	if existing != nil && strings.TrimSpace(existing.SecretsEncrypted) != "" {
@@ -268,6 +310,9 @@ func (s *Service) build(actor *model.User, input Input, existing *model.PaymentP
 		MchID:            mchID,
 		MchSerialNo:      mchSerialNo,
 		NotifyURL:        notifyURL,
+		ReturnURL:        returnURL,
+		Endpoint:         endpoint,
+		PayType:          payType,
 		SecretsEncrypted: encrypted,
 		Enabled:          enabled,
 		SortOrder:        sortOrder,
@@ -290,6 +335,9 @@ func (s *Service) toView(item *model.PaymentProviderConfig) View {
 		MchID:         item.MchID,
 		MchSerialNo:   item.MchSerialNo,
 		NotifyURL:     item.NotifyURL,
+		ReturnURL:     item.ReturnURL,
+		Endpoint:      item.Endpoint,
+		PayType:       item.PayType,
 		SecretMasked:  masked,
 		SecretSet:     configured,
 		Enabled:       item.Enabled,

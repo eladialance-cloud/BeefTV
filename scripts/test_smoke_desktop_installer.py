@@ -40,10 +40,13 @@ class WindowsInstallerContractTests(unittest.TestCase):
         self.assertNotIn('MUI_PAGE_WELCOME', text)
         self.assertNotIn('MUI_PAGE_COMPONENTS', text)
         self.assertNotIn('StageDir', text)
-        self.assertIn('!define MUI_FINISHPAGE_RUN "$INSTDIR\\BeefTV.exe"', text)
-        self.assertIn('CreateShortcut "$DESKTOP\\BeefTV.lnk" "$INSTDIR\\BeefTV.exe"', text)
+        self.assertIn('!define MUI_FINISHPAGE_RUN "$INSTDIR\\VisiDeepAI.exe"', text)
+        self.assertIn('CreateShortcut "$DESKTOP\\VisiDeep AI.lnk" "$INSTDIR\\VisiDeepAI.exe"', text)
         self.assertIn('taskkill.exe', text)
         self.assertIn('Windows 无法移动以下程序文件夹', text)
+        self.assertIn('Uninstall\\BeefTV', text)
+        self.assertIn('DeleteRegKey HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\BeefTV"', text)
+        self.assertIn('Delete "$DESKTOP\\BeefTV.lnk"', text)
 
     def test_packager_compiles_windows_installer_as_utf8_without_warnings(self):
         import os
@@ -59,7 +62,7 @@ class WindowsInstallerContractTests(unittest.TestCase):
             root = Path(directory)
             payload = root / 'payload'
             payload.mkdir()
-            (payload / 'BeefTV.exe').write_bytes(b'fixture')
+            (payload / 'VisiDeepAI.exe').write_bytes(b'fixture')
             out_dir = root / 'dist'
             result = subprocess.run(
                 ['python3', str(packager_path), '--platform', 'windows-amd64',
@@ -68,7 +71,7 @@ class WindowsInstallerContractTests(unittest.TestCase):
             )
             self.assertIn('(UTF8)', result.stdout)
             self.assertNotIn('warning', result.stdout.lower())
-            self.assertEqual(len(list(out_dir.glob('BeefTV-*-windows-amd64-setup.exe'))), 1)
+            self.assertEqual(len(list(out_dir.glob('VisiDeepAI-*-windows-amd64-setup.exe'))), 1)
 
 
 if __name__ == '__main__':

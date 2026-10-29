@@ -84,7 +84,7 @@ func TestSignVerifyRoundTripAndTamper(t *testing.T) {
 		t.Fatalf("notes %q", body.Notes)
 	}
 	asset := body.Platforms[platformDarwinARM64]
-	if asset.URL != "https://updates.beefapi.com/beeftv/v1.6.0/BeefTV-v1.6.0-darwin-arm64.zip" {
+	if asset.URL != "https://updates.beefapi.com/beeftv/v1.6.0/VisiDeepAI-v1.6.0-darwin-arm64.zip" {
 		t.Fatalf("url %q", asset.URL)
 	}
 	if asset.Size <= 0 || len(asset.SHA256) != 64 {
@@ -210,15 +210,15 @@ func packageNamed(t *testing.T, dir, platform, version string) string {
 		}
 		writer := zip.NewWriter(file)
 		for name, body := range map[string]string{
-			"BeefTV.app/Contents/MacOS/BeefTV":                                                                   "binary",
-			"BeefTV.app/Contents/MacOS/cli/beeftv":                                                               "cli",
-			"BeefTV.app/Contents/Info.plist":                                                                     "<plist></plist>",
-			"BeefTV.app/Contents/Resources/plugin-packages/core.beeftv-plugin":                                   "plugin",
-			"BeefTV.app/Contents/Resources/agent-host/server.mjs":                                                "host",
-			"BeefTV.app/Contents/Resources/agent-host/session-identity.mjs":                                      "identity",
-			"BeefTV.app/Contents/Resources/agent-host/package.json":                                              "{}",
-			"BeefTV.app/Contents/Resources/agent-host/runtime/bin/node":                                          "node",
-			"BeefTV.app/Contents/Resources/agent-host/node_modules/@earendil-works/pi-coding-agent/package.json": "{}",
+			"VisiDeepAI.app/Contents/MacOS/VisiDeepAI":                                                                   "binary",
+			"VisiDeepAI.app/Contents/MacOS/cli/visideep":                                                             "cli",
+			"VisiDeepAI.app/Contents/Info.plist":                                                                     "<plist></plist>",
+			"VisiDeepAI.app/Contents/Resources/plugin-packages/core.beeftv-plugin":                                   "plugin",
+			"VisiDeepAI.app/Contents/Resources/agent-host/server.mjs":                                                "host",
+			"VisiDeepAI.app/Contents/Resources/agent-host/session-identity.mjs":                                      "identity",
+			"VisiDeepAI.app/Contents/Resources/agent-host/package.json":                                              "{}",
+			"VisiDeepAI.app/Contents/Resources/agent-host/runtime/bin/node":                                          "node",
+			"VisiDeepAI.app/Contents/Resources/agent-host/node_modules/@earendil-works/pi-coding-agent/package.json": "{}",
 		} {
 			header := &zip.FileHeader{Name: name, Method: zip.Deflate}
 			header.SetMode(0o755)
@@ -244,7 +244,7 @@ func packageNamed(t *testing.T, dir, platform, version string) string {
 	}
 	switch platform {
 	case platformDarwinARM64, platformDarwinAMD64:
-		writeFakeDarwinApp(t, filepath.Join(input, "BeefTV.app"))
+		writeFakeDarwinApp(t, filepath.Join(input, "VisiDeepAI.app"))
 	case platformWindowsAMD64:
 		writeFakeWindowsBin(t, input)
 	}

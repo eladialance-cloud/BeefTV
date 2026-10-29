@@ -57,7 +57,7 @@ func RegisterAgentClientRoutes(r gin.IRouter, svc *app.Service, clients *agentop
 		kind := agentops.NormalizeClientKind(req.Kind)
 		cliPath, available := bundledCLIPath()
 		if !available {
-			failAgentOps(c, agentops.PreconditionFailed("cli_unavailable", "安装文件不完整，无法连接外部工具。请重新下载并完整解压 BeefTV。", nil))
+			failAgentOps(c, agentops.PreconditionFailed("cli_unavailable", "安装文件不完整，无法连接外部工具。请重新下载并完整解压 VisiDeep AI。", nil))
 			return
 		}
 		dataDir, err := filepath.Abs(svc.DataDir())
@@ -141,15 +141,15 @@ func clientView(item agentops.ClientRegistration) gin.H {
 // bundledCLIPath 给出随包 CLI 的绝对路径。
 //
 // 安装版里 CLI 在主程序旁边的 cli 目录里：macOS 是
-// BeefTV.app/Contents/MacOS/cli/beeftv，Windows 是 BeefTV.exe 旁边的 cli\beeftv.exe。
-// 它不能直接放在主程序同一层：macOS 与 Windows 的文件名都不分大小写，beeftv 会和
-// BeefTV / BeefTV.exe 变成同一个文件，把主程序覆盖掉。
+// VisiDeepAI.app/Contents/MacOS/cli/visideep，Windows 是 VisiDeepAI.exe 旁边的 cli\visideep.exe。
+// 它不能直接放在主程序同一层：macOS 与 Windows 的文件名都不分大小写，visideep 会和
+// VisiDeep AI / VisiDeepAI.exe 变成同一个文件，把主程序覆盖掉。
 //
-// 缺失时不回退 PATH：Windows 会把 beeftv.exe 解析成桌面主程序 BeefTV.exe。
+// 缺失时不回退 PATH：Windows 会把 visideep.exe 解析成桌面主程序 VisiDeepAI.exe。
 func bundledCLIPath() (string, bool) {
-	name := "beeftv"
+	name := "visideep"
 	if runtime.GOOS == "windows" {
-		name = "beeftv.exe"
+		name = "visideep.exe"
 	}
 	executable, err := os.Executable()
 	if err != nil {
@@ -160,19 +160,28 @@ func bundledCLIPath() (string, bool) {
 	}
 	candidate := filepath.Join(filepath.Dir(executable), "cli", name)
 	info, err := os.Stat(candidate)
+	if err == nil && info.Mode().IsRegular() && info.Size() > 0 && (runtime.GOOS == "windows" || info.Mode().Perm()&0o111 != 0) {
+		return candidate, true
+	}
+	legacy := "beeftv"
+	if runtime.GOOS == "windows" {
+		legacy = "beeftv.exe"
+	}
+	legacyCandidate := filepath.Join(filepath.Dir(executable), "cli", legacy)
+	info, err = os.Stat(legacyCandidate)
 	if err != nil || !info.Mode().IsRegular() || info.Size() == 0 || (runtime.GOOS != "windows" && info.Mode().Perm()&0o111 == 0) {
 		return candidate, false
 	}
-	return candidate, true
+	return legacyCandidate, true
 }
 
-// cliInstallCommand 把随包 CLI 接到用户的 PATH 上，方便在终端直接敲 beeftv。
+// cliInstallCommand 把随包 CLI 接到用户的 PATH 上，方便在终端直接敲 visideep。
 func cliInstallCommand(cliPath string) string {
 	if runtime.GOOS == "windows" {
 		dir := filepath.Dir(cliPath)
 		return `[Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ` + shellQuote(";"+dir) + `, "User")`
 	}
-	return "ln -sf " + shellQuote(cliPath) + " /usr/local/bin/beeftv"
+	return "ln -sf " + shellQuote(cliPath) + " /usr/local/bin/visideep"
 }
 
 // clientSetup 生成可直接粘贴的接入配置。命令里带的是客户端自己的凭据，
@@ -184,19 +193,19 @@ func clientSetup(kind agentops.ClientKind, cliPath, dataDir string, reg agentops
 	}
 	switch kind {
 	case agentops.ClientKindCodex:
-		command := "codex mcp add beeftv" +
+		command := "codex mcp add visideep" +
 			" --env BEEFTV_DATA_DIR=" + shellQuote(dataDir) +
 			" --env BEEFTV_CLIENT_ID=" + shellQuote(reg.ID) +
 			" --env BEEFTV_CLIENT_TOKEN=" + shellQuote(token) +
 			" -- " + shellQuote(cliPath) + " " + strings.Join(serveArgs, " ")
-		return gin.H{"kind": string(kind), "title": "在 Codex 里加上 BeefTV", "command": command}
+		return gin.H{"kind": string(kind), "title": "在 Codex 里加上 VisiDeep AI", "command": command}
 	case agentops.ClientKindClaude:
-		command := "claude mcp add beeftv" +
+		command := "claude mcp add visideep" +
 			" -e BEEFTV_DATA_DIR=" + shellQuote(dataDir) +
 			" -e BEEFTV_CLIENT_ID=" + shellQuote(reg.ID) +
 			" -e BEEFTV_CLIENT_TOKEN=" + shellQuote(token) +
 			" -- " + shellQuote(cliPath) + " " + strings.Join(serveArgs, " ")
-		return gin.H{"kind": string(kind), "title": "在 Claude Code 里加上 BeefTV", "command": command}
+		return gin.H{"kind": string(kind), "title": "在 Claude Code 里加上 VisiDeep AI", "command": command}
 	case agentops.ClientKindClaudeDesktop:
 		return gin.H{"kind": string(kind), "title": "在 Claude Desktop 的开发者设置中编辑配置",
 			"json": mcpServersJSON(cliPath, dataDir, serveArgs, reg.ID, token)}
@@ -210,7 +219,7 @@ func clientSetup(kind agentops.ClientKind, cliPath, dataDir string, reg agentops
 }
 
 func mcpServersJSON(cliPath, dataDir string, args []string, clientID, token string) string {
-	payload := map[string]any{"mcpServers": map[string]any{"beeftv": map[string]any{
+	payload := map[string]any{"mcpServers": map[string]any{"visideep": map[string]any{
 		"command": cliPath,
 		"args":    args,
 		"env":     map[string]string{"BEEFTV_DATA_DIR": dataDir, "BEEFTV_CLIENT_ID": clientID, "BEEFTV_CLIENT_TOKEN": token},

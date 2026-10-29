@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/readme/beeftv-wordmark.svg" width="640" alt="BeefTV — High-performance, lightweight, AI-native video workspace">
+  <img src="assets/readme/beeftv-wordmark.svg" width="640" alt="VisiDeep AI — High-performance, lightweight, AI-native video workspace">
 </p>
 
 <p align="center"><strong>High-performance · Lightweight · AI Native</strong></p>
@@ -10,17 +10,17 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/glanderness/BeefTV/stargazers"><img src="https://img.shields.io/github/stars/glanderness/BeefTV?style=flat-square&amp;logo=github&amp;label=Stars&amp;labelColor=303030&amp;color=E86C36" alt="BeefTV GitHub Stars"></a>
-  <a href="https://github.com/glanderness/BeefTV/releases/latest"><img src="https://img.shields.io/github/v/release/glanderness/BeefTV?style=flat-square&amp;label=Release&amp;labelColor=303030&amp;color=525252" alt="BeefTV 最新版本"></a>
+  <a href="https://github.com/glanderness/BeefTV/stargazers"><img src="https://img.shields.io/github/stars/glanderness/BeefTV?style=flat-square&amp;logo=github&amp;label=Stars&amp;labelColor=303030&amp;color=E86C36" alt="VisiDeep AI GitHub Stars"></a>
+  <a href="https://github.com/glanderness/BeefTV/releases/latest"><img src="https://img.shields.io/github/v/release/glanderness/BeefTV?style=flat-square&amp;label=Release&amp;labelColor=303030&amp;color=525252" alt="VisiDeep AI 最新版本"></a>
   <a href="QUICKSTART.md#下载与首次打开"><img src="https://img.shields.io/badge/Desktop-macOS%20%7C%20Windows-525252?style=flat-square&amp;labelColor=303030" alt="桌面版支持 macOS 和 Windows"></a>
   <a href="QUICKSTART.md"><img src="https://img.shields.io/badge/Workspace-Local--first-525252?style=flat-square&amp;labelColor=303030" alt="本地优先工作区"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-525252?style=flat-square&amp;labelColor=303030" alt="MIT 许可证"></a>
 </p>
 
 <p align="center">
-  <a href="https://beeftv.app/"><img src="assets/readme/button-website.svg" width="180" alt="访问 BeefTV 官网"></a>
-  <a href="https://github.com/glanderness/BeefTV/releases/latest"><img src="assets/readme/button-download.svg" width="175" alt="下载 BeefTV 桌面版"></a>
-  <a href="https://beeftv.app/assets/beeftv-wecom-qr.png"><img src="assets/readme/button-community.svg" width="185" alt="扫码加入 BeefTV 社群"></a>
+  <a href="https://beeftv.app/"><img src="assets/readme/button-website.svg" width="180" alt="访问 VisiDeep AI 官网"></a>
+  <a href="https://github.com/glanderness/BeefTV/releases/latest"><img src="assets/readme/button-download.svg" width="175" alt="下载 VisiDeep AI 桌面版"></a>
+  <a href="https://beeftv.app/assets/beeftv-wecom-qr.png"><img src="assets/readme/button-community.svg" width="185" alt="扫码加入 VisiDeep AI 社群"></a>
   <a href="https://x.com/beefnoode"><img src="assets/readme/button-x.svg" width="180" alt="在 X 关注 @beefnoode"></a>
 </p>
 
@@ -37,7 +37,7 @@ https://github.com/user-attachments/assets/94fe6a39-6933-44b3-a9a9-dbc28b2d284c
 
 [下载产品演示视频](https://github.com/glanderness/BeefTV/releases/download/v1.5.5/beeftv-demo.mp4)
 
-## Why BeefTV
+## Why VisiDeep AI
 
 | High Performance | Lightweight | AI Native |
 | --- | --- | --- |
@@ -50,7 +50,7 @@ https://github.com/user-attachments/assets/94fe6a39-6933-44b3-a9a9-dbc28b2d284c
 - **加工**：继续裁切、标注、局部重绘、拆分、引用和组合结果。
 - **迭代**：保留过程、复用素材，让一次生成变成可持续演进的工作流。
 
-BeefTV 同时提供项目库、个人资产库、异步任务、模型渠道与创作工具。完整范围见[功能清单](docs/content/docs/overview/features.mdx)。
+VisiDeep AI 同时提供项目库、个人资产库、异步任务、模型渠道与创作工具。完整范围见[功能清单](docs/content/docs/overview/features.mdx)。
 
 ## 工作方式
 
@@ -78,7 +78,7 @@ AI Native 自由画布
 
 ```bash
 git clone https://github.com/glanderness/BeefTV.git
-cd BeefTV
+cd VisiDeep AI
 ./scripts/build-beeftv-release.sh
 ```
 
@@ -96,6 +96,6 @@ cd BeefTV
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=glanderness/BeefTV&amp;type=date&amp;theme=dark&amp;legend=bottom-right" />
     <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=glanderness/BeefTV&amp;type=date&amp;legend=bottom-right" />
-    <img alt="BeefTV GitHub Star History" src="https://api.star-history.com/chart?repos=glanderness/BeefTV&amp;type=date&amp;legend=bottom-right" />
+    <img alt="VisiDeep AI GitHub Star History" src="https://api.star-history.com/chart?repos=glanderness/BeefTV&amp;type=date&amp;legend=bottom-right" />
   </picture>
 </a>

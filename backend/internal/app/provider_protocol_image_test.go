@@ -155,8 +155,36 @@ func TestProtocolOpenAIImagesPluginPayloadUsesPixelSize(t *testing.T) {
 	if body["quality"] != "medium" {
 		t.Fatalf("openai-images quality = %#v, want medium", body["quality"])
 	}
+	if _, exists := body["output_format"]; exists {
+		t.Fatalf("openai-images must omit unsupported output_format by default: %#v", body)
+	}
 	if spec.Path != "/v1/images/generations" {
 		t.Fatalf("path = %q", spec.Path)
+	}
+}
+
+func TestProtocolOpenAISeedream5UsesTwoKDefaultSize(t *testing.T) {
+	adapter := officialSourceProviderAdapter(t, "openai-images", "openai-image")
+	profile := DefaultImageCapabilityConfig("openai-image", "doubao-seedream-5-0")
+	if profile.Size.Default != "2048x2048" || profile.Quality.Supported {
+		t.Fatalf("seedream profile = %#v, want 2K size and no quality field", profile)
+	}
+	request := protocolRequestFromInput(canvasGenerationInput{
+		Mode:            "image",
+		Prompt:          "a gray circle",
+		Config:          providerConfig{Model: "doubao-seedream-5-0", InterfaceType: "openai-image", Size: profile.Size.Default},
+		ImageCapability: profile,
+	})
+	spec, err := adapter.BuildCreate(context.Background(), protocol.RequestContext{Request: request})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := marshalProtocolBody(t, spec.Body)
+	if body["size"] != "2048x2048" {
+		t.Fatalf("seedream size = %#v, want 2048x2048", body["size"])
+	}
+	if _, exists := body["output_format"]; exists {
+		t.Fatalf("seedream request must omit output_format: %#v", body)
 	}
 }
 

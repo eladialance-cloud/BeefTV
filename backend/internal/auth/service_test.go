@@ -42,6 +42,10 @@ func (r *memoryRepository) CreateUserWithIdentity(user *model.User, identity *mo
 	return nil
 }
 
+func (r *memoryRepository) ConsumeInviteCode(_ string, user *model.User, identity *model.UserIdentity) error {
+	return r.CreateUserWithIdentity(user, identity)
+}
+
 func (r *memoryRepository) UserIdentity(provider string, identifier string) (*model.UserIdentity, bool, error) {
 	item, ok := r.identities[identityKey(provider, identifier)]
 	if !ok {
@@ -70,9 +74,28 @@ func (r *memoryRepository) UserByUsername(username string) (*model.User, bool, e
 	return nil, false, nil
 }
 
+func (r *memoryRepository) UpdatePasswordHash(userID string, provider string, passwordHash string, updatedAt time.Time) (bool, error) {
+	for key, item := range r.identities {
+		if item.UserID != userID || item.Provider != provider {
+			continue
+		}
+		item.PasswordHash = passwordHash
+		item.UpdatedAt = updatedAt
+		r.identities[key] = item
+		return true, nil
+	}
+	return false, nil
+}
+
 func (r *memoryRepository) CreateAuthSession(session *model.AuthSession) error {
 	if _, exists := r.sessions[session.TokenHash]; exists {
 		return errors.New("session token hash already exists")
+	}
+	for _, item := range r.sessions {
+		if item.UserID == session.UserID && item.RevokedAt == nil {
+			stamp := session.CreatedAt
+			item.RevokedAt = &stamp
+		}
 	}
 	copyItem := *session
 	r.sessions[session.TokenHash] = &copyItem
@@ -223,6 +246,30 @@ func TestIssueSessionStoresOnlyTokenHash(t *testing.T) {
 	}
 }
 
+func TestIssueSessionReplacesPreviousSessionForSingleDevice(t *testing.T) {
+	svc, _ := testService(t)
+	user := mustRegister(t, svc, "single-device", "password-1")
+
+	firstToken, _, err := svc.IssueSession(user.ID, SessionMeta{UserAgent: "device-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondToken, _, err := svc.IssueSession(user.ID, SessionMeta{UserAgent: "device-b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstToken == secondToken {
+		t.Fatal("不同登录必须签发不同令牌")
+	}
+	if _, err := svc.ValidateSession(firstToken); err == nil {
+		t.Fatal("新登录成功后，旧设备会话必须立即失效")
+	}
+	resolved, err := svc.ValidateSession(secondToken)
+	if err != nil || resolved.ID != user.ID {
+		t.Fatalf("最新会话必须有效: user=%+v err=%v", resolved, err)
+	}
+}
+
 func TestValidateSessionReturnsUserUntilExpired(t *testing.T) {
 	svc, _ := testService(t)
 	user := mustRegister(t, svc, "dave", "password-1")
@@ -318,4 +365,59 @@ func TestUninitializedServiceFailsClosed(t *testing.T) {
 	if err := svc.RevokeSession("token"); err != nil {
 		t.Fatalf("未初始化的服务登出应为 no-op，得到 %v", err)
 	}
+}
+
+func TestCreateManagedUserBypassesRegistrationPolicy(t *testing.T) {
+	svc, repo := testService(t)
+	svc.policy = fixedRegistrationPolicy{mode: "closed"}
+
+	user, err := svc.CreateManagedUser(RegisterInput{
+		Username: "managed-user", DisplayName: "Managed User", Password: "password-1",
+	})
+	if err != nil {
+		t.Fatalf("CreateManagedUser error = %v", err)
+	}
+	if user.Role != model.UserRoleUser || user.Status != model.UserStatusActive {
+		t.Fatalf("管理员创建用户默认角色/状态不符: %#v", user)
+	}
+	if _, ok := repo.users[user.ID]; !ok {
+		t.Fatal("管理员创建的用户必须写入仓储")
+	}
+	if len(repo.sessions) != 0 {
+		t.Fatal("管理员创建用户不得签发会话")
+	}
+}
+
+func TestCreateManagedUserRejectsDuplicateAndWeakPassword(t *testing.T) {
+	svc, _ := testService(t)
+	if _, err := svc.CreateManagedUser(RegisterInput{Username: "managed", Password: "password-1"}); err != nil {
+		t.Fatalf("首次创建失败: %v", err)
+	}
+	if _, err := svc.CreateManagedUser(RegisterInput{Username: "managed", Password: "password-2"}); err == nil {
+		t.Fatal("重复用户名必须失败")
+	}
+	if _, err := svc.CreateManagedUser(RegisterInput{Username: "weak", Password: "short"}); err == nil {
+		t.Fatal("弱密码必须失败")
+	}
+}
+
+func TestResetPasswordReplacesOnlyThePasswordIdentity(t *testing.T) {
+	svc, _ := testService(t)
+	user := mustRegister(t, svc, "reset-user", "password-1")
+
+	if err := svc.ResetPassword(user.ID, "password-2"); err != nil {
+		t.Fatalf("ResetPassword error = %v", err)
+	}
+	if _, err := svc.Authenticate("reset-user", "password-1"); err == nil {
+		t.Fatal("旧密码必须失效")
+	}
+	if _, err := svc.Authenticate("reset-user", "password-2"); err != nil {
+		t.Fatalf("新密码必须可登录: %v", err)
+	}
+}
+
+type fixedRegistrationPolicy struct{ mode string }
+
+func (p fixedRegistrationPolicy) RegistrationPolicyMode() (string, int64, error) {
+	return p.mode, 0, nil
 }

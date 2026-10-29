@@ -117,7 +117,7 @@ const CATEGORY_COPY: Record<GenerationErrorCategory, CategoryCopy> = {
     moderation_output: { reason: "生成结果未通过内容安全审核", action: "请调整提示词或参考素材后重新生成" },
     invalid_params: { reason: "模型不接受当前参数", action: "请检查模型、尺寸、时长、格式或数量后重试" },
     local_storage: { reason: "本地数据库无法读写", action: "请重启应用；若仍失败，请保留排查信息并联系支持，不要重复生成" },
-    local_disk_full: { reason: "本地磁盘空间不足，无法保存数据", action: "请清理 BeefTV 数据目录所在磁盘；已有生成结果请优先取回原任务，不要重复生成" },
+    local_disk_full: { reason: "本地磁盘空间不足，无法保存数据", action: "请清理 VisiDeep AI 数据目录所在磁盘；已有生成结果请优先取回原任务，不要重复生成" },
     local_credential: { reason: "本地算力凭据读取失败", action: "请检查工作区数据目录并重新连接算力账号；不要删除工作区密钥" },
     canvas_conflict: { reason: "生成结果已保留，画布尚未更新", action: "请点击「继续取回」，不要重新生成" },
     result_apply_failed: { reason: "生成结果已保留，还没放回画布", action: "请点击「继续取回」，不要重新生成" },
@@ -419,10 +419,11 @@ function formatExecutionEvidence(evidence?: GenerationFailureDiagnostics): strin
         input.images?.slice(0, 16).forEach((media, i) => lines.push(`参考图 ${i + 1}：${number(media.width)}×${number(media.height)}，${number(media.bytes)} 字节`));
     }
     const outcomes: Record<string, string> = { response_received: "收到响应（业务结果另判）", transport_error: "传输或读取失败", not_dispatched: "请求未发送", http_error: "HTTP 错误", cancelled: "取消", timeout: "超时", business_error: "业务错误", response_limit: "本地响应大小限制" };
+    const operations: Record<string, string> = { submit: "提交", upload: "上传", query_or_download: "查询或下载", image_edit: "图片编辑", image_generate: "图片生成", other: "其他" };
     const phases: Record<string, string> = { connect: "建立连接", tls: "TLS 握手", request: "发送请求", response_wait: "等待响应", response: "读取响应" };
     const routes: Record<string, string> = { direct: "直连", proxy: "代理" };
     evidence?.requests?.slice(0, 8).forEach((request, i) => {
-        lines.push(`请求 ${i + 1}：${sanitizeProviderCode(request.operation)}；${outcomes[request.outcome] || "未知"}；已发起=${request.dispatched === true ? "是" : "否"}；HTTP=${number(request.httpStatus)}；ID=${sanitizeDebugId(request.requestId) || "未记录"}；耗时=${number(request.durationMs)}ms`);
+        lines.push(`请求 ${i + 1}：${operations[request.operation || ""] || sanitizeProviderCode(request.operation)}；${outcomes[request.outcome] || "未知"}；已发起=${request.dispatched === true ? "是" : "否"}；HTTP=${number(request.httpStatus)}；ID=${sanitizeDebugId(request.requestId) || "未记录"}；耗时=${number(request.durationMs)}ms`);
         lines.push(`请求 ${i + 1} 字节：请求体大小=${number(request.requestBytes)}（不代表已发送）；响应声明=${number(request.declaredResponseBytes)}；已读=${number(request.receivedBytes)}；响应上限=${number(request.responseLimitBytes)}`);
         if (phases[request.transportPhase || ""]) lines.push(`请求 ${i + 1} 连接：${routes[request.transportRoute || ""] || "未记录"}；阶段=${phases[request.transportPhase!]}`);
         if (/^\d{4}-\d{2}-\d{2}[T ][\d:.+Z-]{5,35}$/.test(request.startedAt)) lines.push(`请求 ${i + 1} 时间：${request.startedAt}`);
@@ -463,7 +464,15 @@ function classifyUnknown(error: unknown, context: GenerationFailureContext): Cla
         if (record.reason === "local_disk_full") return { category: "local_disk_full", status: numericStatus(record.status), fromCode: true, retryable: false };
         if (record.reason === "local_storage_failed") return { category: "local_storage", ...LOCAL_TASK_ADMISSION_FAILURE, fromCode: true, retryable: false };
         if (record.name === "ApiError" && record.reason === "quota_exceeded") {
-            return { category: "quota_limit", reason: sanitizeProviderText(String(record.message || "工作区用量已达到上限")), action: "请清理不需要的任务记录或素材后重试", fromCode: true, retryable: false };
+            const reason = sanitizeProviderText(String(record.message || "工作区用量已达到上限"));
+            const walletShortage = /(?:可用)?积分不足|余额不足|钱包.*不足/u.test(reason);
+            return {
+                category: walletShortage ? "quota_user" : "quota_limit",
+                reason,
+                action: walletShortage ? "请充值或联系管理员增加积分后再试" : "请清理不需要的任务记录或素材后重试",
+                fromCode: true,
+                retryable: false,
+            };
         }
         if (record.reason === "stale_revision" || record.code === "canvas_conflict") {
             return { category: "canvas_conflict", fromCode: true, retryable: false };

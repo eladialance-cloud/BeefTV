@@ -146,6 +146,80 @@ test("target save persists concurrent edits and deleted targets stay deleted bef
     expect(patches.length).toBeGreaterThan(1);
 });
 
+test("recovered task node remaps the storyboard row and commits that mapping remotely", async () => {
+    const staleNodeId = "image-stale";
+    const recoveredNodeId = "image-recovered";
+    const tableNode: CanvasNodeData = {
+        id: "storyboard-table",
+        type: CanvasNodeType.BatchTable,
+        title: "故事板",
+        position: { x: 0, y: 0 },
+        width: 1200,
+        height: 720,
+        metadata: {
+            batchTable: {
+                operation: "creative",
+                concurrency: 1,
+                rows: [{ id: "row-1", enabled: true, inputNodeIds: [], outputNodeId: staleNodeId, prompt: "故事板提示词" }],
+                manjuStoryboardTable: { version: 1, projectId: "project" },
+            },
+        },
+    };
+    const initial = project([tableNode, media(recoveredNodeId)]);
+    useCanvasStore.setState({ projects: [initial] });
+    const nodesRef = { current: initial.nodes };
+    const task: GenerationTask = {
+        id: "task-recovered",
+        type: "canvas_image",
+        status: "succeeded",
+        attempts: 1,
+        createdAt: "2026-01-01",
+        updatedAt: "2026-01-01",
+        outputs: [{ outputIndex: 0, mediaType: "image", materializedAssetId: "asset-recovered" }],
+    };
+    let remotePersists = 0;
+
+    await bindBackendCanvasGenerationResult({
+        canvasId: initial.id,
+        nodeId: staleNodeId,
+        task,
+        nodesRef,
+        isCurrent: () => true,
+        setNodes: (value) => { nodesRef.current = typeof value === "function" ? value(nodesRef.current) : value; },
+        runtime: {
+            hydrateOutputs: async () => undefined,
+            bindOutput: async () => {
+                throw new ApiError("原节点已删除", { status: 404, reason: "node_deleted" });
+            },
+            recoverOutput: async () => ({
+                op: "canvas.task.recover",
+                opId: `recover-node-v2:${task.id}:0`,
+                replayed: false,
+                revision: 4,
+                result: {
+                    bindingStatus: "bound",
+                    nodeId: recoveredNodeId,
+                    canvas: initial,
+                },
+            }),
+            adoptConfirmedProjection: async (canonical) => {
+                useCanvasStore.getState().updateProject(initial.id, canonical);
+                return canonical;
+            },
+            persistDocument: async () => undefined,
+            persistRemoteDocument: async () => {
+                remotePersists += 1;
+                const rows = useCanvasStore.getState().openProject(initial.id)?.nodes
+                    .find((node) => node.id === tableNode.id)?.metadata?.batchTable?.rows || [];
+                expect(rows[0]?.outputNodeId).toBe(recoveredNodeId);
+            },
+            remoteMode: () => true,
+        },
+    });
+
+    expect(remotePersists).toBe(1);
+});
+
 for (const guardAt of ["flush", "bind"] as const) {
     test(`result consumer retries ${guardAt} with the latest nodes, connections and timeline`, async () => {
         const initial = project([media("reference")], timeline([clip("clip")]));

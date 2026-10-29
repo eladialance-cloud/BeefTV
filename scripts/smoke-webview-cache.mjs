@@ -12,7 +12,7 @@ while (Date.now() < deadline) {
   } catch (error) { inspection = String(error.cause || error); }
   await new Promise(resolve => setTimeout(resolve, 500));
 }
-if (!target?.webSocketDebuggerUrl) throw new Error('Actual BeefTV WebView did not start: ' + inspection);
+if (!target?.webSocketDebuggerUrl) throw new Error('Actual VisiDeep AI WebView did not start: ' + inspection);
 const socket = new WebSocket(target.webSocketDebuggerUrl);
 await new Promise((resolve, reject) => {
   socket.addEventListener('open', resolve, { once: true });

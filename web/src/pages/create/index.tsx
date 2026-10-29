@@ -29,7 +29,7 @@ import type { PromptOptimizerProvider } from "@/lib/plugins/plugin-types";
 import { promptOptimizerPlugin, PROMPT_OPTIMIZER_PLUGIN_ID } from "@/lib/plugins/builtin/prompt-optimizer";
 import { createPluginHostContext } from "@/services/plugin-host";
 import { usePluginStore } from "@/stores/use-plugin-store";
-import { buildCreationMentionReferences, expandCreationPrompt, reconcileCreationAttachmentLimit, removeCreationReferenceTokens, replaceCreationAttachmentReference, selectedCreationReferences, type CreationReference } from "./creation-references";
+import { buildCreationMentionReferences, expandCreationPrompt, reconcileCreationAttachmentLimit, removeCreationReferenceTokens, replaceCreationAttachmentReference, selectedCreationReferences, type CreationAttachmentLimits, type CreationReference } from "./creation-references";
 import { creationAttachmentFromAsset, creationAttachmentFromAudio, creationAttachmentFromAudioAsset, creationAttachmentFromDocument, creationAttachmentFromExternalAsset, creationAttachmentFromImage, creationAttachmentFromVideo, creationAttachmentFromVideoAsset, creationAttachmentKind, creationAudioAsset, creationFileAccepted, creationImageAsset, creationMediaAspectRatio, creationUploadAccept, creationVideoAsset, removeCreationAttachment, splitCreationAttachments, type CreationAttachment } from "./creation-assets";
 import { defaultCreationMode, modeLabels, type CreationConversation, type CreationMessage, type CreationMode, type CreationRetryContext, type CreationSettings, type CreationShotRailEntry, type CreationStatus } from "./creation-types";
 import { attachCreationTaskContexts, completedCreationGenerationTask, conversationTimestamp, creationShotRail, creationVideoShotOrdinal, isImageAttachment, isVideoAttachment, materializeCreationTaskResults, newConversation, newMessage, reconcileCreationTaskMessages } from "./creation-conversations";
@@ -163,7 +163,19 @@ export default function CreatePage() {
     const selectedModel = resolveCompatibleModel(config, preferredModel, modelRequirements) || preferredModel;
     const imageProfile = useMemo(() => modelCapabilityConfigFor(config, selectedModel).image!, [config, selectedModel]);
     const videoProfile = useMemo(() => modelCapabilityConfigFor(config, selectedModel).video!, [config, selectedModel]);
-    const maxReferences = mode === "video" ? videoProfile.operations.includes("image_to_video") ? videoProfile.references.maxImages : 0 : mode === "image" ? imageProfile.references.maxImages : 6;
+    const attachmentLimits = useMemo<number | CreationAttachmentLimits>(() => {
+        if (mode === "video") {
+            return {
+                image: videoProfile.references.maxImages,
+                video: videoProfile.references.maxVideos,
+                audio: videoProfile.references.maxAudios,
+                file: 0,
+            };
+        }
+        if (mode === "image") return { image: imageProfile.references.maxImages, video: 0, audio: 0, file: 0 };
+        return 6;
+    }, [imageProfile.references.maxImages, mode, videoProfile.references.maxAudios, videoProfile.references.maxImages, videoProfile.references.maxVideos]);
+    const maxReferences = typeof attachmentLimits === "number" ? attachmentLimits : attachmentLimits.image + attachmentLimits.video + attachmentLimits.audio + attachmentLimits.file;
     const referenceImageSize = useMemo(() => {
         const imageAttachments = attachments.filter(isImageAttachment);
         if (imageAttachments.length !== 1) return undefined;
@@ -242,16 +254,14 @@ export default function CreatePage() {
         setSeconds(normalized.seconds);
         setRatio(normalized.ratio);
         setVideoQuality(normalized.resolution.replace(/p$/i, ""));
-        const maxReferences = videoProfile.operations.includes("image_to_video") ? videoProfile.references.maxImages : 0;
-        if (attachments.length > maxReferences) setAttachments((current) => current.slice(0, maxReferences));
     }, [composerPreferencesHydrated, composerPreferencesInitialized, mode, selectedModel, videoProfile]);
 
     useEffect(() => {
-        const reconciled = reconcileCreationAttachmentLimit(attachments, mentionReferences, maxReferences);
+        const reconciled = reconcileCreationAttachmentLimit(attachments, mentionReferences, attachmentLimits);
         if (reconciled.attachments === attachments) return;
         setAttachments(reconciled.attachments);
         if (reconciled.removedReferences.length) setPrompt((current) => removeCreationReferenceTokens(current, reconciled.removedReferences));
-    }, [attachments, maxReferences, mentionReferences]);
+    }, [attachmentLimits, attachments, mentionReferences]);
 
     useEffect(() => {
         let cancelled = false;
@@ -551,7 +561,10 @@ export default function CreatePage() {
             return external ? [creationAttachmentFromExternalAsset(external)] : [];
         });
         if (!next.length) return;
-        setAttachments((current) => [...current.filter((item) => !next.some((candidate) => candidate.id === item.id)), ...next].slice(0, maxReferences));
+        setAttachments((current) => {
+            const merged = [...current.filter((item) => !next.some((candidate) => candidate.id === item.id)), ...next];
+            return reconcileCreationAttachmentLimit(merged, buildCreationMentionReferences([], merged), attachmentLimits).attachments;
+        });
         setLibraryOpen(false);
     };
 

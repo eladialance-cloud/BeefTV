@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { assistantModelOptions, normalizeAssistantModel, resolveAssistantModel } from "@/lib/assistant-model";
-import { agentClientLastUsedLabel, agentClientModeLabel, agentClientModeSummary, agentClientSetupBlock } from "@/pages/agents/agent-client-presentation";
+import { AGENT_MCP_DESKTOP_ONLY, agentClientLastUsedLabel, agentClientModeLabel, agentClientModeSummary, agentClientSetupBlock } from "@/pages/agents/agent-client-presentation";
 import { createAgentClient, listAgentClients, revokeAgentClient } from "@/services/api/agent-clients";
 import { ApiError, apiClient } from "@/services/api/request";
 import { createModelChannel, defaultConfig, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
@@ -26,6 +26,11 @@ async function withStubbedApi<T>(envelope: unknown, status: number, run: (record
 }
 
 describe("外部 Agent 接入 API", () => {
+    test("在线工作区明确说明 MCP 连接管理仅在桌面版提供", () => {
+        expect(AGENT_MCP_DESKTOP_ONLY.title).toContain("桌面版");
+        expect(AGENT_MCP_DESKTOP_ONLY.description).toContain("Codex");
+        expect(AGENT_MCP_DESKTOP_ONLY.description).toContain("在线网页版");
+    });
     test("旧版只读连接保持只读提示，新连接使用全部创作工具", () => {
         expect(agentClientModeLabel("read-only")).toBe("旧版只读连接");
         expect(agentClientModeSummary("read-only")).toContain("重新连接");

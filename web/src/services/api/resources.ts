@@ -205,6 +205,7 @@ async function runChunkedUpload(file: Blob, name: string, kind: "image" | "video
         await http.put<{ index: number }>(`/resources/uploads/${encodeURIComponent(session.uploadId)}/chunks/${index}`, blob, {
             headers: { "Content-Type": "application/octet-stream" },
             expectedScope: expected,
+            timeout: 0,
             onUploadProgress: onProgress ? ({ loaded }) => onProgress(start + Math.min(loaded, blob.size), file.size) : undefined,
         });
         onProgress?.(Math.min(end, file.size), file.size);
@@ -259,7 +260,12 @@ export async function importResourceFromUrl(url: string, kind: "image" | "video"
 
 function scopedUploadConfig(expected: CapturedUserScope, idempotencyKey?: string): HttpRequestConfig {
     const value = idempotencyKey?.trim();
-    return value ? { headers: { "X-Idempotency-Key": value }, expectedScope: expected } : { expectedScope: expected };
+    return {
+        ...(value ? { headers: { "X-Idempotency-Key": value } } : {}),
+        expectedScope: expected,
+        // Uploads can legitimately exceed the shared 4 s JSON request timeout.
+        timeout: 0,
+    };
 }
 
 function lookupAccessError(expected: CapturedUserScope, signal?: { aborted?: boolean }) {
@@ -352,6 +358,14 @@ export function resourceFileUrl(id: string) {
     return `${base}/resources/${encodeURIComponent(id)}/file`;
 }
 
+export function resourceDownloadFileUrl(id: string, fileName?: string) {
+    const base = String(apiBaseURL).replace(/\/+$/, "");
+    const query = new URLSearchParams({ proxy: "1", download: "1" });
+    const name = fileName?.trim();
+    if (name) query.set("filename", name);
+    return `${base}/resources/${encodeURIComponent(id)}/file?${query.toString()}`;
+}
+
 function resourceProxyFileUrl(id: string) {
     const base = String(apiBaseURL).replace(/\/+$/, "");
     return `${base}/resources/${encodeURIComponent(id)}/file?proxy=1`;
@@ -425,6 +439,26 @@ export async function getResourceBlob(storageKey: string, config?: HttpRequestCo
     } catch (error) {
         if (isUserScopeAbandonedError(error) || (error instanceof DOMException && error.name === "AbortError")) throw error;
         return null;
+    }
+}
+
+export async function getResourceDownloadBlob(id: string, config?: HttpRequestConfig) {
+    if (!id.trim()) throw new Error("没有可下载的资源 ID");
+    try {
+        const response = await http.raw<Blob>({
+            ...config,
+            method: "get",
+            url: `/resources/${encodeURIComponent(id)}/file`,
+            params: { proxy: "1", download: "1" },
+            expectedScope: config?.expectedScope ?? captureUserScope(),
+            responseType: "blob",
+            timeout: 0,
+        });
+        return response.data instanceof Blob ? response.data : new Blob([response.data]);
+    } catch (error) {
+        if (isUserScopeAbandonedError(error) || (error instanceof DOMException && error.name === "AbortError")) throw error;
+        if (error instanceof ApiError) throw new Error(error.message || "资源下载失败");
+        throw error;
     }
 }
 

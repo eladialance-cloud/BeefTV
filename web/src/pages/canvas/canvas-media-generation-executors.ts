@@ -6,6 +6,7 @@ import { nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
 import { nextCanvasVersionLabel } from "@/lib/canvas/canvas-layout";
 import { buildAudioGenerationMetadata, buildVideoGenerationMetadata, clearInPlaceMediaOutputMetadata, generationReferenceUrls, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
 import { canvasGenerationPromptMetadata } from "@/lib/canvas/canvas-generation-submission";
+import { creationTemplateGenerationMetadata } from "@/lib/canvas/creation-template-workflow";
 import { mediaResultMetadata } from "@/lib/canvas/canvas-node-semantics";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
@@ -138,6 +139,7 @@ export async function executeVideoGeneration({
                 signal: controller.signal,
                 metadata: {
                     sourceNodeId: nodeId,
+                    ...creationTemplateGenerationMetadata(sourceNode?.metadata),
                     ...taskContext,
                     resolvedCharacterVersions: generationContext.resolvedCharacterVersions,
                     resolvedCharacterVoices: generationContext.resolvedCharacterVoices,
@@ -236,7 +238,7 @@ export async function executeAudioGeneration({
                 prompt: effectivePrompt,
                 config: generationConfig,
                 signal: controller.signal,
-                metadata: { sourceNodeId: nodeId, ...taskContext, resolvedCharacterVersions: generationContext.resolvedCharacterVersions, resolvedCharacterVoiceKey: generationContext.resolvedCharacterVoices[0]?.voiceKey, ...skillMetadata },
+                metadata: { sourceNodeId: nodeId, ...creationTemplateGenerationMetadata(sourceNode?.metadata), ...taskContext, resolvedCharacterVersions: generationContext.resolvedCharacterVersions, resolvedCharacterVoiceKey: generationContext.resolvedCharacterVoices[0]?.voiceKey, ...skillMetadata },
             },
             {
                 bindTask: (task) => bindGenerationTask(audioId, task),

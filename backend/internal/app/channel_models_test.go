@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"infinite-canvas/backend/internal/model"
+	"infinite-canvas/backend/internal/modelcatalog"
 )
 
 func mustEncodeModelCapabilityConfig(t *testing.T, config *ModelCapabilityConfig) string {
@@ -59,6 +60,29 @@ func TestNormalizeChannelModelContractRequiresJiMengSecret(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("normalizeChannelModelContract() should require JiMeng credentials")
+	}
+}
+
+func TestSaveAdminChannelModelFillsDefaultCapabilityConfig(t *testing.T) {
+	svc, db := newChannelModelTestService(t)
+	admin := &model.User{ID: "admin", Role: model.UserRoleAdmin}
+	channel := model.ModelChannel{ID: "channel-defaults", UserID: admin.ID, Scope: model.ChannelScopeSystem, Enabled: true, Name: "Defaults", BaseURL: "https://example.com/v1", APIKey: "key", APIFormat: "openai", ModelsJSON: `[]`}
+	if err := db.Create(&channel).Error; err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	saved, err := svc.SaveAdminChannelModel(admin, channel.ID, "", ChannelModelRequest{
+		ModelKey: "gpt-defaults", DisplayName: "GPT Defaults", Capability: "text", Protocol: string(model.ChannelInterfaceChatCompletion), Enabled: &enabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := modelcatalog.DecodeModelCapabilityConfig(saved.CapabilityConfigJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config == nil || config.Text == nil {
+		t.Fatalf("saved capability config = %#v, want text defaults", config)
 	}
 }
 

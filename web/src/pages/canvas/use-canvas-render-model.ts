@@ -193,6 +193,7 @@ export function useCanvasRenderModel({
         const remaining = candidates.filter((node) => !forcedNodeIds.has(node.id)).slice(0, Math.max(0, renderBudget - prioritized.length));
         [...prioritized, ...remaining].forEach((node) => {
             if (renderHiddenNodeIds.has(node.id)) return;
+            if (node.metadata?.manjuAssetTableId) return;
             const retained = forcedNodeIds.has(node.id) || renderedNodeIds.has(node.id);
             const insideEnterBounds = node.position.x + node.width > renderBounds.enter.left && node.position.x < renderBounds.enter.right && node.position.y + node.height > renderBounds.enter.top && node.position.y < renderBounds.enter.bottom;
             if (!retained && !insideEnterBounds) return;

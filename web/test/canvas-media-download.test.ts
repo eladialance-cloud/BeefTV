@@ -73,6 +73,45 @@ describe("generated image title", () => {
         expect(buildImageGenerationNodeTitle("一座云层中的未来城市", mediaNode({ title: "原图" }))).toBe("一座云层中的未来城市");
     });
 
+    test("漫剧任务生成后沿用已统一的编号标题", () => {
+        const source = mediaNode({
+            title: "段1 · 故事板图",
+            metadata: {
+                manjuTaskId: "p3-storyboard-seg-1",
+                manjuTaskCode: "段1",
+                manjuStage: "p3_images",
+            },
+        });
+        expect(buildImageGenerationNodeTitle("生成一张包含连续动作相位的故事板图，人物、服装和场景必须严格延续", source)).toBe("段1 · 故事板图");
+        expect(buildImageGenerationNodeTitle("生成一张包含连续动作相位的故事板图", source, 0, 2)).toBe("段1 · 故事板图 · 1");
+    });
+
+    test("后台工作流任务生成后沿用步骤标题", () => {
+        const source = mediaNode({
+            title: "新人照片",
+            metadata: {
+                pluginData: {
+                    creationTemplateId: "wedding-template",
+                    creationTemplateKey: "wedding-video",
+                    creationTemplateNodeId: "photos",
+                },
+            },
+        });
+        expect(buildImageGenerationNodeTitle("请根据上传照片生成跨时空婚礼电影角色定妆照", source)).toBe("新人照片");
+    });
+
+    test("再次生成沿用已有结果标题", () => {
+        const source = mediaNode({
+            title: "段1 · 故事板图",
+            metadata: {
+                content: "[image omitted]",
+                generatedFromNodeId: "p3-task",
+                status: "success",
+            },
+        });
+        expect(buildImageGenerationNodeTitle("重新生成更完整的动作相位故事板图", source)).toBe("段1 · 故事板图");
+    });
+
     test("快捷键复制节点生成后保留 copy 序号", () => {
         const source = mediaNode({ title: "未来城市_copy2", metadata: { copiedFromNodeId: "source" } });
         expect(buildImageGenerationNodeTitle("未来城市", source)).toBe("未来城市_copy2");

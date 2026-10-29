@@ -46,7 +46,7 @@ const (
 
 func isSeedance2Family(protocol, modelName string) bool {
 	normalizedProtocol := strings.TrimSpace(protocol)
-	if normalizedProtocol != "newapi-channel-2" && normalizedProtocol != "newapi" && normalizedProtocol != "openai" && normalizedProtocol != "openai-videos" && !model.IsVolcengineArkVideoProtocol(model.ChannelInterfaceType(normalizedProtocol)) {
+	if normalizedProtocol != "newapi-channel-2" && normalizedProtocol != "newapi" && normalizedProtocol != "openai" && normalizedProtocol != "openai-videos" && normalizedProtocol != "toapis-video" && !model.IsVolcengineArkVideoProtocol(model.ChannelInterfaceType(normalizedProtocol)) {
 		return false
 	}
 	name := strings.ToLower(strings.TrimSpace(modelName))
@@ -56,7 +56,11 @@ func isSeedance2Family(protocol, modelName string) bool {
 func isSeedance25Model(modelName string) bool {
 	parts := strings.Split(strings.ToLower(strings.TrimSpace(modelName)), "/")
 	base := parts[len(parts)-1]
-	return base == "seedance-2.5" || strings.HasPrefix(base, "seedance-2.5-") || strings.HasPrefix(base, "doubao-seedance-2-5") || strings.HasPrefix(base, "doubao-seedance-2.5") || base == "dreamina-seedance-2-5" || strings.HasPrefix(base, "dreamina-seedance-2-5-") || base == "dreamina-seedance-2.5" || strings.HasPrefix(base, "dreamina-seedance-2.5-")
+	return base == "seedance-2.5" || strings.HasPrefix(base, "seedance-2.5-") ||
+		base == "seedance-2-5" || strings.HasPrefix(base, "seedance-2-5-") ||
+		strings.HasPrefix(base, "doubao-seedance-2-5") || strings.HasPrefix(base, "doubao-seedance-2.5") ||
+		base == "dreamina-seedance-2-5" || strings.HasPrefix(base, "dreamina-seedance-2-5-") ||
+		base == "dreamina-seedance-2.5" || strings.HasPrefix(base, "dreamina-seedance-2.5-")
 }
 
 const documentedSeedanceVideoMinPixels = 407696

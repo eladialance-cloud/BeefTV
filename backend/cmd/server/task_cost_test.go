@@ -32,6 +32,8 @@ func newTaskCostEnv(t *testing.T) (*taskCostAdapter, *repository.Repository, *cr
 		&model.CreditAccount{}, &model.CreditLedgerEntry{},
 		&model.ModelPricing{}, &model.ChannelModelPriceTier{}, &model.LogicalModelPriceSKU{},
 		&model.TaskCostCharge{}, &model.ApiCallLog{},
+		&model.ModelChannel{}, &model.ChannelModel{}, &model.ChannelModelVariant{},
+		&model.LogicalModel{}, &model.LogicalModelRevision{}, &model.LogicalModelRoute{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +67,7 @@ func seedFixedPriceRule(t *testing.T, repo *repository.Repository, ruleID string
 
 func fundTestWallet(t *testing.T, wallet *credits.Service, userID string, amount int64) {
 	t.Helper()
-	if _, err := wallet.Grant(userID, amount, "admin", "测试发积分", "test:grant:"+userID); err != nil {
+	if _, err := wallet.Grant(userID, credits.FromWholeCredits(amount), "admin", "测试发积分", "test:grant:"+userID); err != nil {
 		t.Fatalf("发放积分失败: %v", err)
 	}
 }
@@ -135,7 +137,7 @@ func TestTaskCostSettlesByProviderTokens(t *testing.T) {
 	if err != nil {
 		t.Fatalf("冻结失败: %v", err)
 	}
-	if reservation.EstimatedCredits != 2 {
+	if reservation.EstimatedCredits != 2*credits.MicrocreditsPerCredit {
 		t.Fatalf("预估应为 2，得到 %d", reservation.EstimatedCredits)
 	}
 
@@ -145,15 +147,84 @@ func TestTaskCostSettlesByProviderTokens(t *testing.T) {
 		t.Fatalf("结算失败: %v", err)
 	}
 	account, _ := wallet.Account("u1")
-	if account.Balance != 99 || account.Frozen != 0 {
+	if account.Balance != 99*credits.MicrocreditsPerCredit || account.Frozen != 0 {
 		t.Fatalf("按真实 token 结算后应为 99/0，得到 %d/%d", account.Balance, account.Frozen)
 	}
 	var stored model.TaskCostCharge
 	if err := repo.DB().First(&stored, "task_id = ? AND attempt = ?", "task-token", 1).Error; err != nil {
 		t.Fatal(err)
 	}
-	if stored.ActualCredits != 1 || stored.SettlementSource != "provider_usage" || stored.ActualQuantity != 1 {
+	if stored.ActualCredits != credits.MicrocreditsPerCredit || stored.SettlementSource != "provider_usage" || stored.ActualQuantity != 1 {
 		t.Fatalf("结算审计不符: %#v", stored)
+	}
+}
+
+func TestTaskCostSelectorDerivesResolutionUnlessExplicitSelectorExists(t *testing.T) {
+	tests := []struct {
+		name  string
+		input map[string]any
+		want  map[string]string
+	}{
+		{
+			name:  "image quality",
+			input: map[string]any{"config": map[string]any{"quality": "2K"}},
+			want:  map[string]string{"quality": "2k"},
+		},
+		{
+			name:  "empty selector falls back to resolution",
+			input: map[string]any{"selector": map[string]any{}, "config": map[string]any{"vquality": "1080P"}},
+			want:  map[string]string{"quality": "1080p"},
+		},
+		{
+			name:  "video quality",
+			input: map[string]any{"config": map[string]any{"vquality": "1080P"}},
+			want:  map[string]string{"quality": "1080p"},
+		},
+		{
+			name:  "video quality without p suffix",
+			input: map[string]any{"config": map[string]any{"vquality": "480"}},
+			want:  map[string]string{"quality": "480p"},
+		},
+		{
+			name:  "auto uses general price",
+			input: map[string]any{"config": map[string]any{"quality": "auto"}},
+			want:  nil,
+		},
+		{
+			name:  "explicit selector wins",
+			input: map[string]any{"selector": map[string]any{"quality": "4k", "operation": "text_to_image"}, "config": map[string]any{"quality": "2k"}},
+			want:  map[string]string{"quality": "4k", "operation": "text_to_image"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := taskCostSelector(test.input)
+			if fmt.Sprint(got) != fmt.Sprint(test.want) {
+				t.Fatalf("selector = %#v, want %#v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestTaskCostCandidatesReadsCanvasVideoSeconds(t *testing.T) {
+	candidates := taskCostCandidates("video", map[string]any{
+		"config": map[string]any{"videoSeconds": "5", "vquality": "720p"},
+	})
+	if len(candidates) != 2 || candidates[1].Mode != "per_second" || candidates[1].Quantity != 5 {
+		t.Fatalf("candidates = %#v, want per_second quantity 5", candidates)
+	}
+}
+
+func TestTaskCostFallbackUsesModelDefaultResolutionAndDuration(t *testing.T) {
+	fallback := taskCostFallbackSettingsFromJSON(`{
+		"version":1,
+		"video":{
+			"defaultResolution":"1080p",
+			"duration":{"default":6}
+		}
+	}`, "video")
+	if fallback.DefaultResolution != "1080p" || fallback.DefaultDuration != 6 {
+		t.Fatalf("fallback = %#v", fallback)
 	}
 }
 
@@ -171,7 +242,7 @@ func TestTaskCostCapsRealUsageAtFrozenEstimate(t *testing.T) {
 		t.Fatalf("结算失败: %v", err)
 	}
 	account, _ := wallet.Account("u1")
-	if account.Balance != 99 || account.Frozen != 0 {
+	if account.Balance != 99*credits.MicrocreditsPerCredit || account.Frozen != 0 {
 		t.Fatalf("超预估必须封顶在 1 积分，得到 %d/%d", account.Balance, account.Frozen)
 	}
 	var stored model.TaskCostCharge
@@ -196,7 +267,7 @@ func TestTaskCostFallsBackToEstimateWithoutUsage(t *testing.T) {
 		t.Fatalf("结算失败: %v", err)
 	}
 	account, _ := wallet.Account("u1")
-	if account.Balance != 98 || account.Frozen != 0 {
+	if account.Balance != 98*credits.MicrocreditsPerCredit || account.Frozen != 0 {
 		t.Fatalf("无用量回执应按预估 2 结算，得到 %d/%d", account.Balance, account.Frozen)
 	}
 	var stored model.TaskCostCharge
@@ -220,14 +291,14 @@ func TestTaskCostReserveAndSettle(t *testing.T) {
 	if reservation == nil || reservation.Free {
 		t.Fatalf("应产生付费冻结，得到 %#v", reservation)
 	}
-	if reservation.Attempt != 1 || reservation.EstimatedCredits != 2 {
+	if reservation.Attempt != 1 || reservation.EstimatedCredits != 2*credits.MicrocreditsPerCredit {
 		t.Fatalf("冻结快照不符: %#v", reservation)
 	}
 	account, err := wallet.Account("u1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if account.Balance != 100 || account.Frozen != 2 {
+	if account.Balance != 100*credits.MicrocreditsPerCredit || account.Frozen != 2*credits.MicrocreditsPerCredit {
 		t.Fatalf("冻结后钱包应为 100/2，得到 %d/%d", account.Balance, account.Frozen)
 	}
 
@@ -238,7 +309,7 @@ func TestTaskCostReserveAndSettle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if account.Balance != 98 || account.Frozen != 0 {
+	if account.Balance != 98*credits.MicrocreditsPerCredit || account.Frozen != 0 {
 		t.Fatalf("结算后钱包应为 98/0，得到 %d/%d", account.Balance, account.Frozen)
 	}
 	if _, found, err := repo.ReservedTaskCostCharge("task-1"); err != nil || found {
@@ -250,7 +321,7 @@ func TestTaskCostReserveAndSettle(t *testing.T) {
 		t.Fatalf("重复结算应无副作用: %v", err)
 	}
 	account, _ = wallet.Account("u1")
-	if account.Balance != 98 {
+	if account.Balance != 98*credits.MicrocreditsPerCredit {
 		t.Fatalf("重复结算后余额应保持 98，得到 %d", account.Balance)
 	}
 }
@@ -289,7 +360,7 @@ func TestTaskCostReleaseReturnsFreeze(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if account.Balance != 50 || account.Frozen != 0 {
+	if account.Balance != 50*credits.MicrocreditsPerCredit || account.Frozen != 0 {
 		t.Fatalf("释放后钱包应为 50/0，得到 %d/%d", account.Balance, account.Frozen)
 	}
 	if _, err := wallet.SettleAttempt("u1", "task-2", 1, 10, 10); err == nil {
@@ -319,7 +390,7 @@ func TestTaskCostSettlementKeepsSnapshotAfterPriceChange(t *testing.T) {
 		t.Fatalf("结算失败: %v", err)
 	}
 	account, _ := wallet.Account("u1")
-	if account.Balance != 98 {
+	if account.Balance != 98*credits.MicrocreditsPerCredit {
 		t.Fatalf("应按 2 积分快照结算，余额应为 98，得到 %d", account.Balance)
 	}
 }
@@ -350,7 +421,7 @@ func TestTaskCostRetryUsesNewAttempt(t *testing.T) {
 		t.Fatalf("重试尝试应为 2，得到 %d", second.Attempt)
 	}
 	account, _ := wallet.Account("u1")
-	if account.Balance != 100 || account.Frozen != 3 {
+	if account.Balance != 100*credits.MicrocreditsPerCredit || account.Frozen != 3*credits.MicrocreditsPerCredit {
 		t.Fatalf("重试后钱包应为 100/3，得到 %d/%d", account.Balance, account.Frozen)
 	}
 	entries, err := wallet.Ledger("u1", 10)
@@ -397,7 +468,7 @@ func TestTaskCostLeavesLocalExecutorsAndUnboundTasksFree(t *testing.T) {
 	}
 
 	account, _ := wallet.Account("u1")
-	if account.Balance != 10 || account.Frozen != 0 {
+	if account.Balance != 10*credits.MicrocreditsPerCredit || account.Frozen != 0 {
 		t.Fatalf("免费任务不应改动钱包，得到 %d/%d", account.Balance, account.Frozen)
 	}
 	if _, found, err := repo.ReservedTaskCostCharge("task-local"); err != nil || found {
@@ -419,5 +490,21 @@ func TestTaskCostCapabilityMapping(t *testing.T) {
 		if got := taskCostCapability(taskType); got != want {
 			t.Errorf("taskCostCapability(%q) = %q, want %q", taskType, got, want)
 		}
+	}
+}
+
+func TestTaskCostCandidatesReadStringCountAndDuration(t *testing.T) {
+	image := taskCostCandidates("image", map[string]any{
+		"config": map[string]any{"count": "3"},
+	})
+	if len(image) < 2 || image[1].Mode != "per_image" || image[1].Quantity != 3 {
+		t.Fatalf("image candidates = %#v, want per_image quantity 3", image)
+	}
+
+	video := taskCostCandidates("video", map[string]any{
+		"config": map[string]any{"videoSeconds": "5"},
+	})
+	if len(video) < 2 || video[1].Mode != "per_second" || video[1].Quantity != 5 {
+		t.Fatalf("video candidates = %#v, want per_second quantity 5", video)
 	}
 }

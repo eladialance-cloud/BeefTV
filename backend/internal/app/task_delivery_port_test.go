@@ -17,7 +17,7 @@ import (
 	"infinite-canvas/backend/internal/outbound"
 )
 
-// In-generation result downloads report under the executing BeefTV task, so one
+// In-generation result downloads report under the executing VisiDeep AI task, so one
 // projection covers both phases.
 func TestTaskDeliveryPortRecordsUnderTaskIdentityAndClears(t *testing.T) {
 	svc := &Service{}
@@ -176,8 +176,8 @@ func TestVideoDeliveryStreamIsVisibleOnWorkspaceTask(t *testing.T) {
 }
 
 // Video downloads pass the provider's task id to the generation layer. Progress
-// must still land on the BeefTV task the user sees, never the provider id.
-func TestVideoDownloadProgressUsesBeefTVTaskIDNotProviderID(t *testing.T) {
+// must still land on the VisiDeep AI task the user sees, never the provider id.
+func TestVideoDownloadProgressUsesVisiDeepAITaskIDNotProviderID(t *testing.T) {
 	const beefTaskID = "beeftv-task-1"
 	const providerTaskID = "task_WvIGYZ_provider"
 	svc := &Service{}
@@ -190,7 +190,7 @@ func TestVideoDownloadProgressUsesBeefTVTaskIDNotProviderID(t *testing.T) {
 	data, mimeType, err := generation.RunVideoDownload(ctx, providerTaskID, policy, func(context.Context) ([]byte, string, error) {
 		progress := svc.deliveryProgressRegistry().forTask(beefTaskID)
 		if progress == nil || len(progress.Outputs) != 1 || progress.Outputs[0].State != "downloading" {
-			t.Fatalf("progress not visible on the BeefTV task while downloading: %+v", progress)
+			t.Fatalf("progress not visible on the VisiDeep AI task while downloading: %+v", progress)
 		}
 		if leaked := svc.deliveryProgressRegistry().forTask(providerTaskID); leaked != nil {
 			t.Fatalf("progress keyed by provider id: %+v", leaked)

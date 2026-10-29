@@ -104,7 +104,7 @@ func newEnterpriseServer(t *testing.T, fake *fakeEnterprise) *httptest.Server {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"market":"enterprise","token_id":9001,"key_name":"BeefTV","account":{"id":42,"username":"ender","display_name":"Ender"}}`)
+		_, _ = io.WriteString(w, `{"market":"enterprise","token_id":9001,"key_name":"VisiDeep AI","account":{"id":42,"username":"ender","display_name":"Ender"}}`)
 	})
 	mux.HandleFunc("/v1/models", func(w http.ResponseWriter, r *http.Request) {
 		fake.mu.Lock()
@@ -149,7 +149,7 @@ func writeNumericToken(w http.ResponseWriter, r *http.Request, market, group str
 	origin := requestOrigin(r)
 	payload := map[string]any{
 		"api_key": "ent-secret-key", "base_url": origin + "/v1",
-		"key_name": "BeefTV", "token_id": 9001,
+		"key_name": "VisiDeep AI", "token_id": 9001,
 		"account": map[string]any{"id": 42, "username": "ender", "display_name": "Ender", "email": "e@example.com"},
 	}
 	if market != "" {
@@ -630,7 +630,7 @@ func TestAcceptTokenReplacesCatalogAndRevokesPriorKeyOnAccountSwitch(t *testing.
 	fake.mu.Unlock()
 	if err := svc.acceptToken(context.Background(), "dev-switch", tokenSuccess{
 		APIKey: "ent-secret-key-2", BaseURL: TokenBaseURL(svc.Origin()), Market: "enterprise", Group: "enterprise",
-		KeyName: "BeefTV-2", TokenID: wireID("9002"),
+		KeyName: "VisiDeepAI-2", TokenID: wireID("9002"),
 		Account: Account{ID: wireID("99"), Username: "other", DisplayName: "Other"},
 	}); err != nil {
 		t.Fatal(err)

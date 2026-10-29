@@ -414,8 +414,7 @@ export function CreationComposer(props: ComposerProps) {
             ? "描述画面、人物、场景、构图与风格"
             : "描述镜头内容、运动、光线与节奏";
     const emptyPlaceholder = "输入你的镜头、画面或故事。也可以添加参考图开始创作";
-    const imageReferencesSupported = props.imageProfile.references.maxImages > 0;
-    const referencesSupported = props.mode === "image" ? imageReferencesSupported : props.mode !== "video" || props.videoProfile.operations.includes("image_to_video");
+    const referencesSupported = props.maxReferences > 0;
     const canAddMoreReferences = referencesSupported && props.attachments.length < props.maxReferences;
     const addReferenceLabel = interactionBusy ? (props.referenceReplacementBusy ? "正在替换参考图" : "生成中暂不能添加参考内容") : canAddMoreReferences ? "添加更多参考内容" : `已达到当前模型的参考内容上限（${props.maxReferences} 个）`;
     const referenceCounts = useMemo(() => props.attachments.reduce((counts, attachment) => {

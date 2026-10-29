@@ -6,6 +6,7 @@ import { isFrameNode, isNodeHiddenByCollapsedFrame } from "@/lib/canvas/canvas-f
 import { buildLibTVImagePreviewUrl } from "@/lib/canvas/libtv-import";
 import { getNodeLabel } from "@/lib/canvas/node-registry/node-registry";
 import { subscribeCanvasViewportPreview } from "@/lib/canvas/canvas-live-viewport";
+import { isHiddenBatchChild } from "@/lib/canvas/canvas-project-domain";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { CanvasNodeType, type CanvasNodeData, type ViewportTransform } from "@/types/canvas";
 
@@ -21,7 +22,7 @@ export function Minimap({ nodes, viewport, viewportSize, canvasContainerRef, onV
     const [isDragging, setIsDragging] = useState(false);
     const width = MINIMAP_WIDTH;
     const height = MINIMAP_HEIGHT;
-    const displayNodes = useMemo(() => nodes.filter((node) => !isNodeHiddenByCollapsedFrame(node, nodes)), [nodes]);
+    const displayNodes = useMemo(() => minimapVisibleNodes(nodes), [nodes]);
     const showImagePreviews = useMemo(() => displayNodes.filter((node) => node.type === CanvasNodeType.Image && Boolean(getImagePreviewSource(node) || node.metadata?.storageKey)).length <= MINIMAP_IMAGE_PREVIEW_LIMIT, [displayNodes]);
 
     const { worldBounds, scale, offset } = useMemo(() => {
@@ -216,4 +217,8 @@ function getImagePreviewSource(node: CanvasNodeData) {
     if (node.type !== CanvasNodeType.Image) return "";
     const content = node.metadata?.content || "";
     return node.metadata?.previewContent || (node.metadata?.importSource?.provider === "libtv" ? buildLibTVImagePreviewUrl(content) : content);
+}
+
+export function minimapVisibleNodes(nodes: CanvasNodeData[]) {
+    return nodes.filter((node) => !node.metadata?.manjuAssetTableId && !isHiddenBatchChild(node, nodes) && !isNodeHiddenByCollapsedFrame(node, nodes));
 }

@@ -15,7 +15,7 @@ func TestBundledFFmpegRelocationAndCLI(t *testing.T) {
 	if err := os.WriteFile(want, []byte("fixture"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, executable := range []string{filepath.Join(root, "BeefTV.exe"), filepath.Join(root, "cli", "beeftv.exe")} {
+	for _, executable := range []string{filepath.Join(root, "VisiDeepAI.exe"), filepath.Join(root, "cli", "beeftv.exe")} {
 		if got := bundledFFmpeg(executable); got != want {
 			t.Fatalf("bundle resolution: %q != %q", got, want)
 		}
@@ -43,7 +43,7 @@ func TestNestedFFmpegWinsOverPreservedStandaloneRuntime(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, executable := range []string{filepath.Join(root, "BeefTV.exe"), filepath.Join(root, "cli", "beeftv.exe")} {
+	for _, executable := range []string{filepath.Join(root, "VisiDeepAI.exe"), filepath.Join(root, "cli", "beeftv.exe")} {
 		if got := bundledFFmpeg(executable); got != want {
 			t.Fatalf("preserved runtime won over update: %q != %q", got, want)
 		}

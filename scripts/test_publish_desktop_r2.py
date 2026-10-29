@@ -62,7 +62,7 @@ class PublicationTests(unittest.TestCase):
             def do_GET(self):
                 agent = self.headers.get("User-Agent", "")
                 requests.append((self.path, agent))
-                if not re.fullmatch(r"BeefTV-Desktop-Updater/v\d+\.\d+\.\d+", agent):
+                if not re.fullmatch(r"VisiDeepAI-Desktop-Updater/v\d+\.\d+\.\d+", agent):
                     self.send_error(403)
                     return
                 content = store.objects.get(self.path.lstrip("/"))
@@ -99,7 +99,7 @@ class PublicationTests(unittest.TestCase):
         for platform in sorted(release.PLATFORMS):
             if platform == omit:
                 continue
-            name = f"BeefTV-{version}-{platform}.zip"
+            name = f"VisiDeepAI-{version}-{platform}.zip"
             data = (version + platform).encode() * 32
             (self.root / name).write_bytes(data)
             platforms[platform] = {"url": f"https://updates.beefapi.com/beeftv/{version}/{name}",
@@ -116,10 +116,10 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(self.store.writes, [])
         names = ['darwin-arm64.dmg', 'darwin-amd64.dmg', 'windows-amd64-setup.exe', 'linux-amd64.deb']
         for name in names:
-            (self.root / ('BeefTV-v1.5.7-' + name)).write_bytes(name.encode())
+            (self.root / ('VisiDeepAI-v1.5.7-' + name)).write_bytes(name.encode())
         self.publisher.stage(manifest, self.root, with_installers=True)
         self.assertNotIn(release.LATEST, self.store.objects)
-        key = release.PREFIX + '/v1.5.7/BeefTV-v1.5.7-linux-amd64.deb'
+        key = release.PREFIX + '/v1.5.7/VisiDeepAI-v1.5.7-linux-amd64.deb'
         self.assertEqual(self.store.objects[key], b'linux-amd64.deb')
         self.store.objects[key] = b'corrupt'
         with self.assertRaises(release.PublishError):
@@ -131,7 +131,7 @@ class PublicationTests(unittest.TestCase):
         self.publisher.stage(manifest, self.root)
         self.assertNotIn(release.LATEST, self.store.objects)
         self.assertEqual(len(self.store.writes), len(release.PLATFORMS) + 1)
-        self.assertTrue(all(agent == "BeefTV-Desktop-Updater/v1.5.7" for _, agent in self.public_requests))
+        self.assertTrue(all(agent == "VisiDeepAI-Desktop-Updater/v1.5.7" for _, agent in self.public_requests))
         self.publisher.stage(manifest, self.root)
         self.assertEqual(len(self.store.writes), len(release.PLATFORMS) + 1)
         self.assertEqual(self.verify_command.call_args.args[0], ["/tmp/update-release", "verify", "--envelope", str(manifest)])
@@ -144,7 +144,7 @@ class PublicationTests(unittest.TestCase):
             urllib.request.urlopen(url)
         self.assertEqual(failure.exception.code, 403)
         release.PublicHTTP().check(url, len(data), hashlib.sha256(data).hexdigest(), version="v1.5.8")
-        self.assertEqual(self.public_requests[-1][1], "BeefTV-Desktop-Updater/v1.5.8")
+        self.assertEqual(self.public_requests[-1][1], "VisiDeepAI-Desktop-Updater/v1.5.8")
 
     def test_incomplete_platform_set_cannot_activate(self):
         manifest = self.manifest(omit="windows-amd64")
@@ -154,7 +154,7 @@ class PublicationTests(unittest.TestCase):
 
     def test_missing_local_archive_and_bad_hash_write_nothing(self):
         manifest = self.manifest()
-        source = self.root / "BeefTV-v1.5.7-windows-amd64.zip"
+        source = self.root / "VisiDeepAI-v1.5.7-windows-amd64.zip"
         source.unlink()
         with self.assertRaisesRegex(release.PublishError, "Local archive"):
             self.publisher.stage(manifest, self.root)
@@ -173,7 +173,7 @@ class PublicationTests(unittest.TestCase):
     def test_existing_immutable_version_cannot_be_overwritten(self):
         manifest = self.manifest()
         self.publisher.stage(manifest, self.root)
-        key = "beeftv/v1.5.7/BeefTV-v1.5.7-darwin-amd64.zip"
+        key = "beeftv/v1.5.7/VisiDeepAI-v1.5.7-darwin-amd64.zip"
         self.store.objects[key] = b"existing different version content"
         writes = len(self.store.writes)
         with self.assertRaisesRegex(release.PublishError, "Immutable"):
@@ -184,7 +184,7 @@ class PublicationTests(unittest.TestCase):
     def test_missing_or_corrupt_public_asset_blocks_activation(self):
         manifest = self.manifest()
         self.publisher.stage(manifest, self.root)
-        key = "beeftv/v1.5.7/BeefTV-v1.5.7-windows-amd64.zip"
+        key = "beeftv/v1.5.7/VisiDeepAI-v1.5.7-windows-amd64.zip"
         original = self.store.objects.pop(key)
         with self.assertRaises(release.PublishError):
             self.publisher.activate(manifest)
@@ -249,7 +249,7 @@ class PublicationTests(unittest.TestCase):
         payload = json.loads(base64.b64decode(json.loads(manifest.read_text())["payload"]))
         metadata = {"draft": False, "prerelease": False, "published_at": "now", "tag_name": payload["version"],
                     "target_commitish": payload["commit"], "assets": [{"name": name, "state": "uploaded"} for name in
-                    ["desktop-update.json"] + [f"BeefTV-{payload['version']}-{platform}.zip" for platform in release.PLATFORMS]]}
+                    ["desktop-update.json"] + [f"VisiDeepAI-{payload['version']}-{platform}.zip" for platform in release.PLATFORMS]]}
         latest_tag = "v1.5.6"
 
         def response(command):
@@ -274,7 +274,7 @@ class PublicationTests(unittest.TestCase):
         self.store.objects[key] = manifest.read_bytes()
         self.publisher.activate(manifest)
         self.assertEqual(self.store.objects[release.LATEST], manifest.read_bytes())
-        self.assertIn(("/" + key, "BeefTV-Desktop-Updater/v1.5.7"), self.public_requests)
+        self.assertIn(("/" + key, "VisiDeepAI-Desktop-Updater/v1.5.7"), self.public_requests)
 
 
 class S3AdapterTests(unittest.TestCase):

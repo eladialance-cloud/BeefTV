@@ -159,3 +159,26 @@ export async function bindCanvasTaskOutput(input: {
         input.expectedScope,
     );
 }
+
+export async function recoverCanvasTaskOutput(input: {
+    operationId: string;
+    canvasId: string;
+    taskId: string;
+    outputIndex?: number;
+    signal?: AbortSignal;
+    expectedScope?: CapturedUserScope;
+}) {
+    return executeWorkspaceOperation<CanvasTaskBindReceipt>(
+        "canvas.task.recover",
+        {
+            opId: input.operationId,
+            params: {
+                canvasId: input.canvasId,
+                taskId: input.taskId,
+                outputIndex: input.outputIndex ?? 0,
+            },
+        },
+        input.signal,
+        input.expectedScope,
+    );
+}

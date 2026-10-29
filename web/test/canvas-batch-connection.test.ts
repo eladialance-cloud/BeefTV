@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { buildBatchConnectionCreateRequest, hasBatchConnectionCandidate, planBatchConnections } from "@/lib/canvas/canvas-batch-connection";
 import { canvasConnectionError } from "@/lib/canvas/canvas-connection-policy";
 import { canvasConnectionPath, shouldShowConnectionVisual } from "@/components/canvas/canvas-connections";
+import { manjuAssetInputHandleId, manjuAssetOutputHandleId } from "@/lib/canvas/canvas-manju-asset-table";
 import { defaultConfig } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
 
@@ -11,7 +12,46 @@ const nodes: CanvasNodeData[] = [
     { id: "text-b", type: CanvasNodeType.Text, title: "文本 B", position: { x: 0, y: 220 }, width: 320, height: 180 },
     { id: "image-a", type: CanvasNodeType.Image, title: "图片 A", position: { x: 0, y: 440 }, width: 320, height: 180 },
     { id: "image-b", type: CanvasNodeType.Image, title: "图片 B", position: { x: 0, y: 660 }, width: 320, height: 180 },
-    { id: "script", type: CanvasNodeType.Script, title: "分镜脚本", position: { x: 520, y: 0 }, width: 640, height: 520, metadata: { storyboard: { rows: [{ id: "row-1", shotNumber: 1, durationSeconds: 6, plotDescription: "", dialogue: "", characters: [], narrativeIntent: "", viewerPOV: "", performanceBlocking: "", shotSize: "", emotion: "", lightingAndAtmosphere: "", audioEffects: "", camera: "", motion: "", timeBeats: "", imageGenerationPrompt: "", videoMotionPrompt: "", mustHave: [], optionalDetails: [], continuityOut: "", negativePrompt: "", assetBindings: [], status: "idle" }] } } },
+    {
+        id: "script",
+        type: CanvasNodeType.Script,
+        title: "分镜脚本",
+        position: { x: 520, y: 0 },
+        width: 640,
+        height: 520,
+        metadata: {
+            storyboard: {
+                rows: [
+                    {
+                        id: "row-1",
+                        shotNumber: 1,
+                        durationSeconds: 6,
+                        plotDescription: "",
+                        dialogue: "",
+                        characters: [],
+                        narrativeIntent: "",
+                        viewerPOV: "",
+                        performanceBlocking: "",
+                        shotSize: "",
+                        emotion: "",
+                        lightingAndAtmosphere: "",
+                        audioEffects: "",
+                        camera: "",
+                        motion: "",
+                        timeBeats: "",
+                        imageGenerationPrompt: "",
+                        videoMotionPrompt: "",
+                        mustHave: [],
+                        optionalDetails: [],
+                        continuityOut: "",
+                        negativePrompt: "",
+                        assetBindings: [],
+                        status: "idle",
+                    },
+                ],
+            },
+        },
+    },
     { id: "config", type: CanvasNodeType.Config, title: "图片配置", position: { x: 520, y: 560 }, width: 360, height: 420, metadata: { generationMode: "image" } },
     { id: "frame", type: CanvasNodeType.Frame, title: "背板", position: { x: 0, y: 680 }, width: 500, height: 500 },
     { id: "batch-table", type: CanvasNodeType.BatchTable, title: "批量创作表", position: { x: 1000, y: 0 }, width: 900, height: 520 },
@@ -73,15 +113,17 @@ describe("planBatchConnections", () => {
     it("keeps every legal graph edge when a newly created node exceeds provider reference capacity", () => {
         const constrainedConfig = {
             ...baseConfig,
-            channels: [{
-                id: "grok",
-                name: "Grok",
-                baseUrl: "https://example.com",
-                apiKey: "test-key",
-                apiFormat: "openai" as const,
-                models: ["grok-imagine-image"],
-                modelProfiles: [{ model: "grok-imagine-image", capability: "image" as const, billingMode: "fixed_request" as const, unitPriceMicrocredits: 1, protocol: "grok-image" as const }],
-            }],
+            channels: [
+                {
+                    id: "grok",
+                    name: "Grok",
+                    baseUrl: "https://example.com",
+                    apiKey: "test-key",
+                    apiFormat: "openai" as const,
+                    models: ["grok-imagine-image"],
+                    modelProfiles: [{ model: "grok-imagine-image", capability: "image" as const, billingMode: "fixed_request" as const, unitPriceMicrocredits: 1, protocol: "grok-image" as const }],
+                },
+            ],
             models: ["grok::grok-imagine-image"],
             imageModels: ["grok::grok-imagine-image"],
             imageModel: "grok::grok-imagine-image",
@@ -159,6 +201,39 @@ describe("canvas connection anchors", () => {
 
         expect(result.startY).toBe(90);
         expect(result.endY).toBeGreaterThan(90);
+    });
+
+    it("positions independent Manju asset row input and output handles", () => {
+        const table: CanvasNodeData = {
+            id: "manju-assets",
+            type: CanvasNodeType.BatchTable,
+            title: "数字资产表",
+            position: { x: 0, y: 0 },
+            width: 1280,
+            height: 720,
+            metadata: {
+                manjuAssetActiveKind: "character",
+                batchTable: {
+                    operation: "creative",
+                    concurrency: 5,
+                    rows: [
+                        { id: "row-char", enabled: true, inputNodeIds: [], prompt: "", manjuAsset: { taskId: "t1", code: "CHR-01", kind: "character", name: "角色" } },
+                        { id: "row-prop", enabled: true, inputNodeIds: [], prompt: "", manjuAsset: { taskId: "t2", code: "PRP-01", kind: "prop", name: "道具" } },
+                    ],
+                    manjuAssetTable: { version: 1, projectId: "project", sourceStage: "p2_assets" },
+                },
+            },
+        };
+        const charConnection: CanvasConnection = {
+            id: "char-output",
+            fromNodeId: table.id,
+            fromHandleId: manjuAssetOutputHandleId("row-char"),
+            toNodeId: "task",
+        };
+        const path = canvasConnectionPath(charConnection, table, nodes[0]);
+        expect(path.startY).toBeGreaterThan(table.position.y);
+        expect(manjuAssetInputHandleId("row-char")).toContain("row-char");
+        expect(manjuAssetOutputHandleId("row-char")).toContain("row-char");
     });
 });
 

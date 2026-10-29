@@ -155,6 +155,10 @@ func (s *Service) upsertUserCanvasProjectWithAssets(userID string, raw json.RawM
 	if *version.Revision < 0 || *version.Revision >= 9007199254740991 {
 		return UserDataSummary{}, kernel.BadAuthRequest("画布版本无效")
 	}
+	raw, _, err := s.reconcileCanvasMediaAssetBindings(userID, raw, candidateAssets)
+	if err != nil {
+		return UserDataSummary{}, err
+	}
 	project, err := canvasProjectFromJSON(userID, raw)
 	if err != nil {
 		return UserDataSummary{}, err

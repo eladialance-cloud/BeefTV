@@ -370,6 +370,7 @@ export type ModelChannel = {
     hasSecretKey?: boolean;
     concurrencyLimit?: number;
     modelProfiles?: Array<{
+        id?: string;
         model: string;
         displayName?: string;
         description?: string;
@@ -383,6 +384,14 @@ export type ModelChannel = {
         logicalCapabilitySpec?: CapabilitySpec;
         logicalCapabilityProfiles?: CapabilitySpec[];
         defaultOptions?: Record<string, unknown>;
+        prices?: Array<{
+            name?: string;
+            billingMode: string;
+            selector?: Record<string, string>;
+            unitPriceMicrocredits: number;
+            minimumChargeMicrocredits?: number;
+            sortOrder?: number;
+        }>;
     }>;
 };
 

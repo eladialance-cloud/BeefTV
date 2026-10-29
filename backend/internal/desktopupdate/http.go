@@ -66,7 +66,7 @@ func (e *Engine) getBytes(ctx context.Context, rawURL string, maxBytes int64, ti
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "BeefTV-Desktop-Updater/"+e.currentVersion)
+	req.Header.Set("User-Agent", "VisiDeepAI-Desktop-Updater/"+e.currentVersion)
 	resp, err := e.client.Do(req)
 	if err != nil {
 		return nil, classifyTransportError(err, false)
@@ -158,7 +158,7 @@ func (e *Engine) fetchRange(ctx context.Context, artifact PlatformArtifact, path
 	if err != nil {
 		return offset, err
 	}
-	req.Header.Set("User-Agent", "BeefTV-Desktop-Updater/"+e.currentVersion)
+	req.Header.Set("User-Agent", "VisiDeepAI-Desktop-Updater/"+e.currentVersion)
 	if offset > 0 {
 		req.Header.Set("Range", "bytes="+strconv.FormatInt(offset, 10)+"-")
 	}

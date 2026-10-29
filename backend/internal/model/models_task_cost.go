@@ -13,7 +13,7 @@ const (
 )
 
 // TaskCostCharge is the hosted-only quote snapshot for one task attempt. It
-// records which pricing rule the submission used and how many credits were
+// records which pricing rule the submission used and how many microcredits were
 // frozen, so an operator editing prices later never rewrites an old bill.
 type TaskCostCharge struct {
 	ID     string `json:"id" gorm:"primaryKey;size:36"`

@@ -12,7 +12,7 @@ import (
 
 func TestCleanupWindowsRetriesBusyHelper(t *testing.T) {
 	target, work, _, _ := completedUpdateFixture(t)
-	helper := filepath.Join(work, "BeefTV-update-helper.exe")
+	helper := filepath.Join(work, "VisiDeepAI-update-helper.exe")
 	file, err := os.OpenFile(helper, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		t.Fatal(err)

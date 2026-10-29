@@ -1,4 +1,4 @@
-// Command update-release packages and signs BeefTV desktop updater artifacts.
+// Command update-release packages and signs VisiDeep AI desktop updater artifacts.
 // It is a standalone maintainer CLI and does not import the desktop runtime.
 package main
 

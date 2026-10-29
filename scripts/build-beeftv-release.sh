@@ -80,7 +80,7 @@ if [[ -n "${BEEFTV_WAILS_PLATFORM:-}" ]]; then
   esac
 fi
 
-echo "Building BeefTV $VERSION_VALUE ($COMMIT_VALUE)"
+echo "Building VisiDeep AI $VERSION_VALUE ($COMMIT_VALUE)"
 
 mkdir -p "$DESKTOP_DIR/build"
 cp "$ROOT_DIR/assets/app-icon.png" "$DESKTOP_DIR/build/appicon.png"
@@ -105,24 +105,25 @@ cp "$ROOT_DIR/assets/app-icon.png" "$DESKTOP_DIR/build/appicon.png"
 )
 
 if [[ "$AGENT_TARGET" == linux/amd64 ]]; then
-  LINUX_BUNDLE="$DESKTOP_DIR/build/bin/BeefTV-linux"
+  LINUX_BUNDLE="$DESKTOP_DIR/build/bin/VisiDeepAI-linux"
   mkdir -p "$LINUX_BUNDLE/plugin-packages" "$LINUX_BUNDLE/cli"
-  mv "$DESKTOP_DIR/build/bin/BeefTV" "$LINUX_BUNDLE/BeefTV"
+  mv "$DESKTOP_DIR/build/bin/VisiDeepAI" "$LINUX_BUNDLE/VisiDeepAI"
   cp "$ROOT_DIR/plugin-packages/"*.beeftv-plugin "$LINUX_BUNDLE/plugin-packages/"
   cp "$ROOT_DIR/docs/linux-install.md" "$LINUX_BUNDLE/README.md"
   bun "$ROOT_DIR/scripts/package-agent-host.mjs" "$AGENT_TARGET" "$LINUX_BUNDLE/agent-host"
   (
     cd "$ROOT_DIR/backend"
-    go build -trimpath -ldflags "$LDFLAGS" -o "$LINUX_BUNDLE/cli/beeftv" ./cmd/beeftv
+    go build -trimpath -ldflags "$LDFLAGS" -o "$LINUX_BUNDLE/cli/visideep" ./cmd/beeftv
+    cp "$LINUX_BUNDLE/cli/visideep" "$LINUX_BUNDLE/cli/beeftv"
   )
-  chmod 755 "$LINUX_BUNDLE/BeefTV" "$LINUX_BUNDLE/cli/beeftv"
+  chmod 755 "$LINUX_BUNDLE/VisiDeepAI" "$LINUX_BUNDLE/cli/visideep" "$LINUX_BUNDLE/cli/beeftv"
   echo "Release bundle: $LINUX_BUNDLE"
   exit 0
 fi
 
 # Official protocol packages are runtime dependencies. Finder launches use the
 # bundle Resources directory and must never depend on the caller's cwd.
-APP_BUNDLE="$DESKTOP_DIR/build/bin/BeefTV.app"
+APP_BUNDLE="$DESKTOP_DIR/build/bin/VisiDeepAI.app"
 PLUGIN_RESOURCE_DIR="$APP_BUNDLE/Contents/Resources/plugin-packages"
 mkdir -p "$PLUGIN_RESOURCE_DIR"
 cp "$ROOT_DIR/plugin-packages/"*.beeftv-plugin "$PLUGIN_RESOURCE_DIR/"
@@ -130,14 +131,15 @@ cp "$ROOT_DIR/plugin-packages/"*.beeftv-plugin "$PLUGIN_RESOURCE_DIR/"
 bun "$ROOT_DIR/scripts/package-agent-host.mjs" "$AGENT_TARGET" \
   "$APP_BUNDLE/Contents/Resources/agent-host"
 
-# The beeftv CLI ships inside the bundle. External agents (Codex, Claude Code,
+# The visideep CLI ships inside the bundle. External agents (Codex, Claude Code,
 # Cursor) connect through it with their own client credential, so the installed
 # app must carry it -- PATH is not a prerequisite.
 #
 # It goes in Contents/MacOS/cli, not directly next to the app binary: macOS
-# volumes are case-insensitive by default, so a file named beeftv beside BeefTV
+# volumes are case-insensitive by default, so a file named visideep beside VisiDeepAI
 # is the same file and would overwrite the app binary.
-CLI_BINARY="$APP_BUNDLE/Contents/MacOS/cli/beeftv"
+CLI_BINARY="$APP_BUNDLE/Contents/MacOS/cli/visideep"
+LEGACY_CLI_BINARY="$APP_BUNDLE/Contents/MacOS/cli/beeftv"
 mkdir -p "$(dirname "$CLI_BINARY")"
 (
   cd "$ROOT_DIR/backend"
@@ -149,14 +151,16 @@ mkdir -p "$(dirname "$CLI_BINARY")"
   fi
 )
 if [[ ! -x "$CLI_BINARY" ]]; then
-  echo "beeftv CLI was not built into the bundle: $CLI_BINARY" >&2
+  echo "visideep CLI was not built into the bundle: $CLI_BINARY" >&2
   exit 1
 fi
+cp "$CLI_BINARY" "$LEGACY_CLI_BINARY"
 # Adding a Mach-O binary to Contents/MacOS invalidates the bundle signature.
 # Sign the CLI the same ad-hoc way the bundle is signed; the --deep bundle
 # signature below then covers it too.
 if command -v codesign >/dev/null 2>&1; then
   codesign --force --sign - "$CLI_BINARY"
+  codesign --force --sign - "$LEGACY_CLI_BINARY"
 fi
 
 # Keep the generated macOS bundle metadata aligned with the repository version.

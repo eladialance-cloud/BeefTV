@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -204,9 +206,10 @@ func registerUserDataRoutes(r *gin.RouterGroup, svc *app.Service) {
 		}
 		delivery, err := svc.PrepareResourceDelivery(user.ID, c.Param("id"), app.ResourceDeliveryOptions{
 			ForceDirect: c.Query("direct") == "1",
-			ForceProxy:  c.Query("proxy") == "1",
+			ForceProxy:  c.Query("proxy") == "1" || c.Query("download") == "1",
 		})
 		if err != nil {
+			log.Printf("resource file delivery failed resource_id=%s: %v", c.Param("id"), err)
 			failService(c, err)
 			return
 		}
@@ -257,9 +260,9 @@ func registerUserDataRoutes(r *gin.RouterGroup, svc *app.Service) {
 		c.Header("ETag", serveETag)
 		c.Header("Accept-Ranges", "bytes")
 		c.Header("X-Content-Type-Options", "nosniff")
-		if resource.Kind == "file" {
-			c.Header("Content-Disposition", "attachment")
-			c.Header("Content-Security-Policy", "sandbox")
+		if c.Query("download") == "1" || resource.Kind == "file" {
+			c.Header("Content-Disposition", resourceDownloadDisposition(resource, c.Query("filename")))
+			c.Header("Content-Security-Policy", "sandbox allow-downloads")
 		}
 		if ifNoneMatch(c.GetHeader("If-None-Match"), serveETag) {
 			c.Status(http.StatusNotModified)
@@ -272,6 +275,7 @@ func registerUserDataRoutes(r *gin.RouterGroup, svc *app.Service) {
 		if stream == nil {
 			stream, err = svc.OpenResourceRange(user.ID, resource.ID, rangeHeader)
 			if err != nil {
+				log.Printf("resource file range open failed resource_id=%s provider=%s: %v", resource.ID, resource.Provider, err)
 				failService(c, err)
 				return
 			}
@@ -696,6 +700,24 @@ func hasUserAssetPageFilters(c *gin.Context) bool {
 func queryFlag(c *gin.Context, key string) bool {
 	value := strings.TrimSpace(c.Query(key))
 	return value == "1" || strings.EqualFold(value, "true")
+}
+
+func resourceDownloadDisposition(resource *model.Resource, requested string) string {
+	name := strings.TrimSpace(strings.ReplaceAll(requested, "\\", "/"))
+	name = path.Base(name)
+	if name == "" || name == "." || name == ".." || name == "/" {
+		name = resource.ID
+	}
+	name = strings.Map(func(value rune) rune {
+		if value < 0x20 || value == 0x7f || value == '"' {
+			return -1
+		}
+		return value
+	}, name)
+	if strings.TrimSpace(name) == "" {
+		name = resource.ID
+	}
+	return mime.FormatMediaType("attachment", map[string]string{"filename": name})
 }
 
 func resourceResponseETag(resource *model.Resource) string {

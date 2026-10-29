@@ -542,6 +542,15 @@ func guardTaskResourceReferences(tx *gorm.DB, userID string, resourceIDs []strin
 	return nil
 }
 
+func immediateTransactionBegin(dialect string) string {
+	switch strings.ToLower(strings.TrimSpace(dialect)) {
+	case "sqlite", "sqlite3":
+		return "BEGIN IMMEDIATE"
+	default:
+		return ""
+	}
+}
+
 func withImmediateTransaction(db *gorm.DB, fn func(*gorm.DB) error) error {
 	if db == nil {
 		return gorm.ErrInvalidDB
@@ -552,9 +561,13 @@ func withImmediateTransaction(db *gorm.DB, fn func(*gorm.DB) error) error {
 	if _, insideTransaction := db.Statement.ConnPool.(gorm.TxCommitter); insideTransaction {
 		return db.Transaction(fn)
 	}
+	begin := immediateTransactionBegin(db.Dialector.Name())
+	if begin == "" {
+		return db.Transaction(fn)
+	}
 	return db.Connection(func(conn *gorm.DB) error {
 		tx := conn.Session(&gorm.Session{SkipDefaultTransaction: true, NewDB: true})
-		if err := tx.Exec("BEGIN IMMEDIATE").Error; err != nil {
+		if err := tx.Exec(begin).Error; err != nil {
 			return err
 		}
 		committed := false

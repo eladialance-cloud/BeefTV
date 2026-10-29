@@ -83,6 +83,17 @@ describe("HTTP expectedScope dispatch", () => {
 });
 
 describe("resource upload scope", () => {
+    test("multipart uploads do not inherit the four-second JSON timeout", async () => {
+        const timeouts: Array<number | undefined> = [];
+        await withAdapter(async (config) => {
+            timeouts.push(config.timeout);
+            return { data: envelope({ id: "res-no-short-timeout" }), status: 200, statusText: "OK", headers: {}, config };
+        }, async () => {
+            await uploadResourceFile(new Blob(["x"], { type: "image/png" }), "image", { fileName: "x.png" });
+        });
+        expect(timeouts).toEqual([0]);
+    });
+
     test("in-flight multipart may finish, but the response does not write the new account cache or start the next request", async () => {
         const restore = switchScope("owner-a");
         const entered = deferred();

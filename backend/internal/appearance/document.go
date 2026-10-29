@@ -33,6 +33,7 @@ func (s *Service) read() (*model.SystemSetting, Setting, error) {
 }
 
 func normalizeDocument(value Setting) Setting {
+	value = migrateLegacyBrand(value)
 	value.SchemaVersion = SchemaVersion
 	value.BrandName = strings.TrimSpace(value.BrandName)
 	if value.BrandName == "" {
@@ -60,6 +61,25 @@ func normalizeDocument(value Setting) Setting {
 	value.SEOKeywords = normalizeSingleLine(value.SEOKeywords)
 	value.FooterCopyright = normalizeSingleLine(value.FooterCopyright)
 	value.ICPFilingNumber = normalizeSingleLine(value.ICPFilingNumber)
+	return value
+}
+
+func migrateLegacyBrand(value Setting) Setting {
+	legacyBrand := strings.TrimSpace(value.BrandName) == LegacyBrandName &&
+		strings.EqualFold(strings.TrimSpace(value.BrandSlug), LegacyBrandSlug)
+	if !legacyBrand {
+		return value
+	}
+
+	value.BrandName = DefaultBrandName
+	value.BrandSlug = DefaultBrandSlug
+	value.LogoResourceID = ""
+	value.DarkLogoResourceID = ""
+	if value.SEOTitle == LegacyBrandName {
+		value.SEOTitle = DefaultBrandName
+	}
+	value.SEODescription = strings.ReplaceAll(value.SEODescription, LegacyBrandName, DefaultBrandName)
+	value.FooterCopyright = strings.ReplaceAll(value.FooterCopyright, LegacyBrandName, DefaultBrandName)
 	return value
 }
 

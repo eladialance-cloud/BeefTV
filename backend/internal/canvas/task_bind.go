@@ -5,9 +5,11 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"infinite-canvas/backend/internal/assets"
 	"infinite-canvas/backend/internal/kernel"
+	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/repository"
 )
 
@@ -18,8 +20,18 @@ const bindRevisionAttempts = 4
 type TaskOutputBind struct {
 	// Set only by the transaction-bound composition root after local render ownership validation.
 	AllowEmptyVideo bool `json:"-"`
+	// Set only after the task owner, canvas and original target node are validated.
+	AllowEmptyImage bool `json:"-"`
+	// Set only for a newer successful canvas image task targeting the same node.
+	AllowReplaceImage bool `json:"-"`
 	// Trusted admission identity for a depth node saved before the task response.
 	DepthClientOperationID string `json:"-"`
+	// Trusted recovery fields are set only by the transaction-bound recovery
+	// operation after task, output, asset and resource ownership were validated.
+	CreateMissingNode bool    `json:"-"`
+	RecoveryTitle     string  `json:"-"`
+	RecoveryX         float64 `json:"-"`
+	RecoveryY         float64 `json:"-"`
 
 	CanvasID    string
 	NodeID      string
@@ -37,6 +49,7 @@ type TaskOutputBind struct {
 	Height      int
 	DurationMs  int64
 	Storyboard  map[string]any
+	Metadata    map[string]any
 }
 
 // TaskOutputBindResult is the canvas write outcome after a generation bind.
@@ -75,12 +88,22 @@ func (s *Service) bindTaskOutputOnce(userID string, patch TaskOutputBind) (TaskO
 	}
 	node := findCanvasNode(doc, patch.NodeID)
 	if node == nil {
+		if patch.CreateMissingNode {
+			node = newRecoveryCanvasNode(patch)
+			doc["nodes"] = append(canvasDocNodes(doc), node)
+		}
+	}
+	if node == nil {
 		return TaskOutputBindResult{}, &kernel.AppError{
 			Status: http.StatusNotFound, Reason: kernel.ErrorReason("node_deleted"),
 			Message: "原任务节点已删除，未重新创建节点",
 		}
 	}
-	if got := nodeString(nodeMetadata(node), "taskId"); got != strings.TrimSpace(patch.TaskID) && !canBindEmptyRenderNode(node, patch) && !canBindPendingDepthNode(node, patch) {
+	if got := nodeString(nodeMetadata(node), "taskId"); !patch.CreateMissingNode && got != strings.TrimSpace(patch.TaskID) &&
+		!canBindEmptyRenderNode(node, patch) &&
+		!canBindEmptyImageNode(node, patch) &&
+		!s.canReplaceImageNode(userID, node, patch) &&
+		!canBindPendingDepthNode(node, patch) {
 		return TaskOutputBindResult{}, &kernel.AppError{
 			Status: http.StatusConflict, Reason: kernel.ErrorReason("node_task_mismatch"),
 			Message: "节点已绑定到其他任务，未覆盖该节点",
@@ -102,6 +125,32 @@ func (s *Service) bindTaskOutputOnce(userID string, patch TaskOutputBind) (TaskO
 		return TaskOutputBindResult{}, err
 	}
 	return TaskOutputBindResult{Revision: summary.Revision, Node: cloneNode(node)}, nil
+}
+
+func newRecoveryCanvasNode(patch TaskOutputBind) map[string]any {
+	kind := strings.TrimSpace(patch.MediaType)
+	if kind == "" {
+		kind = "image"
+	}
+	width, height := 512.0, 512.0
+	switch kind {
+	case "video":
+		width, height = 640.0, 360.0
+	case "audio":
+		width, height = 480.0, 140.0
+	case "text":
+		width, height = 460.0, 280.0
+	}
+	title := strings.TrimSpace(patch.RecoveryTitle)
+	if title == "" {
+		title = "恢复结果"
+	}
+	return map[string]any{
+		"id": patch.NodeID, "type": kind, "title": title,
+		"position": map[string]any{"x": patch.RecoveryX, "y": patch.RecoveryY},
+		"width":    width, "height": height,
+		"metadata": map[string]any{},
+	}
 }
 
 func (s *Service) reconcileBoundCanvasDocMediaAssets(userID string, doc map[string]any) {
@@ -381,6 +430,50 @@ func canBindEmptyRenderNode(node map[string]any, patch TaskOutputBind) bool {
 	if !patch.AllowEmptyVideo || patch.MediaType != "video" || nodeString(node, "type") != "video" {
 		return false
 	}
+	return isEmptyRenderNode(node)
+}
+
+func canBindEmptyImageNode(node map[string]any, patch TaskOutputBind) bool {
+	if !patch.AllowEmptyImage || patch.MediaType != "image" || nodeString(node, "type") != "image" {
+		return false
+	}
+	return isEmptyRenderNode(node)
+}
+
+func (s *Service) canReplaceImageNode(userID string, node map[string]any, patch TaskOutputBind) bool {
+	if s == nil || s.repo == nil || !patch.AllowReplaceImage || patch.MediaType != "image" || nodeString(node, "type") != "image" {
+		return false
+	}
+	currentTaskID := nodeString(nodeMetadata(node), "taskId")
+	if currentTaskID == "" || currentTaskID == strings.TrimSpace(patch.TaskID) {
+		return false
+	}
+	currentTask, err := s.repo.TaskForUser(userID, currentTaskID)
+	if err != nil || currentTask == nil || currentTask.ProjectID != patch.CanvasID {
+		return false
+	}
+	incomingTask, err := s.repo.TaskForUser(userID, patch.TaskID)
+	if err != nil || incomingTask == nil ||
+		incomingTask.ProjectID != patch.CanvasID ||
+		incomingTask.Type != "canvas_image" ||
+		incomingTask.Status != model.TaskStatusSucceeded {
+		return false
+	}
+	return canReplaceImageNodeAt(node, patch, incomingTask.CreatedAt, currentTask.CreatedAt)
+}
+
+func canReplaceImageNodeAt(node map[string]any, patch TaskOutputBind, incomingCreatedAt, currentCreatedAt time.Time) bool {
+	if !patch.AllowReplaceImage || patch.MediaType != "image" || nodeString(node, "type") != "image" {
+		return false
+	}
+	currentTaskID := nodeString(nodeMetadata(node), "taskId")
+	if currentTaskID == "" || currentTaskID == strings.TrimSpace(patch.TaskID) {
+		return false
+	}
+	return !currentCreatedAt.IsZero() && incomingCreatedAt.After(currentCreatedAt)
+}
+
+func isEmptyRenderNode(node map[string]any) bool {
 	metadata := nodeMetadata(node)
 	for _, fields := range []map[string]any{node, metadata} {
 		for _, key := range []string{"taskId", "content", "storageKey", "assetId", "resourceId", "url", "dataUrl"} {
@@ -414,6 +507,9 @@ func alreadyBound(metadata map[string]any, patch TaskOutputBind) bool {
 }
 
 func applyGenerationBindMetadata(metadata map[string]any, patch TaskOutputBind) {
+	for key, value := range patch.Metadata {
+		metadata[key] = value
+	}
 	if patch.Content != "" {
 		metadata["content"] = patch.Content
 	}

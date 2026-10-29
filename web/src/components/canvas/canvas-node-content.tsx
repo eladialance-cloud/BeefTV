@@ -65,6 +65,7 @@ export type CanvasNodeContentProps = {
     onContentChange: (nodeId: string, content: string) => void;
     onStopEditing: () => void;
     mentionReferences: CanvasResourceReference[];
+    contentRevision?: string;
     onRetry?: (node: CanvasNodeData) => void;
     onReloadResource?: (node: CanvasNodeData) => void;
     onOpenTaskDetails?: (node: CanvasNodeData) => void;

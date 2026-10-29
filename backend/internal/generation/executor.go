@@ -113,6 +113,9 @@ func Execute(ctx context.Context, input Input) (map[string]any, error) {
 		if err := HydrateMedia(ctx, userID, &input, MediaHydrationPolicyFor(ctx, input)); err != nil {
 			return nil, err
 		}
+		if err := PrepareToAPIUploadImages(ctx, input.Config, &input); err != nil {
+			return nil, err
+		}
 		if runtime.Config != nil {
 			if err := runtime.Config.SyncArkPrivateAssets(ctx, userID, &input); err != nil {
 				return nil, err

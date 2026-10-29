@@ -45,7 +45,7 @@ func SanitizeTaskDiagnostics(input *model.TaskFailureDiagnostics) *model.TaskFai
 	}
 	for i := range d.Requests {
 		r := &d.Requests[i]
-		r.Operation = diagnosticEnum(r.Operation, "image_edit", "image_generate", "query_or_download", "submit", "other")
+		r.Operation = diagnosticEnum(r.Operation, "image_edit", "image_generate", "query_or_download", "submit", "upload", "other")
 		r.Method = diagnosticEnum(r.Method, "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD")
 		r.TransportPhase = diagnosticEnum(r.TransportPhase, "connect", "tls", "request", "response_wait", "response")
 		r.TransportRoute = diagnosticEnum(r.TransportRoute, "direct", "proxy")

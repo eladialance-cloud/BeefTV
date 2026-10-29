@@ -1,0 +1,287 @@
+{
+  "apiVersion": "beeftv.plugin/v2",
+  "id": "toapis-video",
+  "name": "ToAPI Videos",
+  "version": "1.0.0",
+  "author": "BeefTV Contributors",
+  "description": "ToAPI 统一异步视频生成协议。",
+  "documentation": "# ToAPI Videos\n\n用于 ToAPI 统一视频生成接口。支持文生视频、首尾帧和多模态参考素材，使用 ToAPI 异步任务查询视频结果。\n\n---\n\n# ToAPI Videos 接口字段\n\n## 协议身份\n\n- 插件 ID：`toapis-video`。\n- Provider ID：`toapis-video`。\n- 能力：`video`。\n- 创建：`POST /v1/videos/generations`。\n- 查询：`GET /v1/videos/generations/{{taskId}}`。\n\n## 配置字段\n\n| 字段 | 类型 | 必填 | 含义 |\n| --- | --- | --- | --- |\n| `apiKey` | secret | 是 | ToAPI API Key。 |\n\n## 统一字段\n\n| 字段 | 类型 | 上游字段 |\n| --- | --- | --- |\n| `model` | string | `model` |\n| `prompt` | string | `prompt` |\n| `duration` | integer | `duration` |\n| `aspectRatio` | string | `aspect_ratio` |\n| `resolution` | string | `resolution` |\n| `images` | media[] | `image_with_roles` |\n| `videos` | media[] | `video_with_roles` |\n| `audios` | media[] | `audio_with_roles` |\n| `generateAudio` | boolean | `generate_audio` |\n| `watermark` | boolean | `watermark` |\n\n## 媒体角色\n\n- 图片：`first_frame`、`last_frame`、`reference_image`。\n- 视频：`reference_video`。\n- 音频：`reference_audio`。\n\n## 响应\n\n- 创建和查询返回 `id`、`status`、`progress`。\n- 完成后从 `result.data[].url` 读取视频地址。\n- 失败原因从 `error.message` 读取。\n\n## 兼容边界\n\nBase URL 必须指向 ToAPI 根地址，例如 `https://toapis.cn`。不要填写成完整接口路径。\n\n<!-- BEEFTV_PLUGIN_MANIFEST_START -->\n## Manifest 完整接口定义\n\n以下 JSON 与插件包内实际 `manifest.json` 逐字段一致，覆盖插件身份、权限、配置、鉴权、参数、校验、创建、Agent、查询、取消、结果下载、响应和 Agent 响应映射。`documentation` 字段的值就是当前完整文档；为避免文档在自身内部无限递归，JSON 中仅用等义占位文本表示正文。\n\n```json\n{\n  \"apiVersion\": \"beeftv.plugin/v2\",\n  \"id\": \"toapis-video\",\n  \"name\": \"ToAPI Videos\",\n  \"version\": \"1.0.0\",\n  \"author\": \"BeefTV Contributors\",\n  \"description\": \"ToAPI 统一异步视频生成协议。\",\n  \"documentation\": \"<当前插件的完整 documentation，由 README.md 与 docs/interface.md 拼接而成；为避免 JSON 递归，此处不重复展开正文。>\",\n  \"permissions\": [\n    \"generation.run\",\n    \"media.read\"\n  ],\n  \"configuration\": {\n    \"fields\": [\n      {\n        \"name\": \"apiKey\",\n        \"type\": \"secret\",\n        \"label\": \"API Key\",\n        \"required\": true\n      }\n    ]\n  },\n  \"contributes\": {\n    \"providers\": [\n      {\n        \"id\": \"toapis-video\",\n        \"label\": \"ToAPI Videos\",\n        \"capabilities\": [\n          \"video\"\n        ],\n        \"scopes\": [\n          \"admin.system-channel\",\n          \"user.custom-channel\",\n          \"canvas\",\n          \"creation\",\n          \"agent\"\n        ],\n        \"baseUrl\": \"https://toapis.cn\",\n        \"requiresPublicMediaUrls\": true,\n        \"auth\": {\n          \"type\": \"bearer\",\n          \"field\": \"apiKey\"\n        },\n        \"parameters\": [\n          {\n            \"name\": \"model\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"model\",\n            \"description\": \"视频模型 ID。\"\n          },\n          {\n            \"name\": \"prompt\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"prompt\",\n            \"description\": \"视频提示词。\"\n          },\n          {\n            \"name\": \"images\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"image_with_roles\",\n            \"description\": \"首帧、尾帧或参考图片。\"\n          },\n          {\n            \"name\": \"videos\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"video_with_roles\",\n            \"description\": \"参考视频。\"\n          },\n          {\n            \"name\": \"audios\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"audio_with_roles\",\n            \"description\": \"参考音频。\"\n          },\n          {\n            \"name\": \"duration\",\n            \"type\": \"integer\",\n            \"required\": false,\n            \"mapping\": \"duration\",\n            \"description\": \"视频时长秒数。\"\n          },\n          {\n            \"name\": \"aspectRatio\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"aspect_ratio\",\n            \"description\": \"视频宽高比。\"\n          },\n          {\n            \"name\": \"resolution\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"resolution\",\n            \"description\": \"视频分辨率。\"\n          },\n          {\n            \"name\": \"generateAudio\",\n            \"type\": \"boolean\",\n            \"required\": false,\n            \"mapping\": \"generate_audio\",\n            \"description\": \"是否生成同步音频。\"\n          },\n          {\n            \"name\": \"watermark\",\n            \"type\": \"boolean\",\n            \"required\": false,\n            \"mapping\": \"watermark\",\n            \"description\": \"是否添加 AIGC 水印。\"\n          },\n          {\n            \"name\": \"providerOptions\",\n            \"type\": \"object\",\n            \"required\": false,\n            \"mapping\": \"provider-specific fields\",\n            \"description\": \"厂商扩展字段。\"\n          }\n        ],\n        \"create\": {\n          \"method\": \"POST\",\n          \"path\": \"/v1/videos/generations\",\n          \"contentType\": \"application/json\",\n          \"body\": {\n            \"model\": {\n              \"$ref\": \"request.model\"\n            },\n            \"prompt\": {\n              \"$omitEmpty\": {\n                \"$ref\": \"request.prompt\"\n              }\n            },\n            \"duration\": {\n              \"$omitEmpty\": {\n                \"$ref\": \"request.duration\"\n              }\n            },\n            \"aspect_ratio\": {\n              \"$omitEmpty\": {\n                \"$ref\": \"request.aspectRatio\"\n              }\n            },\n            \"resolution\": {\n              \"$omitEmpty\": {\n                \"$ref\": \"request.resolution\"\n              }\n            },\n            \"image_with_roles\": {\n              \"$omitEmpty\": {\n                \"$map\": {\n                  \"from\": {\n                    \"$sortByOrder\": {\n                      \"$ref\": \"request.images\"\n                    }\n                  },\n                  \"as\": \"media\",\n                  \"in\": {\n                    \"url\": {\n                      \"$ref\": \"media.value\"\n                    },\n                    \"role\": {\n                      \"$if\": {\n                        \"condition\": {\n                          \"$eq\": [\n                            {\n                              \"$ref\": \"media.role\"\n                            },\n                            \"\"\n                          ]\n                        },\n                        \"then\": \"reference_image\",\n                        \"else\": {\n                          \"$ref\": \"media.role\"\n                        }\n                      }\n                    }\n                  }\n                }\n              }\n            },\n            \"video_with_roles\": {\n              \"$omitEmpty\": {\n                \"$map\": {\n                  \"from\": {\n                    \"$sortByOrder\": {\n                      \"$ref\": \"request.videos\"\n                    }\n                  },\n                  \"as\": \"media\",\n                  \"in\": {\n                    \"url\": {\n                      \"$ref\": \"media.value\"\n                    },\n                    \"role\": \"reference_video\"\n                  }\n                }\n              }\n            },\n            \"audio_with_roles\": {\n              \"$omitEmpty\": {\n                \"$map\": {\n                  \"from\": {\n                    \"$sortByOrder\": {\n                      \"$ref\": \"request.audios\"\n                    }\n                  },\n                  \"as\": \"media\",\n                  \"in\": {\n                    \"url\": {\n                      \"$ref\": \"media.value\"\n                    },\n                    \"role\": \"reference_audio\"\n                  }\n                }\n              }\n            },\n            \"generate_audio\": {\n              \"$ref\": \"request.generateAudio\"\n            },\n            \"watermark\": {\n              \"$ref\": \"request.watermark\"\n            }\n          }\n        },\n        \"poll\": {\n          \"method\": \"GET\",\n          \"path\": \"/v1/videos/generations/{{taskId}}\",\n          \"contentType\": \"application/json\"\n        },\n        \"response\": {\n          \"taskId\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.id\"\n              },\n              {\n                \"$ref\": \"response.task_id\"\n              },\n              {\n                \"$ref\": \"taskId\"\n              }\n            ]\n          },\n          \"status\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.status\"\n              },\n              \"pending\"\n            ]\n          },\n          \"message\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.error.message\"\n              },\n              {\n                \"$ref\": \"response.message\"\n              }\n            ]\n          },\n          \"videos\": {\n            \"$map\": {\n              \"from\": {\n                \"$ref\": \"response.result.data\"\n              },\n              \"as\": \"item\",\n              \"in\": {\n                \"url\": {\n                  \"$ref\": \"item.url\"\n                }\n              }\n            }\n          },\n          \"resultKind\": \"video\",\n          \"resultEphemeral\": true,\n          \"errorPaths\": [\n            \"error.code\"\n          ]\n        }\n      }\n    ]\n  }\n}\n```\n<!-- BEEFTV_PLUGIN_MANIFEST_END -->\n",
+  "permissions": [
+    "generation.run",
+    "media.read"
+  ],
+  "configuration": {
+    "fields": [
+      {
+        "name": "apiKey",
+        "type": "secret",
+        "label": "API Key",
+        "required": true
+      }
+    ]
+  },
+  "contributes": {
+    "providers": [
+      {
+        "id": "toapis-video",
+        "label": "ToAPI Videos",
+        "capabilities": [
+          "video"
+        ],
+        "scopes": [
+          "admin.system-channel",
+          "user.custom-channel",
+          "canvas",
+          "creation",
+          "agent"
+        ],
+        "baseUrl": "https://toapis.cn",
+        "requiresPublicMediaUrls": true,
+        "auth": {
+          "type": "bearer",
+          "field": "apiKey"
+        },
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "mapping": "model",
+            "description": "视频模型 ID。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": false,
+            "mapping": "prompt",
+            "description": "视频提示词。"
+          },
+          {
+            "name": "images",
+            "type": "media[]",
+            "required": false,
+            "mapping": "image_with_roles",
+            "description": "首帧、尾帧或参考图片。"
+          },
+          {
+            "name": "videos",
+            "type": "media[]",
+            "required": false,
+            "mapping": "video_with_roles",
+            "description": "参考视频。"
+          },
+          {
+            "name": "audios",
+            "type": "media[]",
+            "required": false,
+            "mapping": "audio_with_roles",
+            "description": "参考音频。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "mapping": "duration",
+            "description": "视频时长秒数。"
+          },
+          {
+            "name": "aspectRatio",
+            "type": "string",
+            "required": false,
+            "mapping": "aspect_ratio",
+            "description": "视频宽高比。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "mapping": "resolution",
+            "description": "视频分辨率。"
+          },
+          {
+            "name": "generateAudio",
+            "type": "boolean",
+            "required": false,
+            "mapping": "generate_audio",
+            "description": "是否生成同步音频。"
+          },
+          {
+            "name": "watermark",
+            "type": "boolean",
+            "required": false,
+            "mapping": "watermark",
+            "description": "是否添加 AIGC 水印。"
+          },
+          {
+            "name": "providerOptions",
+            "type": "object",
+            "required": false,
+            "mapping": "provider-specific fields",
+            "description": "厂商扩展字段。"
+          }
+        ],
+        "create": {
+          "method": "POST",
+          "path": "/v1/videos/generations",
+          "contentType": "application/json",
+          "body": {
+            "model": {
+              "$ref": "request.model"
+            },
+            "prompt": {
+              "$omitEmpty": {
+                "$ref": "request.prompt"
+              }
+            },
+            "duration": {
+              "$omitEmpty": {
+                "$ref": "request.duration"
+              }
+            },
+            "aspect_ratio": {
+              "$omitEmpty": {
+                "$ref": "request.aspectRatio"
+              }
+            },
+            "resolution": {
+              "$omitEmpty": {
+                "$ref": "request.resolution"
+              }
+            },
+            "image_with_roles": {
+              "$omitEmpty": {
+                "$map": {
+                  "from": {
+                    "$sortByOrder": {
+                      "$ref": "request.images"
+                    }
+                  },
+                  "as": "media",
+                  "in": {
+                    "url": {
+                      "$ref": "media.value"
+                    },
+                    "role": {
+                      "$if": {
+                        "condition": {
+                          "$eq": [
+                            {
+                              "$ref": "media.role"
+                            },
+                            ""
+                          ]
+                        },
+                        "then": "reference_image",
+                        "else": {
+                          "$ref": "media.role"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "video_with_roles": {
+              "$omitEmpty": {
+                "$map": {
+                  "from": {
+                    "$sortByOrder": {
+                      "$ref": "request.videos"
+                    }
+                  },
+                  "as": "media",
+                  "in": {
+                    "url": {
+                      "$ref": "media.value"
+                    },
+                    "role": "reference_video"
+                  }
+                }
+              }
+            },
+            "audio_with_roles": {
+              "$omitEmpty": {
+                "$map": {
+                  "from": {
+                    "$sortByOrder": {
+                      "$ref": "request.audios"
+                    }
+                  },
+                  "as": "media",
+                  "in": {
+                    "url": {
+                      "$ref": "media.value"
+                    },
+                    "role": "reference_audio"
+                  }
+                }
+              }
+            },
+            "generate_audio": {
+              "$ref": "request.generateAudio"
+            },
+            "watermark": {
+              "$ref": "request.watermark"
+            }
+          }
+        },
+        "poll": {
+          "method": "GET",
+          "path": "/v1/videos/generations/{{taskId}}",
+          "contentType": "application/json"
+        },
+        "response": {
+          "taskId": {
+            "$coalesce": [
+              {
+                "$ref": "response.id"
+              },
+              {
+                "$ref": "response.task_id"
+              },
+              {
+                "$ref": "taskId"
+              }
+            ]
+          },
+          "status": {
+            "$coalesce": [
+              {
+                "$ref": "response.status"
+              },
+              "pending"
+            ]
+          },
+          "message": {
+            "$coalesce": [
+              {
+                "$ref": "response.error.message"
+              },
+              {
+                "$ref": "response.message"
+              }
+            ]
+          },
+          "videos": {
+            "$map": {
+              "from": {
+                "$ref": "response.result.data"
+              },
+              "as": "item",
+              "in": {
+                "url": {
+                  "$ref": "item.url"
+                }
+              }
+            }
+          },
+          "resultKind": "video",
+          "resultEphemeral": true,
+          "errorPaths": [
+            "error.code"
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -76,7 +76,7 @@ func TestCrossVolumeMigration(t *testing.T) {
 		t.Skip("native cross-volume fixture not requested")
 	}
 	root := t.TempDir()
-	target, err := os.MkdirTemp(volume, "BeefTV-migration-test-")
+	target, err := os.MkdirTemp(volume, "VisiDeepAI-migration-test-")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -186,6 +186,34 @@ func TestLoginRejectsWrongPasswordAndAcceptsCorrectOne(t *testing.T) {
 	}
 }
 
+func TestLoginReplacesPreviousDeviceSession(t *testing.T) {
+	engine := newAuthTestAPI(t)
+	registered := authRequest(t, engine, http.MethodPost, "/api/register", map[string]any{
+		"username": "single-device", "password": "password-1",
+	}, nil)
+	oldCookie := sessionCookie(t, registered)
+	if oldCookie == nil {
+		t.Fatal("注册后应得到旧设备会话")
+	}
+
+	loggedIn := authRequest(t, engine, http.MethodPost, "/api/login", map[string]any{
+		"username": "single-device", "password": "password-1",
+	}, nil)
+	newCookie := sessionCookie(t, loggedIn)
+	if loggedIn.Code != http.StatusOK || newCookie == nil {
+		t.Fatalf("新设备登录失败: %d %s", loggedIn.Code, loggedIn.Body.String())
+	}
+
+	oldRequest := authRequest(t, engine, http.MethodGet, "/api/auth/me", nil, oldCookie)
+	if oldRequest.Code != http.StatusUnauthorized {
+		t.Fatalf("旧设备必须失效，得到 %d (%s)", oldRequest.Code, oldRequest.Body.String())
+	}
+	newRequest := authRequest(t, engine, http.MethodGet, "/api/auth/me", nil, newCookie)
+	if newRequest.Code != http.StatusOK {
+		t.Fatalf("新设备会话必须有效，得到 %d (%s)", newRequest.Code, newRequest.Body.String())
+	}
+}
+
 func TestLogoutInvalidatesSession(t *testing.T) {
 	engine := newAuthTestAPI(t)
 	registered := authRequest(t, engine, http.MethodPost, "/api/register", map[string]any{

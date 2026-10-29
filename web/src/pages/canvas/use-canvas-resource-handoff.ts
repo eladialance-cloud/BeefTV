@@ -292,7 +292,11 @@ export function useCanvasResourceHandoff({
     const reloadCanvasNodeResource = useCallback(
         async (node: CanvasNodeData) => {
             const taskId = node.metadata?.taskId;
-            if (!taskId || !node.metadata?.resourceReloadAvailable) return;
+            const recoverable = Boolean(
+                node.metadata?.resourceReloadAvailable
+                || (node.metadata?.taskStatus === "succeeded" && !node.metadata?.content && !node.metadata?.storageKey),
+            );
+            if (!taskId || !recoverable) return;
             const owner = lifetime.capture(projectId);
             const targetNodeId = node.id;
             // 继续取回只等待并绑定原任务已生成的结果，不会重新提交生成。

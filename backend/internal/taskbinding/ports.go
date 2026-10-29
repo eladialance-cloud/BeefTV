@@ -19,6 +19,12 @@ type Ports interface {
 	BindExistingNode(userID string, patch NodePatch) (NodeBindResult, error)
 }
 
+// RecoveredNodePorts permits an explicit recovery bind only when the original
+// target node disappeared and the replacement node already belongs to the task.
+type RecoveredNodePorts interface {
+	CanBindRecoveredNode(userID string, task model.Task, nodeID string, allowCreate bool) (bool, error)
+}
+
 // MessagePorts is the TX-bound workspace for conversation result attach.
 type MessagePorts interface {
 	OutputReads
@@ -29,33 +35,43 @@ type MessagePorts interface {
 // Request is the authenticated bind identity. Client result URLs/payloads are
 // not accepted; the durable task Result row is the generated product.
 type Request struct {
-	CanvasID    string
-	TaskID      string
-	NodeID      string
-	OutputIndex int
-	EffectKey   string
+	CanvasID          string
+	TaskID            string
+	NodeID            string
+	OutputIndex       int
+	EffectKey         string
+	RecoveryMode      bool
+	CreateMissingNode bool
+	NodeTitle         string
+	NodePositionX     float64
+	NodePositionY     float64
 }
 
 // NodePatch is the generation-field overlay canvas applies onto an existing
 // node. Title, position and unrelated metadata stay on the node.
 type NodePatch struct {
-	CanvasID     string
-	NodeID       string
-	TaskID       string
-	OutputIndex  int
-	EffectKey    string
-	MediaType    string
-	AssetID      string
-	ResourceID   string
-	StorageKey   string
-	Content      string
-	MimeType     string
-	Bytes        int64
-	Width        int
-	Height       int
-	DurationMs   int64
-	Storyboard   map[string]any
-	AlreadyBound bool
+	CanvasID          string
+	NodeID            string
+	TaskID            string
+	OutputIndex       int
+	EffectKey         string
+	MediaType         string
+	AssetID           string
+	ResourceID        string
+	StorageKey        string
+	Content           string
+	MimeType          string
+	Bytes             int64
+	Width             int
+	Height            int
+	DurationMs        int64
+	Storyboard        map[string]any
+	Metadata          map[string]any
+	AlreadyBound      bool
+	CreateMissingNode bool
+	NodeTitle         string
+	NodePositionX     float64
+	NodePositionY     float64
 }
 
 // NodeBindResult is the canvas write outcome used to build the op receipt.

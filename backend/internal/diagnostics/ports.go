@@ -39,6 +39,6 @@ func (b staticBrand) NameAndSlug() (string, string) {
 }
 
 const (
-	defaultBrandName = "BeefTV"
+	defaultBrandName = "VisiDeep AI"
 	defaultBrandSlug = "beeftv"
 )

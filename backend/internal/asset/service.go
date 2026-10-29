@@ -178,7 +178,7 @@ func (s *Service) Resource(userID string, id string) (*model.Resource, error) {
 }
 
 func (s *Service) validateListedResource(resource *model.Resource) error {
-	if resource == nil || !s.localStorage {
+	if resource == nil || !s.LocalOnly() {
 		return nil
 	}
 	if resource.Provider != "local" {

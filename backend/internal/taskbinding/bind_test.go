@@ -79,6 +79,29 @@ func TestBindMediaUsesDurableOutputNotClientURL(t *testing.T) {
 	}
 }
 
+func TestBindCarriesManagedTableIdentityFromTaskInput(t *testing.T) {
+	task := testImageTask()
+	task.InputJSON = `{"metadata":{"nodeId":"node-1","manjuProjectId":"project-1","manjuStage":"p2_assets","manjuAssetTableId":"asset-table","manjuAssetRowId":"asset-row","manjuAssetCode":"CHR-01","manjuTaskId":"p2-task","manjuTaskCode":"图1","untrusted":"drop-me"}}`
+	ports := &fakePorts{
+		task: task,
+		outputs: []localtask.CanonicalOutput{{
+			OutputIndex: 0, MediaType: "image", MaterializedAssetID: "generation_abc", ResourceID: "res-1",
+		}},
+		resource: &model.Resource{ID: "res-1", UserID: "user-1", Status: model.ResourceStatusReady, Kind: "image"},
+		asset:    testAsset("generation_abc", "user-1", "res-1"),
+	}
+
+	if _, err := Bind(ports, "user-1", Request{CanvasID: "canvas-1", TaskID: "task-1", NodeID: "node-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := ports.lastPatch.Metadata; len(got) != 7 ||
+		got["manjuAssetTableId"] != "asset-table" ||
+		got["manjuAssetRowId"] != "asset-row" ||
+		got["manjuAssetCode"] != "CHR-01" {
+		t.Fatalf("managed table metadata = %#v", got)
+	}
+}
+
 func TestBindTextUsesDurableResultJSON(t *testing.T) {
 	ports := &fakePorts{
 		task: &model.Task{

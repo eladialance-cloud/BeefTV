@@ -11,6 +11,7 @@ import { CREATION_PREFERENCES_STORE_KEY, useCreationPreferencesStore } from "@/s
 import { PLUGIN_STORE_KEY, usePluginStore } from "@/stores/use-plugin-store";
 import { defaultFeatureAvailability, useUserStore } from "@/stores/use-user-store";
 import type { WorkspaceBootstrapPayload } from "@/services/api/workspace";
+import { loadSystemChannels } from "@/services/api/model-catalog";
 import { setWorkspaceCapabilitySnapshot } from "@/services/workspace-mode";
 import { withGenerationConsumersPaused } from "@/services/generation-consumer-lifecycle";
 
@@ -20,7 +21,48 @@ import { withGenerationConsumersPaused } from "@/services/generation-consumer-li
  */
 export async function applyUserSession(payload: WorkspaceBootstrapPayload) {
     // Drain old result writers before changing the persistence namespace or stores.
-    return withGenerationConsumersPaused(() => hydrateLocalWorkspace(payload));
+    return withGenerationConsumersPaused(() =>
+        payload.profile === "remote" ? hydrateRemoteWorkspace(payload) : hydrateLocalWorkspace(payload),
+    );
+}
+
+/**
+ * 托管网页会话：项目、素材和生成任务都由服务端持久化，浏览器只持有会话 Cookie。
+ * 本地浏览器缓存不再作为数据源，模型渠道只来自管理后台下发的公开目录。
+ */
+async function hydrateRemoteWorkspace(payload: WorkspaceBootstrapPayload) {
+    useUserStore.getState().setHydrated(false);
+    setWorkspaceCapabilitySnapshot({
+        contractVersion: payload.contractVersion,
+        profile: "remote",
+        capabilities: payload.capabilities,
+    });
+
+    try {
+        await Promise.all([flushCanvasStorePersistence(), flushAssetStorePersistence()]);
+        setActiveUserScope(payload.user.id);
+
+        usePluginStore.setState({ hydrated: false, runtimeStatuses: {}, pluginStates: {} });
+        useUserStore.getState().setUser(payload.user);
+        useUserStore.getState().setStorageMode("remote");
+        useUserStore.getState().setRuntimeLimits(payload.runtimeLimits);
+        useUserStore.getState().setFeatures({ ...defaultFeatureAvailability, ...payload.features });
+
+        await Promise.all([
+            useCanvasStore.persist.rehydrate(),
+            useCanvasHistoryStore.persist.rehydrate(),
+            useAssetStore.persist.rehydrate(),
+            useCreationPreferencesStore.persist.rehydrate(),
+        ]);
+
+        // 托管模式下渠道与密钥只由管理后台维护：清空本地持久化的用户渠道，
+        // 只保留公开系统目录，避免上一个本地配置泄漏到账号会话。
+        useConfigStore.getState().replaceConfig(defaultConfig);
+        const systemChannels = await loadSystemChannels();
+        useConfigStore.getState().mergeSystemChannels(systemChannels);
+    } finally {
+        useUserStore.getState().setHydrated(true);
+    }
 }
 
 async function hydrateLocalWorkspace(payload: WorkspaceBootstrapPayload) {

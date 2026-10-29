@@ -4,7 +4,14 @@ const COPY_SUFFIX = /(_copy\d+|\s+Copy)$/i;
 const VERSION_SUFFIX = /\s*·\s*([A-Z])\s*$/;
 
 export function buildImageGenerationNodeTitle(prompt: string, sourceNode?: CanvasNodeData, outputIndex?: number, outputCount = 1) {
-    let title = prompt.trim().slice(0, 32) || "Generated Image";
+    const hasStableWorkflowTitle = Boolean(
+        sourceNode?.metadata?.manjuTaskId
+        || sourceNode?.metadata?.pluginData?.creationTemplateId
+        || sourceNode?.metadata?.generatedFromNodeId,
+    );
+    let title = hasStableWorkflowTitle
+        ? sourceNode?.title.trim() || prompt.trim().slice(0, 32) || "Generated Image"
+        : prompt.trim().slice(0, 32) || "Generated Image";
     if (sourceNode) {
         const sourceTitleWithoutVersion = sourceNode.title.replace(VERSION_SUFFIX, "");
         const copySuffix = sourceTitleWithoutVersion.match(COPY_SUFFIX)?.[1] || "";

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"infinite-canvas/backend/internal/kernel"
 	stdlog "log"
+	"sort"
 	"time"
 
 	"infinite-canvas/backend/internal/model"
@@ -42,15 +43,60 @@ func (s *Service) PublicSystemChannels() ([]PublicModelChannel, error) {
 	if err != nil {
 		return nil, err
 	}
+	rules, err := s.repo.PricingRules(model.PricingKindChannelTier)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
 	result := make([]PublicModelChannel, 0, len(channels))
 	for _, channel := range channels {
 		items, itemErr := s.repo.ChannelModels(channel.ID, false)
 		if itemErr != nil {
 			return nil, itemErr
 		}
-		result = append(result, publicChannel(channel, false, items))
+		view := publicChannel(channel, false, items)
+		applyPublicChannelPrices(&view, rules, now)
+		result = append(result, view)
 	}
 	return result, nil
+}
+
+func applyPublicChannelPrices(channel *PublicModelChannel, rules []model.PricingRule, now time.Time) {
+	if channel == nil {
+		return
+	}
+	pricesByModel := make(map[string][]modelcatalog.PublicModelPrice)
+	for _, rule := range rules {
+		if rule.ChannelID != channel.ID || !rule.Enabled || rule.UnitPriceMicrocredits <= 0 {
+			continue
+		}
+		if !rule.EffectiveFrom.IsZero() && rule.EffectiveFrom.After(now) {
+			continue
+		}
+		if rule.EffectiveTo != nil && !rule.EffectiveTo.After(now) {
+			continue
+		}
+		modelID := rule.ChannelModelID
+		if modelID == "" {
+			continue
+		}
+		pricesByModel[modelID] = append(pricesByModel[modelID], modelcatalog.PublicModelPrice{
+			Name: rule.Name, BillingMode: rule.BillingMode, Selector: rule.Selector,
+			UnitPriceMicrocredits:     rule.UnitPriceMicrocredits,
+			MinimumChargeMicrocredits: rule.MinimumChargeCredits,
+			SortOrder:                 rule.SortOrder,
+		})
+	}
+	for index := range channel.ModelProfiles {
+		prices := pricesByModel[channel.ModelProfiles[index].ID]
+		sort.SliceStable(prices, func(i, j int) bool {
+			if prices[i].SortOrder != prices[j].SortOrder {
+				return prices[i].SortOrder < prices[j].SortOrder
+			}
+			return len(prices[i].Selector) < len(prices[j].Selector)
+		})
+		channel.ModelProfiles[index].Prices = prices
+	}
 }
 
 func (s *Service) SystemChannel(id string) (*model.ModelChannel, error) {

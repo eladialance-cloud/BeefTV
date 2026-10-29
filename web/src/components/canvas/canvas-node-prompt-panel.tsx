@@ -83,6 +83,8 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
     const hasTextContent = node.type === CanvasNodeType.Text && Boolean(node.metadata?.content?.trim());
     const hasImageContent = node.type === CanvasNodeType.Image && Boolean(node.metadata?.content);
     const savedPrompt = node.metadata?.composerContent ?? node.metadata?.prompt ?? "";
+    const usesServerManagedPrompt = (node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video)
+        && Boolean(node.metadata?.pluginData?.creationTemplateDynamicRef);
     const [prompt, setPrompt] = useState(savedPrompt);
     const [presetOpen, setPresetOpen] = useState(false);
     const [expandedPresetOpen, setExpandedPresetOpen] = useState(false);
@@ -181,7 +183,7 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
         if (!rect?.width || !rect.height) return { width: PROMPT_EDITOR_MODAL_DEFAULT_WIDTH, height: PROMPT_EDITOR_MODAL_DEFAULT_HEIGHT };
         return { width: Math.round(rect.width), height: Math.round(rect.height) };
     };
-    const isSubmitDisabled = !isRunning && !prompt.trim();
+    const isSubmitDisabled = !isRunning && !prompt.trim() && !usesServerManagedPrompt;
     const canExpandPrompt = mode === "image" || mode === "video";
     const canOptimizePrompt = Boolean(promptOptimizerProvider) && canExpandPrompt;
     const isPortraitTexture = mode === "image" && Boolean(node.metadata?.portraitTexture);
@@ -244,7 +246,7 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
 
     const submit = () => {
         const text = prompt.trim();
-        if (!text || isRunning) return false;
+        if ((!text && !usesServerManagedPrompt) || isRunning) return false;
         onGenerate(node.id, mode, text);
         return true;
     };
@@ -497,7 +499,7 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
                             ? "thin-scrollbar h-full w-full resize-none overflow-y-auto border-none bg-transparent px-3 py-2.5 text-[var(--fs-body-lg)] leading-6 !outline-none !ring-0 !shadow-none focus:!outline-none focus:!ring-0 focus:!shadow-none placeholder:text-current placeholder:opacity-35"
                             : "thin-scrollbar h-full w-full resize-none overflow-y-auto border-none bg-transparent px-2.5 py-1.5 text-[var(--fs-body)] leading-5 !outline-none !ring-0 !shadow-none focus:!outline-none focus:!ring-0 focus:!shadow-none placeholder:text-current placeholder:opacity-35"}
                         style={{ color: theme.node.text, outline: "none", boxShadow: "none" }}
-                        placeholder={promptPlaceholder(mode, hasImageContent, hasTextContent)}
+                        placeholder={promptPlaceholder(mode, hasImageContent, hasTextContent, usesServerManagedPrompt)}
                         aria-label={`${modeDisplayName(mode)}提示词`}
                     />
                 </div>
@@ -1129,7 +1131,8 @@ export function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mo
     };
 }
 
-function promptPlaceholder(mode: CanvasNodeGenerationMode, hasImageContent: boolean, hasTextContent: boolean) {
+function promptPlaceholder(mode: CanvasNodeGenerationMode, hasImageContent: boolean, hasTextContent: boolean, serverManaged = false) {
+    if (serverManaged) return "本节点使用服务端内置生成规则，直接点击生成即可";
     if (mode === "video") return "描述你想要生成的画面内容，@引用素材";
     if (mode === "audio") return "描述你想要的音频效果，可用 @ 引用音频";
     if (mode === "image") return hasImageContent ? "输入新提示词，重新生成当前图片" : "描述要生成的图片内容";

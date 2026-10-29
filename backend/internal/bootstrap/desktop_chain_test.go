@@ -43,8 +43,8 @@ func TestDesktopProfileStartupChain(t *testing.T) {
 
 	dataDir := t.TempDir()
 	stageRoot := t.TempDir()
-	// 暂存 BeefTV.app 布局：Contents/Resources/agent-host/...
-	agentDir := filepath.Join(stageRoot, "BeefTV.app", "Contents", "Resources", "agent-host")
+	// 暂存 VisiDeepAI.app 布局：Contents/Resources/agent-host/...
+	agentDir := filepath.Join(stageRoot, "VisiDeepAI.app", "Contents", "Resources", "agent-host")
 	if err := os.MkdirAll(filepath.Join(agentDir, "runtime", "bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}

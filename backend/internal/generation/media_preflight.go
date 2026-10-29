@@ -17,7 +17,7 @@ func ValidateMediaTransport(ctx context.Context, input Input) error {
 		return err
 	}
 	policy := MediaHydrationPolicyFor(ctx, input)
-	if !policy.RequireURL || policy.KeepLocal {
+	if (!policy.RequireURL && !policy.ProviderImageUpload) || policy.KeepLocal {
 		return nil
 	}
 	runtime, _ := RuntimeFromContext(ctx)
@@ -36,6 +36,11 @@ func ValidateMediaTransport(ctx context.Context, input Input) error {
 	}
 	for _, group := range groups {
 		for i, media := range group.items {
+			if policy.ProviderImageUpload && group.label == "参考图片" {
+				if strings.HasPrefix(media.StorageKey, "resource:") || strings.HasPrefix(strings.TrimSpace(media.DataURL), "data:") || strings.HasPrefix(strings.TrimSpace(media.URL), "data:") {
+					continue
+				}
+			}
 			if strings.HasPrefix(media.StorageKey, "resource:") {
 				if runtime.Resources != nil && !runtime.Resources.LocalMode() {
 					continue // Hosted resources are resolved by the owned resource port.

@@ -1,12 +1,21 @@
 # syntax=docker/dockerfile:1.7
 
 FROM alpine:3.22 AS protocol-package-build
+ARG APK_MIRROR
 
-RUN apk add --no-cache nodejs zip
+RUN if [ -n "$APK_MIRROR" ]; then sed -i "s#https://dl-cdn.alpinelinux.org/alpine#$APK_MIRROR#g" /etc/apk/repositories; fi \
+    && apk add --no-cache nodejs zip
 
 WORKDIR /src
 COPY plugin-packages ./plugin-packages
 RUN ./plugin-packages/build-packages.sh
+
+FROM oven/bun:1.3.13 AS agent-host-build
+
+WORKDIR /app/agent-host
+COPY agent-host/package.json agent-host/bun.lock ./
+RUN --mount=type=cache,target=/root/.bun/install/cache bun install --cache-dir=/root/.bun/install/cache
+COPY agent-host ./
 
 FROM golang:1.25-alpine AS backend-build
 
@@ -14,9 +23,11 @@ ARG GOPROXY=https://proxy.golang.org,direct
 ARG BUILD_VERSION
 ARG BUILD_COMMIT=unknown
 ARG BUILD_TIME=unknown
+ARG APK_MIRROR
 ENV GOPROXY=$GOPROXY
 
-RUN apk add --no-cache build-base
+RUN if [ -n "$APK_MIRROR" ]; then sed -i "s#https://dl-cdn.alpinelinux.org/alpine#$APK_MIRROR#g" /etc/apk/repositories; fi \
+    && apk add --no-cache build-base
 
 WORKDIR /src/backend
 COPY VERSION /src/VERSION
@@ -29,8 +40,10 @@ RUN --mount=type=cache,target=/root/.cache/go-build set -eu; \
     CGO_ENABLED=1 GOOS=linux go build -trimpath -ldflags="$ldflags" -o /out/infinite-canvas-backend ./cmd/server
 
 FROM alpine:3.22
+ARG APK_MIRROR
 
-RUN apk add --no-cache ca-certificates tzdata wget \
+RUN if [ -n "$APK_MIRROR" ]; then sed -i "s#https://dl-cdn.alpinelinux.org/alpine#$APK_MIRROR#g" /etc/apk/repositories; fi \
+    && apk add --no-cache ca-certificates tzdata wget ffmpeg font-noto-cjk nodejs python3 \
     && addgroup -S app \
     && adduser -S app -G app
 
@@ -42,6 +55,11 @@ ENV CANVAS_BACKEND_DATA_DIR=/data
 RUN mkdir -p /data && chown -R app:app /data
 COPY --from=backend-build /out/infinite-canvas-backend /usr/local/bin/infinite-canvas-backend
 COPY --from=protocol-package-build /src/plugin-packages /app/plugin-packages
+COPY --from=agent-host-build /app/agent-host /usr/local/bin/agent-host
+
+RUN mkdir -p /usr/local/bin/agent-host/runtime/bin \
+    && ln -s /usr/bin/node /usr/local/bin/agent-host/runtime/bin/node \
+    && chown -R app:app /data /usr/local/bin/agent-host
 
 USER app
 EXPOSE 8080

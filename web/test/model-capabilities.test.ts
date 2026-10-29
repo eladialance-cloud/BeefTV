@@ -3,7 +3,7 @@ import test from "node:test";
 
 // Bun 直接执行 TypeScript 测试时需要保留扩展名；生产 tsconfig 不包含 test/。
 import { DEFAULT_VIDEO_PROMPT_MAX_CHARS, defaultModelCapabilityConfig, modelCapabilityConfigFor, normalizeVideoValue, videoDurationAllowed } from "../src/lib/model-capabilities.ts";
-import { modelCompatibilityError } from "../src/lib/model-selection.ts";
+import { modelCompatibilityError, resolveVideoOperation } from "../src/lib/model-selection.ts";
 import type { AiConfig } from "../src/stores/use-config-store.ts";
 import { seedanceTaskOptions, seedanceOmniTaskType } from "../src/lib/seedance-task-constraints.ts";
 
@@ -94,6 +94,84 @@ test("APIMart NewAPI channel exposes Seedance multimodal reference operations", 
     assert.deepEqual(profile.references.maxVideos, 3);
     assert.ok(profile.operations.includes("reference_to_video"));
     assert.ok(!profile.operations.includes("audio_to_video"));
+});
+
+test("ToAPI Seedance defaults expose image-plus-audio reference without audio-only generation", () => {
+    const profile = defaultModelCapabilityConfig("toapis-video", "seedance-2").video!;
+    assert.equal(profile.references.maxImages, 9);
+    assert.equal(profile.references.maxVideos, 3);
+    assert.equal(profile.references.maxAudios, 3);
+    assert.ok(profile.generateAudio.supported);
+    assert.ok(profile.operations.includes("reference_to_video"));
+    assert.ok(!profile.operations.includes("audio_to_video"));
+
+    const config = {
+        channels: [{
+            id: "toapi",
+            models: ["seedance-2"],
+            modelProfiles: [{ model: "seedance-2", capability: "video", protocol: "toapis-video" }],
+        }],
+    } as AiConfig;
+    const resolved = modelCapabilityConfigFor(config, "toapi::seedance-2").video!;
+    assert.equal(resolved.references.maxAudios, 3);
+    assert.ok(resolved.operations.includes("reference_to_video"));
+    assert.equal(modelCompatibilityError(config, "toapi::seedance-2", {
+        capability: "video",
+        input: { textCount: 1, imageCount: 1, videoCount: 0, audioCount: 1, characterCount: 0 },
+        videoSeconds: "5",
+    }), "");
+});
+
+test("ToAPI Seedance 2.5 exposes its official reference limits and audio-only mode", () => {
+    const profile = defaultModelCapabilityConfig("toapis-video", "seedance-2-5").video!;
+    assert.equal(profile.references.maxImages, 30);
+    assert.equal(profile.references.maxVideos, 10);
+    assert.equal(profile.references.maxAudios, 10);
+    assert.equal(profile.duration.max, 30);
+    assert.ok(profile.operations.includes("reference_to_video"));
+    assert.ok(profile.operations.includes("audio_to_video"));
+});
+
+test("audio-only input replaces a stale reference-to-video operation during model selection", () => {
+    const input = { textCount: 1, imageCount: 0, videoCount: 0, audioCount: 1, characterCount: 0 };
+    assert.equal(resolveVideoOperation(input, "reference_to_video"), "audio_to_video");
+    assert.equal(resolveVideoOperation({ ...input, imageCount: 1 }, "reference_to_video"), "reference_to_video");
+    const config = {
+        channels: [{
+            id: "toapi",
+            models: ["seedance-2-5"],
+            modelProfiles: [{ model: "seedance-2-5", capability: "video", protocol: "toapis-video" }],
+        }],
+    } as AiConfig;
+    assert.equal(modelCompatibilityError(config, "toapi::seedance-2-5", {
+        capability: "video",
+        input,
+        videoOperation: "reference_to_video",
+        videoSeconds: "5",
+    }), "");
+});
+
+test("ToAPI legacy repair only restores omitted video and audio references", () => {
+    const legacy = defaultModelCapabilityConfig(undefined, "seedance-2");
+    legacy.video!.references.maxImages = 12;
+    const model = "seedance-2";
+    const config = {
+        channels: [{
+            id: "toapi",
+            models: [model],
+            modelProfiles: [{ model, capability: "video", protocol: "toapis-video", capabilityConfig: legacy }],
+        }],
+    } as AiConfig;
+    const repaired = modelCapabilityConfigFor(config, `toapi::${model}`).video!;
+    assert.equal(repaired.references.maxImages, 12);
+    assert.equal(repaired.references.maxVideos, 3);
+    assert.equal(repaired.references.maxAudios, 3);
+    assert.ok(repaired.operations.includes("reference_to_video"));
+
+    legacy.video!.references.maxVideos = 3;
+    legacy.video!.references.maxAudios = 0;
+    const explicit = modelCapabilityConfigFor(config, `toapi::${model}`).video!;
+    assert.equal(explicit.references.maxAudios, 0);
 });
 
 test("BeefAPI generic newapi Seedance accepts mixed image and video references without a persisted capability profile", () => {

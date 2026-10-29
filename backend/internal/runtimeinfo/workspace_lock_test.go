@@ -23,7 +23,7 @@ func TestWorkspaceLockRejectsLiveLegacyProcess(t *testing.T) {
 	}
 	defer func() { _ = child.Process.Kill(); _ = child.Wait() }()
 	// A default Windows workspace has exactly the same protection as another drive.
-	dir := filepath.Join(t.TempDir(), "AppData", "Roaming", "BeefTV")
+	dir := filepath.Join(t.TempDir(), "AppData", "Roaming", "VisiDeepAI")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}

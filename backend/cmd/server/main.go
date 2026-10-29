@@ -14,15 +14,21 @@ import (
 	"syscall"
 	"time"
 
+	"infinite-canvas/backend/internal/app"
 	"infinite-canvas/backend/internal/asset"
 	"infinite-canvas/backend/internal/auth"
 	"infinite-canvas/backend/internal/bootstrap"
 	"infinite-canvas/backend/internal/credits"
 	_ "infinite-canvas/backend/internal/database/postgresdriver"
+	"infinite-canvas/backend/internal/handler"
+	"infinite-canvas/backend/internal/hostedadmin"
 	"infinite-canvas/backend/internal/hostedapi"
+	"infinite-canvas/backend/internal/manju"
+	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/payment"
 	"infinite-canvas/backend/internal/repository"
 	"infinite-canvas/backend/internal/storageconfig"
+	localtask "infinite-canvas/backend/internal/task"
 
 	"github.com/gin-gonic/gin"
 )
@@ -37,23 +43,70 @@ func main() {
 
 // registerHostedRoutes 是服务端专属装配点：对象存储后台入口只在这里出现，
 // 因此 cmd/desktop 的依赖图不会包含托管包。
-func registerHostedRoutes(hosted bootstrap.HostedContext) error {
+func registerHostedRoutes(ctx context.Context, hosted bootstrap.HostedContext) error {
 	// 账号与会话：托管形态的唯一登录入口，桌面入口不引用这里。
+	creditService := credits.New(hosted.Repository, credits.Config{})
 	authService := auth.New(hosted.Repository, auth.Config{})
+	hostedAdminService := hostedadmin.New(hosted.Repository, authService, creditService)
+	authService.SetRegistrationPolicyPort(hosted.Service)
 	hostedapi.RegisterAuthRoutes(hosted.API, authService, hostedapi.AuthOptions{
 		BootstrapAdminUsername: os.Getenv("CANVAS_BOOTSTRAP_ADMIN_USERNAME"),
+		RegistrationBonus: func(user *model.User, amount int64) error {
+			_, err := creditService.Grant(user.ID, credits.FromWholeCredits(amount), "system", "新用户注册赠送", "registration-bonus:"+user.ID)
+			return err
+		},
 	})
 
+	// 注册策略与邀请码：管理员可控制开放/邀请码/关闭，生成和停用都留痕。
+	// 系统管理：用户、项目、素材、流水、站点配置与审计统一在托管服务端装配。
+	hostedapi.RegisterHostedAdminRoutes(hosted.API, hostedAdminService,
+		hostedapi.SessionUserResolver(authService), hosted.Service.RequireAdmin)
+	hostedapi.RegisterPublicSiteRoutes(hosted.API, hostedAdminService)
+	handler.RegisterHostedPublicResourceRoutes(hosted.API, hosted.Service)
+
+	hostedapi.RegisterInviteCodeAdminRoutes(hosted.API, hosted.Service,
+		hostedapi.SessionUserResolver(authService), hosted.Service.RequireAdmin)
+
 	// 积分：用户看钱包与流水，管理员人工加减积分，全部写不可变流水。
-	creditService := credits.New(hosted.Repository, credits.Config{})
 	creditActor := hostedapi.SessionUserResolver(authService)
 	hostedapi.RegisterCreditRoutes(hosted.API, creditService, creditActor)
 	hostedapi.RegisterCreditAdminRoutes(hosted.API, creditService, hosted.Repository,
 		creditActor, hosted.Service.RequireAdmin)
 
+	// 漫剧工作室：项目成员与不可变 P0 锁只在托管入口提供，身份来自登录会话。
+	manjuService := manju.New(hosted.Repository)
+	manjuService.SetScriptTaskCreator(func(userID string, request localtask.CreateRequest) (*model.Task, error) {
+		return hosted.Service.CreateTask(userID, app.CreateTaskRequest{
+			ProjectID:      request.ProjectID,
+			Type:           request.Type,
+			Operation:      request.Operation,
+			Prompt:         request.Prompt,
+			Provider:       request.Provider,
+			Model:          request.Model,
+			LogicalModelID: request.LogicalModelID,
+			Input:          request.Input,
+			TraceID:        request.TraceID,
+			RequestID:      request.RequestID,
+		})
+	})
+	hostedapi.RegisterManjuRoutes(hosted.API, manjuService, creditActor)
+
 	// 价格：三张价格规则表统一走后台 CRUD，运行时按生效区间报价。
 	pricingService := credits.NewPricing(hosted.Repository, credits.Config{})
+	hostedapi.RegisterPricingQuoteRoutes(hosted.API, newPricingQuoteResolver(pricingService, hosted.Repository), creditActor)
 	hostedapi.RegisterPricingAdminRoutes(hosted.API, pricingService, creditActor, hosted.Service.RequireAdmin)
+
+	// 创作端只读取公开模型目录：真实 Base URL、密钥和渠道关系都不下发给浏览器。
+	handler.RegisterModelCatalogRoutes(hosted.API, hosted.Service)
+
+	// 模型渠道：后台管理上游渠道与渠道模型，密钥加密落库、列表只回显掩码。
+	hostedapi.RegisterChannelAdminRoutes(hosted.API, hosted.Service,
+		hostedapi.SessionUserResolver(authService), hosted.Service.RequireAdmin)
+
+	// 创作模板：工作流、提示词、画风统一落库，后台增删改，用户端后续按 kind 读取。
+	hostedapi.RegisterCreationCatalogAdminRoutes(hosted.API, hosted.Service,
+		hostedapi.SessionUserResolver(authService), hosted.Service.RequireAdmin)
+	hostedapi.RegisterCreationCatalogPublicRoutes(hosted.API, hosted.Service)
 
 	// 任务计费：提交时按价格规则冻结，成功结算，失败/取消释放。
 	// 实现只存在于服务端组合根，桌面二进制不会链接 credits。
@@ -72,6 +125,9 @@ func registerHostedRoutes(hosted bootstrap.HostedContext) error {
 	hostedapi.RegisterPaymentAdminRoutes(hosted.API, paymentConfig,
 		hostedapi.SessionUserResolver(authService),
 		hosted.Service.RequireAdmin)
+	go paymentConfig.RunExpireLoop(ctx, time.Minute, func(err error) {
+		log.Printf("payment order expiry cleanup failed: %v", err)
+	})
 	return nil
 }
 
@@ -82,6 +138,11 @@ type creditRecharger struct{ service *credits.Service }
 
 func (a creditRecharger) Recharge(userID string, amount int64, operatorID string, reason string, idempotencyKey string) error {
 	_, err := a.service.Recharge(userID, amount, operatorID, reason, idempotencyKey)
+	return err
+}
+
+func (a creditRecharger) Adjust(userID string, delta int64, operatorID string, reason string, idempotencyKey string) error {
+	_, err := a.service.Adjust(userID, delta, operatorID, reason, idempotencyKey)
 	return err
 }
 
@@ -114,13 +175,15 @@ func run(ctx context.Context) error {
 		return err
 	}
 	runtime, err := bootstrap.Open(ctx, bootstrap.Config{
-		Profile:                bootstrap.ProfileServer,
-		DataDir:                dataDir,
-		DatabaseDriver:         env("CANVAS_DATABASE_DRIVER", "sqlite"),
-		DatabaseURL:            os.Getenv("DATABASE_URL"),
-		ListenAddr:             env("CANVAS_BACKEND_ADDR", ":8080"),
-		AutoMigrate:            autoMigrate,
-		HostedRoutes:           registerHostedRoutes,
+		Profile:        bootstrap.ProfileServer,
+		DataDir:        dataDir,
+		DatabaseDriver: env("CANVAS_DATABASE_DRIVER", "sqlite"),
+		DatabaseURL:    os.Getenv("DATABASE_URL"),
+		ListenAddr:     env("CANVAS_BACKEND_ADDR", ":8080"),
+		AutoMigrate:    autoMigrate,
+		HostedRoutes: func(hosted bootstrap.HostedContext) error {
+			return registerHostedRoutes(ctx, hosted)
+		},
 		HostedRouterMiddleware: openHostedAuthMiddleware,
 		HostedBlobResolver:     openHostedBlobResolver,
 		ShutdownTimeout:        workerTimeout,

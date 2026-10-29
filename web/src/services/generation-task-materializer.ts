@@ -56,6 +56,10 @@ export function attachNodeEffectKey(taskId: string, nodeId: string, outputIndex:
     return `attach-node:${taskId}:${nodeId}:${outputIndex}`;
 }
 
+export function recoverNodeEffectKey(taskId: string, outputIndex: number): string {
+    return `recover-node-v2:${taskId}:${outputIndex}`;
+}
+
 export function attachMessageEffectKey(taskId: string, messageId: string, outputIndex: number): string {
     return `attach-message:${taskId}:${messageId}:${outputIndex}`;
 }

@@ -16,8 +16,8 @@ import (
 )
 
 var (
-	errRevoked      = errors.New("BeefTV 连接已失效，请重新连接")
-	errNotConnected = errors.New("尚未连接 BeefTV")
+	errRevoked      = errors.New("VisiDeep AI 连接已失效，请重新连接")
+	errNotConnected = errors.New("尚未连接 VisiDeep AI")
 	errStore        = errors.New("保存连接失败，请重试")
 )
 
@@ -81,7 +81,7 @@ func New(opts Options) (*Service, error) {
 		hostname, _ = os.Hostname()
 	}
 	if hostname == "" {
-		hostname = "BeefTV"
+		hostname = "VisiDeep AI"
 	}
 	clientVersion := strings.TrimSpace(opts.ClientVersion)
 	if clientVersion == "" {
@@ -334,7 +334,7 @@ func (s *Service) Start(ctx context.Context) (Summary, error) {
 	s.state.AuthorizationOrigin = s.origin
 	s.state.ProviderBaseURL = ""
 	s.state.Status = StateConnecting
-	s.state.LastError = "正在连接 BeefTV"
+	s.state.LastError = "正在连接 VisiDeep AI"
 	s.mu.Unlock()
 
 	device, err := s.requestDeviceCode()

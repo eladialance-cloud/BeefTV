@@ -2,6 +2,7 @@ package operations
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 
 	"infinite-canvas/backend/internal/canvas"
@@ -34,6 +35,92 @@ func opCanvasTaskBind(ctx *Context, params json.RawMessage) (any, error) {
 		return nil, err
 	}
 	return sanitizeForClient(projected), nil
+}
+
+func opCanvasTaskRecover(ctx *Context, params json.RawMessage) (any, error) {
+	var args struct {
+		CanvasID    string `json:"canvasId"`
+		TaskID      string `json:"taskId"`
+		OutputIndex int    `json:"outputIndex"`
+		Title       string `json:"title"`
+		Position    *struct {
+			X float64 `json:"x"`
+			Y float64 `json:"y"`
+		} `json:"position"`
+	}
+	if err := decodeParams(params, &args); err != nil {
+		return nil, err
+	}
+	args.CanvasID = strings.TrimSpace(args.CanvasID)
+	args.TaskID = strings.TrimSpace(args.TaskID)
+	task, err := ctx.Domain.WorkspaceTask(ctx.UserID, args.TaskID)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	if task == nil {
+		return nil, NotFound("task_not_found", "任务不存在")
+	}
+	raw, err := ctx.Domain.UserCanvasProject(ctx.UserID, args.CanvasID)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return nil, AsError(err)
+	}
+
+	nodeID := ""
+	for _, rawNode := range canvasNodes(doc) {
+		node, _ := rawNode.(map[string]any)
+		if nodeMetadataTaskID(node) == args.TaskID && recoveryNodeTypeMatchesTask(node, task.Type) {
+			nodeID, _ = node["id"].(string)
+			break
+		}
+	}
+	createMissing := strings.TrimSpace(nodeID) == ""
+	if createMissing {
+		nodeID = "recover-" + localtask.StableEntityID("recovery-node", args.TaskID, strconv.Itoa(args.OutputIndex))
+	}
+	title := strings.TrimSpace(args.Title)
+	if title == "" {
+		title = recoveryNodeTitle(task)
+	}
+	positionX, positionY := 120.0, 120.0
+	if args.Position != nil {
+		positionX, positionY = args.Position.X, args.Position.Y
+	}
+	receipt, err := taskbinding.Bind(&bindPorts{ctx: ctx}, ctx.UserID, taskbinding.Request{
+		CanvasID: args.CanvasID, TaskID: args.TaskID, NodeID: nodeID, OutputIndex: args.OutputIndex,
+		RecoveryMode: true, CreateMissingNode: createMissing, NodeTitle: title,
+		NodePositionX: positionX, NodePositionY: positionY,
+	})
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	projected, err := projectCanvasTaskBindOutcome(ctx, args.CanvasID, nodeID, receiptMap(receipt))
+	if err != nil {
+		return nil, err
+	}
+	return sanitizeForClient(projected), nil
+}
+
+func recoveryNodeTitle(task *model.Task) string {
+	if task == nil {
+		return "恢复结果"
+	}
+	label := "媒体"
+	switch strings.TrimSpace(task.Type) {
+	case "canvas_image":
+		label = "图片"
+	case "canvas_video":
+		label = "视频"
+	case "canvas_text", "text_replay":
+		label = "文本"
+	}
+	if modelName := strings.TrimSpace(task.Model); modelName != "" {
+		return modelName + " " + label + "恢复"
+	}
+	return label + "恢复"
 }
 
 func projectCanvasTaskBindReplay(ctx *Context, params json.RawMessage, stored any) (any, error) {
@@ -187,24 +274,67 @@ func (p *bindPorts) OwnedAsset(userID, assetID string) (*model.Asset, error) {
 	return p.ctx.Domain.OwnedAsset(userID, assetID)
 }
 
+func (p *bindPorts) CanBindRecoveredNode(userID string, task model.Task, nodeID string, allowCreate bool) (bool, error) {
+	originalNodeID := strings.TrimSpace(localtask.TargetBindingFromInput(task.InputJSON).NodeID)
+	nodeID = strings.TrimSpace(nodeID)
+	if originalNodeID == "" || nodeID == "" || nodeID == originalNodeID {
+		return false, nil
+	}
+	raw, err := p.ctx.Domain.UserCanvasProject(userID, strings.TrimSpace(task.ProjectID))
+	if err != nil {
+		return false, err
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return false, err
+	}
+	node := findDocNode(doc, nodeID)
+	if node != nil {
+		return recoveryNodeTypeMatchesTask(node, task.Type) && nodeMetadataTaskID(node) == strings.TrimSpace(task.ID), nil
+	}
+	if allowCreate {
+		return true, nil
+	}
+	return findDocNode(doc, originalNodeID) == nil, nil
+}
+
+func recoveryNodeTypeMatchesTask(node map[string]any, taskType string) bool {
+	nodeType, _ := node["type"].(string)
+	switch strings.TrimSpace(taskType) {
+	case "canvas_image":
+		return nodeType == "image"
+	case "canvas_video":
+		return nodeType == "video"
+	case "canvas_text", "text_replay":
+		return nodeType == "text"
+	default:
+		return false
+	}
+}
+
 func (p *bindPorts) BindExistingNode(userID string, patch taskbinding.NodePatch) (taskbinding.NodeBindResult, error) {
 	result, err := p.ctx.Domain.BindExistingCanvasNode(userID, canvas.TaskOutputBind{
-		CanvasID:    patch.CanvasID,
-		NodeID:      patch.NodeID,
-		TaskID:      patch.TaskID,
-		OutputIndex: patch.OutputIndex,
-		EffectKey:   patch.EffectKey,
-		MediaType:   patch.MediaType,
-		AssetID:     patch.AssetID,
-		ResourceID:  patch.ResourceID,
-		StorageKey:  patch.StorageKey,
-		Content:     patch.Content,
-		MimeType:    patch.MimeType,
-		Bytes:       patch.Bytes,
-		Width:       patch.Width,
-		Height:      patch.Height,
-		DurationMs:  patch.DurationMs,
-		Storyboard:  patch.Storyboard,
+		CanvasID:          patch.CanvasID,
+		NodeID:            patch.NodeID,
+		TaskID:            patch.TaskID,
+		OutputIndex:       patch.OutputIndex,
+		EffectKey:         patch.EffectKey,
+		MediaType:         patch.MediaType,
+		AssetID:           patch.AssetID,
+		ResourceID:        patch.ResourceID,
+		StorageKey:        patch.StorageKey,
+		Content:           patch.Content,
+		MimeType:          patch.MimeType,
+		Bytes:             patch.Bytes,
+		Width:             patch.Width,
+		Height:            patch.Height,
+		DurationMs:        patch.DurationMs,
+		Storyboard:        patch.Storyboard,
+		Metadata:          patch.Metadata,
+		CreateMissingNode: patch.CreateMissingNode,
+		RecoveryTitle:     patch.NodeTitle,
+		RecoveryX:         patch.NodePositionX,
+		RecoveryY:         patch.NodePositionY,
 	})
 	if err != nil {
 		return taskbinding.NodeBindResult{}, err
@@ -227,4 +357,15 @@ func bindEffectKey(params json.RawMessage) string {
 		return ""
 	}
 	return localtask.AttachNodeEffectKey(taskID, nodeID, args.OutputIndex)
+}
+
+func recoverNodeEffectKey(params json.RawMessage) string {
+	var args struct {
+		TaskID      string `json:"taskId"`
+		OutputIndex int    `json:"outputIndex"`
+	}
+	if json.Unmarshal(params, &args) != nil || strings.TrimSpace(args.TaskID) == "" {
+		return ""
+	}
+	return localtask.RecoverNodeEffectKey(args.TaskID, args.OutputIndex)
 }

@@ -28,6 +28,9 @@ type assistantChannel = modelcatalog.AssistantChannel
 type assistantConfigSnapshot = modelcatalog.AssistantConfigSnapshot
 
 func (s *Service) assistantConfig() (assistantConfigSnapshot, error) {
+	if s.IsHostedProfile() {
+		return s.hostedAssistantConfig()
+	}
 	var snapshot assistantConfigSnapshot
 	store, err := workspace.NewProviderConfig(s.dataDir)
 	if err != nil {
@@ -48,6 +51,76 @@ func (s *Service) assistantConfig() (assistantConfigSnapshot, error) {
 		return snapshot, assistantUnavailable(AssistantReasonModelNotConfigured, "本地模型配置无法解析")
 	}
 	snapshot.Revision = effective.Revision
+	return snapshot, nil
+}
+
+// hostedAssistantConfig mirrors the public system catalog into the assistant
+// snapshot. Hosted/admin model edits are database state; they must not depend
+// on a desktop local-model-config.json that the browser cannot write.
+func (s *Service) hostedAssistantConfig() (assistantConfigSnapshot, error) {
+	var snapshot assistantConfigSnapshot
+	if s == nil || s.repo == nil {
+		return snapshot, assistantUnavailable(AssistantReasonModelNotConfigured, "模型目录尚未初始化")
+	}
+	channels, err := s.repo.SystemChannels(true)
+	if err != nil {
+		return snapshot, err
+	}
+	for _, row := range channels {
+		if !row.Enabled {
+			continue
+		}
+		if err := s.decryptSystemChannelSecrets(&row); err != nil {
+			return snapshot, err
+		}
+		items, err := s.repo.ChannelModels(row.ID, false)
+		if err != nil {
+			return snapshot, err
+		}
+		if len(items) == 0 {
+			continue
+		}
+		channel := assistantChannel{
+			ID: row.ID, Name: row.PublicName(), BaseURL: row.BaseURL, APIKey: row.APIKey,
+			Enabled: true, Scope: "system", APIFormat: row.APIFormat,
+		}
+		for _, item := range items {
+			capability := strings.TrimSpace(item.Capability)
+			if capability == "" {
+				capability = s.capabilityForProtocol(item.Protocol)
+			}
+			channel.Models = append(channel.Models, item.ModelKey)
+			channel.ModelProfiles = append(channel.ModelProfiles, assistantModelProfile{
+				Model: item.ModelKey, Capability: capability, Protocol: string(item.Protocol),
+			})
+		}
+		snapshot.Channels = append(snapshot.Channels, channel)
+	}
+
+	for _, channel := range snapshot.Channels {
+		for _, profile := range channel.ModelProfiles {
+			modelKey := channel.ID + "::" + profile.Model
+			switch profile.Capability {
+			case "text":
+				if snapshot.TextModel != "" {
+					continue
+				}
+				protocol, ok := modelcatalog.ChannelModelProtocol(channel, profile.Model)
+				if ok && protocol != "" {
+					snapshot.AssistantModel = modelKey
+					snapshot.TextModel = modelKey
+				}
+			case "image":
+				if snapshot.ImageModel == "" {
+					snapshot.ImageModel = modelKey
+				}
+			case "video":
+				if snapshot.VideoModel == "" {
+					snapshot.VideoModel = modelKey
+				}
+			}
+		}
+	}
 	return snapshot, nil
 }
 

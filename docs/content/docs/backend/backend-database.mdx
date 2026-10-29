@@ -1,6 +1,6 @@
 ---
 title: 后端数据库
-description: BeefTV后端核心持久化表与状态边界
+description: VisiDeep AI后端核心持久化表与状态边界
 ---
 
 # 后端数据库
@@ -89,11 +89,11 @@ Agent 宿主在安装仓库锁定的依赖后，可从仓库根目录执行 `bun
 人工桌面验收须另行取得按候选 commit 构建的完整包。先关闭所有使用源工作区的程序，复制整个工作区到备份目录，再从备份复制一个测试目录；保留未打开过的备份。启动候选时显式设置 `CANVAS_DESKTOP_DATA_DIR` 为测试目录的绝对路径，核对启动日志及工作区内容后再操作。不得省略此变量而误用默认工作区。Windows PowerShell 示例（路径必须替换为实际独立目录）：
 
 ```powershell
-$env:CANVAS_DESKTOP_DATA_DIR = 'D:\BeefTV-tests\candidate-workspace'
-& 'D:\BeefTV-tests\candidate-app\BeefTV.exe'
+$env:CANVAS_DESKTOP_DATA_DIR = 'D:\VisiDeepAI-tests\candidate-workspace'
+& 'D:\VisiDeepAI-tests\candidate-app\VisiDeepAI.exe'
 ```
 
-测试包应解压到新目录，保留 `BeefTV.exe`、`plugins`、`cli`、`agent-host` 完整布局，并按提供方的签名清单核对签名、大小及 SHA-256；本轮没有发布可下载包。旧 Windows 升级器不能直接接受这个布局，过渡升级器的本地方案在 `codex/product-windows-bridge-20260930`，尚未完成 Windows 真机验收或更新源部署。不要把新包只覆盖到旧目录、绕过验签或运行正式发布工作流来代替测试。
+测试包应解压到新目录，保留 `VisiDeepAI.exe`、`plugins`、`cli`、`agent-host` 完整布局，并按提供方的签名清单核对签名、大小及 SHA-256；本轮没有发布可下载包。旧 Windows 升级器不能直接接受这个布局，过渡升级器的本地方案在 `codex/product-windows-bridge-20260930`，尚未完成 Windows 真机验收或更新源部署。不要把新包只覆盖到旧目录、绕过验签或运行正式发布工作流来代替测试。
 
 人工检查画布与任务历史、失败诊断、重启后输出找回、CLI/MCP 操作回放、独立音轨和字幕成片、ZIP 在空工作区导入。生成类上游调用须另行获得预算授权。回滚时退出候选，把未升级的完整备份复制到另一个新目录，再使用匹配该备份的旧包显式指向该目录；禁止旧 Agent v6 或旧整合 v8 程序打开升级后的 v9 目录。
 
@@ -258,6 +258,23 @@ HTTPS 图片提交前读取同源 `/models` 元数据，仅成功响应明确声
 - `idx_project_asset_candidates_project_unit_status`、`idx_project_asset_candidates_project_status_category`：章节候选和待确认分类队列。
 - `idx_tasks_user_project_created`：项目任务恢复读取。
 
+## 漫剧工作室（托管）
+
+| 表 | 用途 | 关键边界 |
+| --- | --- | --- |
+| `manju_project_members` | 保存漫剧项目协作者及项目角色 | `(project_id, user_id)` 唯一；项目归属人仍由 `projects.user_id` 表达，不写入成员表；重复邀请更新原记录 |
+| `manju_lock_receipts` | 保存 P0 立项锁的不可变 revision 回执 | `(project_id, revision)` 唯一；新锁递增 revision，旧锁标记 `superseded`；锁快照 JSON 与 SHA-256 一并保存 |
+| `manju_project_model_bindings` | 保存项目级文本、图片、视频模型路由 | `project_id` 唯一；只允许引用画布后台已启用且 capability 匹配的系统渠道模型；不保存计费、支付或对象存储配置 |
+| `manju_project_states` | 保存 P0-P3 的不可变 `project_state.json` 快照 | 按 `lock_revision` 和 `created_at` 读取最新合法快照；V7.4.26 上游当前声明的 schema 值为 `7.4.23`，不得按运行版本号强行改写 |
+| `manju_script_runs` / `manju_asset_runs` / `manju_production_runs` | 保存 P1、P2、P3-P5 的持久运行链 | 运行链绑定同一 P0 revision；重新生成建立新版本，旧运行标记为 `SUPERSEDED`，历史工件不覆盖 |
+| `manju_script_stages` / `manju_asset_stages` / `manju_production_stages` | 保存阶段状态、任务号、不可变工件指针和错误 | 阶段确认前必须完成上游门禁；文本任务失败、机检失败或真实媒体未就绪时保持阻断 |
+| `manju_production_previs` | 保存 P4.5 预演故事板文本任务与工件指针 | 每个生产链一条；只有 `check_p45.py` ERROR 清零后才写 `PREVIS_STORYBOARD.md` 工件并进入 `READY`；P4 锁定时必须有 `READY` 工件 |
+| `manju_production_artifacts` | 保存 P3 分镜、P4 投喂稿、P4.5 预演故事板和 P5 质检工件 | 内容按版本不可变保存并记录 SHA-256；P4.5 使用独立 kind `PREVIS_STORYBOARD.md` |
+| `manju_production_images` / `manju_production_videos` | 保存画布真实故事板图与视频任务映射 | 只有成功输出和真实 Resource 双重核验后才写入 `resource_id`；文本机检不能冒充媒体生成结果 |
+| `manju_canvas_imports` | 保存 P2/P3/P4 生产包与画布的导入映射 | 以 package hash、run 和 canvas 校验防止旧包覆盖新画布 |
+
+三张表只在托管 server profile 建立，桌面本地迁移不创建。漫剧接口只接受 `type = "manju"` 的项目，因此普通画布项目不能通过漫剧详情、锁或成员接口读写。模型路由是项目级选择，不替代 P0 对视频业务模型、画幅、目标时长和多段段缝规则的服务端锁定。
+
 ## 模型渠道与目录
 
 | 表 | 用途 | 关键边界 |
@@ -297,6 +314,24 @@ HTTPS 图片提交前读取同源 `/models` 元数据，仅成功响应明确声
 账号文件容量只统计 `ready` 资源，并按 Provider、Endpoint、Bucket、ObjectKey 对同一物理对象去重。上传中或失败记录不占用已存储容量。后台每小时检查资源生命周期：超过 1 小时的 `pending/failed` 记录，以及超过 24 小时仍没有任何素材、画布、任务或其他业务引用的 `ready` 记录，会在再次校验引用后删除数据库记录并写入 `resource_deletion_jobs`，由幂等 Worker 清理物理对象。
 
 素材状态为 `archived` 时进入回收站。后台按“资源与请求策略”中的 `recycleBinRetentionDays` 定期扫描过期项；`0` 表示永久保留。自动清理与用户手动彻底删除复用同一 service 引用校验和 `resource_deletion_jobs` Outbox，仍被画布、项目、任务或其他业务记录引用的素材不会被删除。
+
+## 充值、支付与对账（托管）
+
+`topup_products` 保存充值商品快照参数，`payment_orders` 保存每次下单的价格、积分和状态，`payment_notifications` 保存网关回调幂等记录，`payment_provider_configs` 保存支付宝 / 微信商户配置。四张表都只在 server profile 的托管模型中建立，桌面本地迁移不会创建它们。
+
+新订单状态为 `pending_payment`，创建时写入 30 分钟可支付截止时间 `expires_at`。服务端每分钟清理一次超时订单，把状态改为 `closed`；用户在超时后再拉起支付会被拒绝，必须先重新下单。若网关在本地超时关闭后仍回调确认成功，回调路径按网关事实入账，避免用户已付款但没有积分。
+
+支付回调以 `(provider, provider_notification_id)` 唯一，重复通知不重复入账。管理员也可以手工确认已收款；已关闭订单只允许网关回调入账，不允许手工确认。
+
+退款只在订单状态为 `paid` 时允许，必须先填写退款原因。系统不代替管理员调用第三方网关退款接口；管理员在支付平台完成退款后，在后台记录外部退款单号，系统通过积分账本的负数 `Adjust` 冲回对应积分，幂等键为 `topup:<orderID>:refund`。如果用户已经消费完这部分积分，负数调整失败，订单保持未退款状态，需先做人工积分调整或联系用户补足。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/admin/payment-orders/reconciliation` | 对账快照：状态计数、已结算金额 / 积分、已支付未入账、超时未关、未处理及失败回调 |
+| POST | `/api/admin/payment-orders/expire` | 管理员手动关闭一批超时未支付订单 |
+| POST | `/api/admin/payment-orders/:id/refund` | 记录退款并按积分账本冲回；请求体包含 `reason` 与可选 `providerRefundNo` |
+
+对账快照中的“已结算金额 / 积分”只统计 `paid` 订单，已退款订单不计入当前收入。它是对账辅助视图，不相信前端传入金额；生产环境仍应与支付宝 / 微信商户平台账单逐笔核对。
 
 ## 对象存储配置（管理后台）
 

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { Settings2 } from "lucide-react";
+import { Coins, Settings2 } from "lucide-react";
 import { Button } from "antd";
 
 import { VideoSettingsPanel, videoResolutionLabel, videoSecondsLabel, videoSizeLabel } from "@/components/video-settings-panel";
+import { useCanvasVideoCreditEstimate } from "@/hooks/use-canvas-video-credit-estimate";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { modelCapabilityConfigFor, resolveVideoRatioValue, resolveVideoResolutionValue } from "@/lib/model-capabilities";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
@@ -31,10 +32,12 @@ export function CanvasVideoSettingsPopover({ config, onConfigChange, buttonClass
     const sizeSupported = Boolean(videoProfile?.ratios.length);
     const resolution = videoProfile ? resolveVideoResolutionValue(videoProfile, config.vquality) : "";
     const size = videoProfile ? resolveVideoRatioValue(videoProfile, config.size) : "";
+    const creditEstimate = useCanvasVideoCreditEstimate(config);
     const summary = [
         ...(resolutionSupported ? [videoResolutionLabel(resolution)] : []),
         ...(sizeSupported ? [taskConstraints?.ratioLabel || videoSizeLabel(size)] : []),
         taskConstraints?.durationLocked ? "随原视频时长" : videoSecondsLabel(config.videoSeconds, videoProfile),
+        creditEstimate.text,
     ].join(" · ");
     const displaySummary = summaryOverride || summary;
 
@@ -60,12 +63,12 @@ export function CanvasVideoSettingsPopover({ config, onConfigChange, buttonClass
         };
     }, [open]);
 
-    const panel = open && buttonRect ? <VideoSettingsPortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={config} onConfigChange={onConfigChange} taskConstraints={taskConstraints}>{children}</VideoSettingsPortal> : null;
+    const panel = open && buttonRect ? <VideoSettingsPortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={config} onConfigChange={onConfigChange} taskConstraints={taskConstraints} creditEstimate={creditEstimate}>{children}</VideoSettingsPortal> : null;
 
     return (
         <>
             <span ref={buttonRef} className="inline-flex min-w-0">
-                <Button size="small" type="text" className={`canvas-generation-settings-trigger ${buttonClassName || "!h-8 !max-w-[170px] !justify-start !rounded-full !px-2.5"}`} style={{ background: theme.node.fill, color: theme.node.text }} icon={<Settings2 className="size-3.5" />} aria-expanded={open} aria-label={`高级设置：${displaySummary}`} title={`高级设置 · ${displaySummary}`} onClick={() => setOpen((current) => !current)}>
+                <Button size="small" type="text" className={`canvas-generation-settings-trigger ${buttonClassName || "!h-8 !max-w-[230px] !justify-start !rounded-full !px-2.5"}`} style={{ background: theme.node.fill, color: theme.node.text }} icon={<Settings2 className="size-3.5" />} aria-expanded={open} aria-label={`高级设置：${displaySummary}`} title={`高级设置 · ${displaySummary}`} onClick={() => setOpen((current) => !current)}>
                     <span className="truncate">{displaySummary}</span>
                 </Button>
             </span>
@@ -82,10 +85,12 @@ function VideoSettingsPortal({
     config,
     onConfigChange,
     taskConstraints,
+    creditEstimate,
     children,
 }: {
     children?: ReactNode;
     taskConstraints?: VideoSettingsConstraints;
+    creditEstimate: ReturnType<typeof useCanvasVideoCreditEstimate>;
     buttonRect: DOMRect;
     panelRef: RefObject<HTMLDivElement | null>;
     placement: CanvasVideoSettingsPopoverProps["placement"];
@@ -129,6 +134,18 @@ function VideoSettingsPortal({
             onClick={(event) => event.stopPropagation()}
         >
             <VideoSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-3" taskConstraints={taskConstraints} />
+            <div className="mt-3 flex items-center justify-between gap-3 border-t pt-3" style={{ borderColor: theme.toolbar.border }} aria-live="polite">
+                <span className="flex min-w-0 items-center gap-1.5 text-[var(--fs-label)]" style={{ color: theme.node.muted }}>
+                    <Coins className="size-3.5 shrink-0" />
+                    本次预计
+                </span>
+                <span className="min-w-0 text-right">
+                    <span className={`block truncate text-[var(--fs-body)] font-semibold ${creditEstimate.configured ? "" : "text-amber-500"}`}>{creditEstimate.text}</span>
+                    <span className="mt-0.5 block text-[var(--fs-tiny)]" style={{ color: theme.node.muted }}>
+                        {creditEstimate.loading ? "正在读取服务端价格" : creditEstimate.source === "server" ? "提交时按服务端价格快照扣费" : creditEstimate.source === "local" ? "本地价格仅作参考" : "请管理员配置有效价格"}
+                    </span>
+                </span>
+            </div>
             {children ? <div className="mt-3">{children}</div> : null}
         </div>,
         document.body,

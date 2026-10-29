@@ -83,7 +83,7 @@ type categoryCopy struct {
 }
 
 var categoryCopies = map[FailureCategory]categoryCopy{
-	CategoryLocalDiskFull:       {Reason: "本地磁盘空间不足，无法保存数据", Action: "请清理 BeefTV 数据目录所在磁盘；已有生成结果请优先取回原任务，不要重复生成"},
+	CategoryLocalDiskFull:       {Reason: "本地磁盘空间不足，无法保存数据", Action: "请清理 VisiDeep AI 数据目录所在磁盘；已有生成结果请优先取回原任务，不要重复生成"},
 	CategoryLocalCredential:     {Reason: "本地算力凭据读取失败", Action: "请检查工作区数据目录并重新连接算力账号；不要删除工作区密钥"},
 	CategoryAuth:                {Reason: "模型服务鉴权失败", Action: "请检查 API Key 后重试"},
 	CategoryPermission:          {Reason: "当前渠道没有使用该模型的权限", Action: "请更换模型或检查渠道权限"},
@@ -765,7 +765,13 @@ func walkProviderFields(payload map[string]any, depth int) extractedFields {
 	if payload == nil || depth > maxWalkDepth {
 		return fields
 	}
-	fields.Code = firstNonEmpty(fields.Code, allowlistedString(payload["code"]))
+	fields.Code = firstNonEmpty(
+		fields.Code,
+		allowlistedString(payload["upstream_code"]),
+		allowlistedString(payload["upstreamCode"]),
+		allowlistedString(payload["error_code"]),
+		allowlistedString(payload["code"]),
+	)
 	fields.Type = firstNonEmpty(fields.Type, allowlistedString(payload["type"]))
 	fields.Status = firstNonEmpty(fields.Status, allowlistedString(payload["status"]))
 	fields.Message = firstNonEmpty(fields.Message, allowlistedString(payload["message"]), allowlistedString(payload["msg"]), allowlistedString(payload["detail"]))
@@ -1340,7 +1346,7 @@ func outboundPolicyCopy(message string) (categoryCopy, bool) {
 	case "外部服务域名解析失败":
 		return categoryCopy{
 			Reason: "模型服务域名解析失败",
-			Action: "请检查渠道服务地址中的域名是否正确，并确认运行 BeefTV 的设备能够正常联网和解析该域名",
+			Action: "请检查渠道服务地址中的域名是否正确，并确认运行 VisiDeep AI 的设备能够正常联网和解析该域名",
 		}, true
 	}
 	return categoryCopy{}, false

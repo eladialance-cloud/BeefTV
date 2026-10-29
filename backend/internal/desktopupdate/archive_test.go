@@ -14,11 +14,11 @@ func TestSanitizeZipNameRejectsUnsafePaths(t *testing.T) {
 		"../etc/passwd",
 		"/tmp/x",
 		"//server/share/x",
-		`C:/Windows/BeefTV.exe`,
-		`C:\Windows\BeefTV.exe`,
+		`C:/Windows/VisiDeepAI.exe`,
+		`C:\Windows\VisiDeepAI.exe`,
 		`\\server\share\x`,
-		"BeefTV.app/../../outside",
-		"BeefTV.app/Contents/MacOS/./BeefTV",
+		"VisiDeepAI.app/../../outside",
+		"VisiDeepAI.app/Contents/MacOS/./VisiDeep AI",
 		"",
 		"\x00foo",
 	}
@@ -27,8 +27,8 @@ func TestSanitizeZipNameRejectsUnsafePaths(t *testing.T) {
 			t.Fatalf("accepted %q", name)
 		}
 	}
-	rel, dir, err := sanitizeZipName("BeefTV.app/Contents/MacOS/BeefTV")
-	if err != nil || dir || rel != "BeefTV.app/Contents/MacOS/BeefTV" {
+	rel, dir, err := sanitizeZipName("VisiDeepAI.app/Contents/MacOS/VisiDeepAI")
+	if err != nil || dir || rel != "VisiDeepAI.app/Contents/MacOS/VisiDeepAI" {
 		t.Fatalf("got %q dir=%v err=%v", rel, dir, err)
 	}
 }
@@ -54,7 +54,7 @@ func TestExtractSecureZipRejectsMaliciousArchives(t *testing.T) {
 			t.Fatal(err)
 		}
 		writer := zip.NewWriter(file)
-		header := &zip.FileHeader{Name: "BeefTV.app/Contents/MacOS/BeefTV"}
+		header := &zip.FileHeader{Name: "VisiDeepAI.app/Contents/MacOS/VisiDeepAI"}
 		header.SetMode(os.ModeSymlink | 0o755)
 		entry, err := writer.CreateHeader(header)
 		if err != nil {
@@ -80,7 +80,7 @@ func TestExtractSecureZipRejectsMaliciousArchives(t *testing.T) {
 		}
 		writer := zip.NewWriter(file)
 		for i := 0; i < 2; i++ {
-			entry, err := writer.Create("BeefTV.app/Contents/MacOS/BeefTV")
+			entry, err := writer.Create("VisiDeepAI.app/Contents/MacOS/VisiDeepAI")
 			if err != nil {
 				t.Fatal(err)
 			}

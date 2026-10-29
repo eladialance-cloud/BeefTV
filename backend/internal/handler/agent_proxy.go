@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -55,7 +56,7 @@ func RegisterAgentProxyRoutes(r gin.IRouter, svc *app.Service, clients *agentops
 
 	guard := func(c *gin.Context, requireWrite bool) bool {
 		// 与 /agent-ops 完全相同的来源校验：Host/RemoteAddr/Origin 都必须是本机且同源。
-		if !isLoopbackRequest(c.Request) {
+		if !assistantReadRequestAllowed(c) {
 			c.JSON(http.StatusForbidden, gin.H{"code": http.StatusForbidden, "reason": "forbidden", "msg": "内置助手入口只接受本机同源请求"})
 			return false
 		}
@@ -81,7 +82,15 @@ func RegisterAgentProxyRoutes(r gin.IRouter, svc *app.Service, clients *agentops
 	}
 
 	// hostOpsURL 用请求自身的 Host 推导操作层基址：桌面形态监听随机端口，猜端口会指向别处。
-	hostOpsURL := func(c *gin.Context) string { return "http://" + c.Request.Host + "/api" }
+	hostOpsURL := func(c *gin.Context) string {
+		if override := strings.TrimRight(strings.TrimSpace(os.Getenv("BEEFTV_AGENT_OPS_URL")), "/"); override != "" {
+			if !strings.HasSuffix(override, "/api") {
+				override += "/api"
+			}
+			return override
+		}
+		return "http://" + c.Request.Host + "/api"
+	}
 	launchToken := func(c *gin.Context) string { return strings.TrimSpace(c.GetHeader(httptransport.LaunchTokenHeader)) }
 
 	unavailable := func(c *gin.Context, reason string) {
@@ -140,7 +149,7 @@ func RegisterAgentProxyRoutes(r gin.IRouter, svc *app.Service, clients *agentops
 	}
 	guardedStatus := func(c *gin.Context) {
 		// 状态查询不含任何凭据，只做本机同源校验：面板需要它在未签发会话时也能显示"未就绪"。
-		if !isLoopbackRequest(c.Request) {
+		if !assistantReadRequestAllowed(c) {
 			c.JSON(http.StatusForbidden, gin.H{"code": http.StatusForbidden, "reason": "forbidden"})
 			return
 		}

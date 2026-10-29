@@ -1,5 +1,6 @@
 import { nanoid } from "nanoid";
 
+import { manjuAssetHandleAtY, manjuAssetHandleY } from "@/lib/canvas/canvas-manju-asset-table";
 import type { CanvasBatchOperation, CanvasBatchReferenceColumn, CanvasBatchRow, CanvasBatchTableData, CanvasConnection, CanvasNodeData } from "@/types/canvas";
 
 export const TRY_ON_BATCH_PROMPT = "参考图1是人物原图，参考图2是目标服装。保持人物身份、五官、姿态和背景不变，将人物服装替换为参考图2中的款式。准确还原服装版型、颜色、材质、纹理和装饰细节，穿着关系自然，光影与原图一致。";
@@ -44,8 +45,10 @@ export function batchReferenceColumnId(handleId?: string) {
     return handleId?.startsWith(BATCH_REFERENCE_HANDLE_PREFIX) ? handleId.slice(BATCH_REFERENCE_HANDLE_PREFIX.length) : undefined;
 }
 
-export function batchReferenceHandleY(node: CanvasNodeData, handleId?: string) {
+export function batchReferenceHandleY(node: CanvasNodeData, handleId?: string, scrollTop = 0) {
     if (node.type !== "batch-table") return undefined;
+    const manjuY = manjuAssetHandleY(node, handleId, scrollTop);
+    if (manjuY !== undefined) return manjuY;
     const columnId = batchReferenceColumnId(handleId);
     const columns = batchReferenceColumns(node.metadata?.batchTable);
     const index = columnId ? columns.findIndex((column) => column.id === columnId) : 0;
@@ -53,8 +56,10 @@ export function batchReferenceHandleY(node: CanvasNodeData, handleId?: string) {
     return node.position.y + BATCH_REFERENCE_HANDLE_TOP + index * BATCH_REFERENCE_HANDLE_GAP;
 }
 
-export function batchReferenceHandleAtY(node: CanvasNodeData, worldY: number, hitRadius = 18) {
+export function batchReferenceHandleAtY(node: CanvasNodeData, worldY: number, hitRadius = 18, scrollTop = 0) {
     if (node.type !== "batch-table") return undefined;
+    const manjuHandle = manjuAssetHandleAtY(node, worldY, scrollTop, hitRadius);
+    if (manjuHandle) return manjuHandle;
     const columns = batchReferenceColumns(node.metadata?.batchTable);
     let nearestIndex = -1;
     let nearestDistance = Number.POSITIVE_INFINITY;
@@ -126,12 +131,14 @@ export function batchInputColumns(node: CanvasNodeData, connections: CanvasConne
     const columns = batchReferenceColumns(node.metadata?.batchTable);
     const indexById = new Map(columns.map((column, index) => [column.id, index]));
     const result = columns.map(() => [] as string[]);
-    connections.filter((connection) => connection.toNodeId === node.id && connection.relation !== "batch-output").forEach((connection) => {
-        const columnId = batchReferenceColumnId(connection.toHandleId);
-        const index = columnId ? indexById.get(columnId) : 0;
-        if (index === undefined || result[index].includes(connection.fromNodeId)) return;
-        result[index].push(connection.fromNodeId);
-    });
+    connections
+        .filter((connection) => connection.toNodeId === node.id && connection.relation !== "batch-output")
+        .forEach((connection) => {
+            const columnId = batchReferenceColumnId(connection.toHandleId);
+            const index = columnId ? indexById.get(columnId) : 0;
+            if (index === undefined || result[index].includes(connection.fromNodeId)) return;
+            result[index].push(connection.fromNodeId);
+        });
     return result;
 }
 

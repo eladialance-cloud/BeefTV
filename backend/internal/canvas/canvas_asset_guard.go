@@ -2,6 +2,7 @@ package canvas
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"infinite-canvas/backend/internal/asset"
 	"infinite-canvas/backend/internal/assets"
@@ -33,7 +34,10 @@ func (s *Service) validateCanvasMediaAssetsWithCandidates(userID string, raw jso
 	resourceIDSet := make(map[string]struct{}, len(references))
 	for _, reference := range references {
 		if reference.AssetID == "" {
-			return kernel.BadAuthRequest("画布媒体尚未进入素材库，请等待同步完成后重试")
+			return kernel.BadAuthRequest(fmt.Sprintf(
+				"画布媒体尚未进入素材库（assetId为空，resourceId=%s），请等待同步完成后重试",
+				reference.ResourceID,
+			))
 		}
 		assetIDSet[reference.AssetID] = struct{}{}
 		resourceIDSet[reference.ResourceID] = struct{}{}
@@ -70,10 +74,18 @@ func (s *Service) validateCanvasMediaAssetsWithCandidates(userID string, raw jso
 		}
 		resourceIDs, assetExists := assetResources[reference.AssetID]
 		if !assetExists {
-			return kernel.BadAuthRequest("画布媒体尚未进入素材库，请等待同步完成后重试")
+			return kernel.BadAuthRequest(fmt.Sprintf(
+				"画布媒体尚未进入素材库（assetId=%s，resourceId=%s），请等待同步完成后重试",
+				reference.AssetID,
+				reference.ResourceID,
+			))
 		}
 		if _, matches := resourceIDs[reference.ResourceID]; !matches {
-			return kernel.BadAuthRequest("画布媒体与素材库记录不一致，请重新同步")
+			return kernel.BadAuthRequest(fmt.Sprintf(
+				"画布媒体与素材库记录不一致（assetId=%s，resourceId=%s），请重新同步",
+				reference.AssetID,
+				reference.ResourceID,
+			))
 		}
 	}
 	return nil

@@ -7,6 +7,7 @@ import (
 	"infinite-canvas/backend/internal/model"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // CreateUserWithIdentity writes the hosted user and its credential in one
@@ -59,8 +60,36 @@ func (r *Repository) UserByUsername(username string) (*model.User, bool, error) 
 	return &item, true, nil
 }
 
+// UpdatePasswordHash replaces the password credential in place. The boolean
+// reports whether a password identity existed for the user.
+func (r *Repository) UpdatePasswordHash(userID string, provider string, passwordHash string, updatedAt time.Time) (bool, error) {
+	result := r.db.Model(&model.UserIdentity{}).
+		Where("user_id = ? AND provider = ?", userID, provider).
+		Updates(map[string]any{"password_hash": passwordHash, "updated_at": updatedAt})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}
+
+// CreateAuthSession keeps exactly one active login per account. The user row
+// lock serializes concurrent logins, then all older sessions are revoked in the
+// same transaction as the new session insert.
 func (r *Repository) CreateAuthSession(session *model.AuthSession) error {
-	return r.db.Create(session).Error
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var user model.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("id").
+			First(&user, "id = ?", session.UserID).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.AuthSession{}).
+			Where("user_id = ? AND revoked_at IS NULL", session.UserID).
+			Update("revoked_at", session.CreatedAt).Error; err != nil {
+			return err
+		}
+		return tx.Create(session).Error
+	})
 }
 
 func (r *Repository) AuthSessionByTokenHash(tokenHash string) (*model.AuthSession, bool, error) {

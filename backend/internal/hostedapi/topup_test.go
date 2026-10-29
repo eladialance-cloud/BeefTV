@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"infinite-canvas/backend/internal/kernel"
 	"infinite-canvas/backend/internal/model"
@@ -99,6 +100,30 @@ func (f *fakeTopupService) ClosePaymentOrder(orderID string, reason string) (*mo
 		}
 	}
 	return nil, kernel.NotFound("支付订单不存在")
+}
+
+func (f *fakeTopupService) RefundPaymentOrder(_ *model.User, orderID string, reason string, providerRefundNo string) (*model.PaymentOrder, error) {
+	for index := range f.orders {
+		if f.orders[index].ID == orderID {
+			now := time.Now().UTC()
+			f.orders[index].Status = model.PaymentOrderRefunded
+			f.orders[index].RefundedAt = &now
+			f.orders[index].RefundReason = reason
+			f.orders[index].RefundProviderNo = providerRefundNo
+			f.orders[index].RefundReversed = true
+			updated := f.orders[index]
+			return &updated, nil
+		}
+	}
+	return nil, kernel.NotFound("支付订单不存在")
+}
+
+func (f *fakeTopupService) ExpirePendingOrders(limit int) (int64, error) {
+	return 0, nil
+}
+
+func (f *fakeTopupService) Reconcile() (*payment.Reconciliation, error) {
+	return &payment.Reconciliation{OrdersByStatus: map[string]int64{}}, nil
 }
 
 func newTopupTestEnv(t *testing.T) (*gin.Engine, *fakeTopupService) {
@@ -214,5 +239,25 @@ func TestTopupOrderLifecycle(t *testing.T) {
 	closed := paymentRequest(t, engine, http.MethodPost, "/api/admin/payment-orders/o-1/close", map[string]any{"reason": "x"}, "admin")
 	if closed.Code != http.StatusOK {
 		t.Fatalf("关闭订单应 200，得到 %d", closed.Code)
+	}
+}
+
+func TestTopupAdminPaymentOrderReconciliationRefundAndExpireRoutes(t *testing.T) {
+	engine, service := newTopupTestEnv(t)
+	service.orders = append(service.orders, model.PaymentOrder{ID: "o-paid", UserID: testAliceID, ProductID: "p-1", ProductName: "1000 积分", Provider: model.PaymentProviderAlipay, AmountFen: 990, Credits: 1100, Status: model.PaymentOrderPaid})
+
+	reconciliation := paymentRequest(t, engine, http.MethodGet, "/api/admin/payment-orders/reconciliation", nil, "admin")
+	if reconciliation.Code != http.StatusOK {
+		t.Fatalf("对账接口应 200，得到 %d: %s", reconciliation.Code, reconciliation.Body.String())
+	}
+
+	refunded := paymentRequest(t, engine, http.MethodPost, "/api/admin/payment-orders/o-paid/refund", map[string]any{"reason": "用户申请", "providerRefundNo": "refund-1"}, "admin")
+	if refunded.Code != http.StatusOK {
+		t.Fatalf("退款接口应 200，得到 %d: %s", refunded.Code, refunded.Body.String())
+	}
+
+	expired := paymentRequest(t, engine, http.MethodPost, "/api/admin/payment-orders/expire", nil, "admin")
+	if expired.Code != http.StatusOK {
+		t.Fatalf("超时清理接口应 200，得到 %d: %s", expired.Code, expired.Body.String())
 	}
 }

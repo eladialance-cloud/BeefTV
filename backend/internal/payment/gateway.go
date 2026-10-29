@@ -45,6 +45,16 @@ func (s *Service) BeginPayment(userID string, orderID string) (*Launch, error) {
 	if order.Status != model.PaymentOrderPendingPayment {
 		return nil, kernel.NewAppError(kernel.CodeConflict, "当前订单状态不能发起支付")
 	}
+	if order.ExpiresAt != nil && !s.now().Before(*order.ExpiresAt) {
+		now := s.now()
+		order.Status = model.PaymentOrderClosed
+		order.CloseReason = paymentExpireReason
+		order.UpdatedAt = now
+		if err := s.repo.UpdatePaymentOrder(order); err != nil {
+			return nil, err
+		}
+		return nil, kernel.NewAppError(kernel.CodeConflict, "订单已超时关闭，请重新下单")
+	}
 	config, err := s.providerConfigForOrder(order)
 	if err != nil {
 		return nil, err
@@ -60,6 +70,12 @@ func (s *Service) BeginPayment(userID string, orderID string) (*Launch, error) {
 			return nil, err
 		}
 		return &Launch{Provider: order.Provider, Mode: "redirect", URL: target}, nil
+	case model.PaymentProviderEPay:
+		launch, err := buildEpayLaunch("", config, credentials, order, s.now())
+		if err != nil {
+			return nil, err
+		}
+		return launch, nil
 	case model.PaymentProviderWeChat:
 		codeURL, err := buildWechatNative(context.Background(), s.httpClient, s.wechatNativeEndpoint, config, credentials, order, s.now())
 		if err != nil {
@@ -97,6 +113,8 @@ func (s *Service) ProcessCallback(provider string, headers http.Header, body []b
 		switch provider {
 		case model.PaymentProviderAlipay:
 			notification, err = parseAlipayNotification(config, credentials, body)
+		case model.PaymentProviderEPay:
+			notification, err = parseEpayNotification(config, credentials, body)
 		case model.PaymentProviderWeChat:
 			notification, err = parseWechatNotification(config, credentials, headers, body)
 		}

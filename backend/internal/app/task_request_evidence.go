@@ -81,6 +81,8 @@ func recordTaskRequestEvidence(req *http.Request, evidence model.TaskRequestEvid
 		evidence.Operation = "image_edit"
 	case strings.HasSuffix(req.URL.Path, "/images/generations"):
 		evidence.Operation = "image_generate"
+	case strings.Contains(req.URL.Path, "/uploads/"):
+		evidence.Operation = "upload"
 	case req.Method == http.MethodGet:
 		evidence.Operation = "query_or_download"
 	case req.Method == http.MethodPost:

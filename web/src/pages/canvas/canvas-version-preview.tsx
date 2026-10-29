@@ -8,13 +8,18 @@ import { CanvasFrameNode } from "@/components/canvas/canvas-frame-node";
 import { ConnectionPath } from "@/components/canvas/canvas-connections";
 import { CanvasNodeActionContext } from "@/components/canvas/canvas-node-action-context";
 import { CanvasNodeGraphContext } from "@/components/canvas/canvas-node-graph-context";
+import { CanvasBatchTableNodeContent } from "@/components/canvas/canvas-batch-table-node";
+import { CanvasManjuAssetTableNodeContent } from "@/components/canvas/canvas-manju-asset-table-node";
 import { isFrameNode, isNodeHiddenByCollapsedFrame, resolveFrameConnection } from "@/lib/canvas/canvas-frame";
+import { canvasVersionPreviewContentKind } from "@/lib/canvas/canvas-version-preview-content";
 import { getCanvasNodesBounds, viewportAtScale, viewportForBounds } from "@/lib/canvas/canvas-viewport";
 import { resolveCanvasAppearance } from "@/lib/canvas/canvas-appearance";
+import { canvasThemes } from "@/lib/canvas-theme";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { resourceFileUrl, resourceIdFromStorageKey } from "@/services/api/resources";
 import { resolveMediaUrl } from "@/services/file-storage";
-import type { CanvasNodeData, ViewportTransform } from "@/types/canvas";
+import type { CanvasConnection, CanvasNodeData, ViewportTransform } from "@/types/canvas";
+import type { CanvasTheme } from "@/lib/canvas-theme";
 import type { CanvasVersionPreviewState } from "./canvas-version-history";
 
 const noAction = () => undefined;
@@ -27,7 +32,8 @@ export function CanvasVersionPreview({ preview, busy = false, onReturn, onShowVe
     const [selectedId, setSelectedId] = useState<string>();
     const [localMedia, setLocalMedia] = useState<Record<string, string>>({});
     const [mediaError, setMediaError] = useState("");
-    const theme = useActiveTheme();
+    const themeKey = useActiveTheme();
+    const theme = canvasThemes[themeKey];
     const project = preview.project;
     useEffect(() => {
         const node = project?.nodes.find((item) => item.id === selectedId);
@@ -67,6 +73,10 @@ export function CanvasVersionPreview({ preview, busy = false, onReturn, onShowVe
             }),
         [project, nodes],
     );
+    const renderNodeContent = useCallback(
+        (node: CanvasNodeData) => renderVersionPreviewNodeContent(node, nodes, project?.connections || [], theme),
+        [nodes, project?.connections, theme],
+    );
     const graph = useMemo(() => {
         const byId = new Map(nodes.map((node) => [node.id, node]));
         return {
@@ -94,7 +104,7 @@ export function CanvasVersionPreview({ preview, busy = false, onReturn, onShowVe
     };
 
     return (
-        <div className="absolute inset-0 flex min-h-0 flex-col" data-canvas-version-preview style={{ background: resolveCanvasAppearance(project?.appearance, theme).background }}>
+        <div className="absolute inset-0 flex min-h-0 flex-col" data-canvas-version-preview data-canvas-version-table-preview-version="1" style={{ background: resolveCanvasAppearance(project?.appearance, themeKey).background }}>
             <header data-canvas-no-zoom className="grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-border bg-sidebar px-5 py-3 text-foreground sm:flex">
                 <Eye size={16} className="text-muted-foreground" />
                 <div className="min-w-0 flex-1">
@@ -169,7 +179,7 @@ export function CanvasVersionPreview({ preview, busy = false, onReturn, onShowVe
                                             isConnectionTarget={false}
                                             showImageInfo={false}
                                             reduceMediaEffects
-                                            renderNodeContent={renderReadOnlyContent}
+                                            renderNodeContent={renderNodeContent}
                                             onMouseDown={() => setSelectedId(node.id)}
                                             onHoverStart={noAction}
                                             onHoverEnd={noAction}
@@ -207,7 +217,48 @@ export function CanvasVersionPreview({ preview, busy = false, onReturn, onShowVe
     );
 }
 
-function renderReadOnlyContent(node: CanvasNodeData) {
+function renderVersionPreviewNodeContent(node: CanvasNodeData, nodes: CanvasNodeData[], connections: CanvasConnection[], theme: CanvasTheme) {
+    const kind = canvasVersionPreviewContentKind(node);
+    if (kind === "manju-table") {
+        return (
+            <CanvasManjuAssetTableNodeContent
+                node={node}
+                nodes={nodes}
+                theme={theme}
+                readOnly
+                onAddRow={() => undefined}
+                onUpdateRow={() => undefined}
+                onGenerate={() => undefined}
+                onUploadAsset={() => undefined}
+                onAdoptInput={() => undefined}
+                onDeleteAsset={() => undefined}
+                onPreviewAsset={() => undefined}
+                onConnectInputDrop={() => undefined}
+                onConnectOutputStart={() => undefined}
+            />
+        );
+    }
+    if (kind === "batch-table") {
+        return (
+            <CanvasBatchTableNodeContent
+                node={node}
+                nodes={nodes}
+                connections={connections}
+                batch={node.metadata?.generationBatches?.at(-1)}
+                theme={theme}
+                readOnly
+                onPatchTable={() => undefined}
+                onAddRow={() => undefined}
+                onRemoveRow={() => undefined}
+                onUpdateRow={() => undefined}
+                onFillRows={() => undefined}
+                onGenerate={() => undefined}
+                onRetryItem={() => undefined}
+                onAddReferenceColumn={() => undefined}
+                onConnectStart={() => undefined}
+            />
+        );
+    }
     const rows = node.metadata?.storyboard?.rows;
     return (
         <div className="flex h-full flex-col overflow-hidden rounded-lg bg-card text-card-foreground">

@@ -29,9 +29,32 @@ type Config struct {
 
 // Service is the hosted-only owner of registration, login and sessions.
 type Service struct {
-	repo Repository
-	ttl  time.Duration
-	now  func() time.Time
+	repo   Repository
+	policy RegistrationPolicyPort
+	ttl    time.Duration
+	now    func() time.Time
+}
+
+// RegistrationPolicyPort 是站点级注册策略与邀请码核销的窄接口。
+// 只由服务端组合根注入；未注入时注册保持开放，行为与旧版一致。
+type RegistrationPolicyPort interface {
+	RegistrationPolicyMode() (mode string, bonusCredits int64, err error)
+}
+
+// SetRegistrationPolicyPort 由组合根在构造后注入，保持 New 签名不变。
+func (s *Service) SetRegistrationPolicyPort(port RegistrationPolicyPort) {
+	if s != nil {
+		s.policy = port
+	}
+}
+
+// RegistrationPolicyMode exposes the current mode and signup bonus without
+// leaking the policy adapter into the HTTP layer.
+func (s *Service) RegistrationPolicyMode() (string, int64, error) {
+	if s == nil || s.policy == nil {
+		return "open", 0, nil
+	}
+	return s.policy.RegistrationPolicyMode()
 }
 
 // New wires the account service. A nil repository is tolerated so callers can
@@ -53,6 +76,7 @@ type RegisterInput struct {
 	Username    string
 	DisplayName string
 	Password    string
+	InviteCode  string
 	// Role 仅供组合根赋予引导管理员；请求体永远不设置它。空值等于普通用户。
 	Role model.UserRole
 }
@@ -65,6 +89,19 @@ type SessionMeta struct {
 
 // Register creates a normal user plus its password identity.
 func (s *Service) Register(input RegisterInput) (*model.User, error) {
+	return s.createUser(input, true)
+}
+
+// CreateManagedUser is the administrator-only creation path. It keeps the same
+// username uniqueness, password strength and credential transaction guarantees
+// as self-service registration, but it does not consult the public registration
+// policy or issue a login session.
+func (s *Service) CreateManagedUser(input RegisterInput) (*model.User, error) {
+	input.Role = model.UserRoleUser
+	return s.createUser(input, false)
+}
+
+func (s *Service) createUser(input RegisterInput, enforceRegistrationPolicy bool) (*model.User, error) {
 	if s == nil || s.repo == nil {
 		return nil, kernel.Unauthorized("账号服务尚未初始化")
 	}
@@ -108,10 +145,41 @@ func (s *Service) Register(input RegisterInput) (*model.User, error) {
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
-	if err := s.repo.CreateUserWithIdentity(user, identity); err != nil {
+	create := func() error { return s.repo.CreateUserWithIdentity(user, identity) }
+	if s.policy == nil {
+		if err := create(); err != nil {
+			return nil, err
+		}
+		return user, nil
+	}
+	if !enforceRegistrationPolicy {
+		if err := create(); err != nil {
+			return nil, err
+		}
+		return user, nil
+	}
+	mode, _, err := s.RegistrationPolicyMode()
+	if err != nil {
 		return nil, err
 	}
-	return user, nil
+	switch mode {
+	case "closed":
+		return nil, kernel.Forbidden("管理员已关闭注册")
+	case "invite":
+		code := strings.TrimSpace(input.InviteCode)
+		if code == "" {
+			return nil, kernel.BadAuthRequest("请输入邀请码")
+		}
+		if err := s.repo.ConsumeInviteCode(code, user, identity); err != nil {
+			return nil, kernel.BadAuthRequest(err.Error())
+		}
+		return user, nil
+	default:
+		if err := create(); err != nil {
+			return nil, err
+		}
+		return user, nil
+	}
 }
 
 // Authenticate verifies a password login. Unknown identifiers and wrong
@@ -138,6 +206,36 @@ func (s *Service) Authenticate(identifier string, password string) (*model.User,
 		return nil, kernel.Forbidden(ErrAccountDisabled.Error())
 	}
 	return user, nil
+}
+
+// ResetPassword replaces the hosted password credential without issuing a new
+// session. Existing sessions remain valid until revoked; this endpoint is for
+// credential recovery rather than session administration.
+func (s *Service) ResetPassword(userID string, password string) error {
+	if s == nil || s.repo == nil {
+		return kernel.Unauthorized("账号服务尚未初始化")
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return kernel.BadAuthRequest("缺少目标用户")
+	}
+	if _, found, err := s.repo.UserByID(userID); err != nil {
+		return err
+	} else if !found {
+		return kernel.NotFound("用户不存在")
+	}
+	hash, err := HashPassword(password)
+	if err != nil {
+		return kernel.BadAuthRequest(err.Error())
+	}
+	updated, err := s.repo.UpdatePasswordHash(userID, model.IdentityProviderPassword, hash, s.now())
+	if err != nil {
+		return err
+	}
+	if !updated {
+		return kernel.NotFound("该用户没有密码登录凭据")
+	}
+	return nil
 }
 
 // IssueSession mints a clear token and stores only its hash.

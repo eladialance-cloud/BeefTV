@@ -33,12 +33,15 @@ type PricingInput struct {
 	BillingMode             string            `json:"billingMode"`
 	Selector                map[string]string `json:"selector"`
 	UnitPriceMicrocredits   int64             `json:"unitPriceMicrocredits"`
-	MinimumChargeCredits    *int64            `json:"minimumChargeCredits"`
-	Enabled                 *bool             `json:"enabled"`
-	SortOrder               *int              `json:"sortOrder"`
-	EffectiveFrom           time.Time         `json:"effectiveFrom"`
-	EffectiveTo             *time.Time        `json:"effectiveTo"`
-	Note                    string            `json:"note"`
+	// MinimumChargeMicrocredits is the preferred fixed-point minimum. The legacy
+	// MinimumChargeCredits field remains accepted as a whole-credit input.
+	MinimumChargeMicrocredits *int64     `json:"minimumChargeMicrocredits"`
+	MinimumChargeCredits      *int64     `json:"minimumChargeCredits"`
+	Enabled                   *bool      `json:"enabled"`
+	SortOrder                 *int       `json:"sortOrder"`
+	EffectiveFrom             time.Time  `json:"effectiveFrom"`
+	EffectiveTo               *time.Time `json:"effectiveTo"`
+	Note                      string     `json:"note"`
 }
 
 // QuoteRequest is the runtime-side input to the pricing resolver. Quantity is
@@ -48,6 +51,7 @@ type QuoteRequest struct {
 	LogicalModelID string
 	ChannelID      string
 	ChannelModelID string
+	ModelKey       string
 	Capability     string
 	BillingMode    string
 	Selector       map[string]string
@@ -56,7 +60,7 @@ type QuoteRequest struct {
 }
 
 // Quote is an immutable pricing decision. Task submission must persist the
-// selected rule identity and calculated credits if settlement happens later.
+// selected rule identity and calculated microcredits if settlement happens later.
 type Quote struct {
 	RuleID                string     `json:"ruleId"`
 	RuleKind              string     `json:"ruleKind"`
@@ -298,8 +302,10 @@ func buildPricingRule(kind string, input PricingInput, existing *model.PricingRu
 	if rule.UnitPriceMicrocredits == 0 && existing != nil {
 		rule.UnitPriceMicrocredits = existing.UnitPriceMicrocredits
 	}
-	if input.MinimumChargeCredits != nil {
-		rule.MinimumChargeCredits = *input.MinimumChargeCredits
+	if input.MinimumChargeMicrocredits != nil {
+		rule.MinimumChargeCredits = *input.MinimumChargeMicrocredits
+	} else if input.MinimumChargeCredits != nil {
+		rule.MinimumChargeCredits = FromWholeCredits(*input.MinimumChargeCredits)
 	} else if existing != nil {
 		rule.MinimumChargeCredits = existing.MinimumChargeCredits
 	}
@@ -422,7 +428,9 @@ func selectEffectiveRule(rules []model.PricingRule, kind string, request QuoteRe
 				continue
 			}
 		}
-		if selected == nil || pricingRuleNewer(rule, *selected) {
+		if selected == nil ||
+			len(rule.Selector) > len(selected.Selector) ||
+			(len(rule.Selector) == len(selected.Selector) && pricingRuleNewer(rule, *selected)) {
 			copy := rule
 			selected = &copy
 		}
@@ -458,11 +466,37 @@ func selectorMatches(ruleSelector map[string]string, requestSelector map[string]
 		return false
 	}
 	for key, value := range ruleSelector {
-		if requestSelector[key] != value {
+		if !pricingSelectorValueEqual(key, value, requestSelector[key]) {
 			return false
 		}
 	}
 	return true
+}
+
+func pricingSelectorValueEqual(key string, left string, right string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "quality", "resolution", "vquality":
+		return normalizePricingResolution(left) == normalizePricingResolution(right)
+	default:
+		return left == right
+	}
+}
+
+func normalizePricingResolution(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "480", "480p":
+		return "480p"
+	case "720", "720p", "768", "768p":
+		return "720p"
+	case "1080", "1080p":
+		return "1080p"
+	case "1440", "1440p", "2k":
+		return "2k"
+	case "2160", "2160p", "4k":
+		return "4k"
+	default:
+		return strings.ToLower(strings.TrimSpace(value))
+	}
 }
 
 func cloneSelector(selector map[string]string) map[string]string {
@@ -476,7 +510,7 @@ func cloneSelector(selector map[string]string) map[string]string {
 	return copy
 }
 
-func calculateCredits(unitPriceMicrocredits int64, quantity int64, minimum int64) (int64, error) {
+func calculateCredits(unitPriceMicrocredits int64, quantity int64, minimumMicrocredits int64) (int64, error) {
 	if unitPriceMicrocredits <= 0 || quantity <= 0 {
 		return 0, kernel.BadAuthRequest("计费用量和单价必须大于零")
 	}
@@ -484,17 +518,13 @@ func calculateCredits(unitPriceMicrocredits int64, quantity int64, minimum int64
 		return 0, kernel.BadAuthRequest("计费用量过大")
 	}
 	totalMicrocredits := unitPriceMicrocredits * quantity
-	credits := totalMicrocredits / 1_000_000
-	if totalMicrocredits%1_000_000 != 0 {
-		credits++
+	if totalMicrocredits < minimumMicrocredits {
+		totalMicrocredits = minimumMicrocredits
 	}
-	if credits < minimum {
-		credits = minimum
+	if totalMicrocredits <= 0 {
+		totalMicrocredits = 1
 	}
-	if credits <= 0 {
-		credits = 1
-	}
-	return credits, nil
+	return totalMicrocredits, nil
 }
 
 // CalculateCredits exposes the quote math to settlement. A frozen pricing

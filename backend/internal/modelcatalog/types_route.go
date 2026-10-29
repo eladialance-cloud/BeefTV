@@ -148,12 +148,23 @@ type ChannelRequest struct {
 }
 
 type PublicChannelModelProfile struct {
+	ID               string                     `json:"id"`
 	Model            string                     `json:"model"`
 	DisplayName      string                     `json:"displayName"`
 	Icon             string                     `json:"icon"`
 	Capability       string                     `json:"capability"`
 	Protocol         model.ChannelInterfaceType `json:"protocol"`
 	CapabilityConfig *ModelCapabilityConfig     `json:"capabilityConfig,omitempty"`
+	Prices           []PublicModelPrice         `json:"prices,omitempty"`
+}
+
+type PublicModelPrice struct {
+	Name                      string            `json:"name,omitempty"`
+	BillingMode               string            `json:"billingMode"`
+	Selector                  map[string]string `json:"selector,omitempty"`
+	UnitPriceMicrocredits     int64             `json:"unitPriceMicrocredits"`
+	MinimumChargeMicrocredits int64             `json:"minimumChargeMicrocredits"`
+	SortOrder                 int               `json:"sortOrder,omitempty"`
 }
 
 type PublicModelChannel struct {
@@ -212,8 +223,9 @@ type ChannelModelCatalogOptions struct {
 }
 
 type AdminChannelModelFetchResult struct {
-	Models []string `json:"models"`
-	Added  int64    `json:"added"`
+	Models  []string                  `json:"models"`
+	Added   int64                     `json:"added"`
+	Catalog []ChannelModelCatalogItem `json:"catalog"`
 }
 
 type FailureInfo struct {

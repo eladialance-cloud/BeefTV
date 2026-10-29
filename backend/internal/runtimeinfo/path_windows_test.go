@@ -11,8 +11,8 @@ import (
 func TestWindowsCanonicalDescriptorIgnoresAppDataShadows(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("USERPROFILE", home)
-	dataDir := filepath.Join(home, "AppData", "Roaming", "BeefTV")
-	shadowDir := filepath.Join(home, "AppData", "Local", "Packages", "fixture", "LocalCache", "Roaming", "BeefTV")
+	dataDir := filepath.Join(home, "AppData", "Roaming", "VisiDeepAI")
+	shadowDir := filepath.Join(home, "AppData", "Local", "Packages", "fixture", "LocalCache", "Roaming", "VisiDeepAI")
 	t.Setenv("APPDATA", filepath.Dir(shadowDir))
 	t.Setenv("BEEFTV_DATA_DIR", dataDir)
 	for _, dir := range []string{dataDir, shadowDir} {

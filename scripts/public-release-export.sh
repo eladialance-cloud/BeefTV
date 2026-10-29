@@ -95,4 +95,4 @@ rsync -a \
     --exclude='*.bak' \
     "$source_directory/" "$destination_directory/"
 
-printf 'exported BeefTV public source to %s\n' "$destination_directory"
+printf 'exported VisiDeep AI public source to %s\n' "$destination_directory"

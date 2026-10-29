@@ -39,7 +39,7 @@ func TestUpdateLogWindowRotationAndPrivacy(t *testing.T) {
 	if !strings.Contains(log.Text, "permission-denied") || !strings.Contains(log.Text, "completedFiles=34") {
 		t.Fatal(log.Text)
 	}
-	data, err := buildZIP("BeefTV", "test", manifest{}, &collection{Window: window, UpdateLog: log})
+	data, err := buildZIP("VisiDeep AI", "test", manifest{}, &collection{Window: window, UpdateLog: log})
 	if err != nil {
 		t.Fatal(err)
 	}

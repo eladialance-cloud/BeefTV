@@ -16,13 +16,13 @@ export type AssistantStatusNotice = {
 /** 兜底文案：原因缺失或后端给了我们还不认识的值时用这一句。 */
 export const ASSISTANT_UNAVAILABLE_FALLBACK = "助手暂时用不了，请稍后再试";
 
-export function assistantStatusNotice(reason: string | undefined): AssistantStatusNotice {
+export function assistantStatusNotice(reason: string | undefined, hosted = false): AssistantStatusNotice {
     switch (reason) {
         case "model_not_configured":
         case "model_protocol_unsupported":
-            return { text: "还没有可用的助手模型", actionLabel: "去模型配置", action: "model-settings" };
+            return hosted ? { text: "暂无可用助手模型，请联系管理员", actionLabel: "重试", action: "retry" } : { text: "还没有可用的助手模型", actionLabel: "去模型配置", action: "model-settings" };
         case "credential_missing":
-            return { text: "BeefTV 还没连接好", actionLabel: "去连接", action: "model-settings" };
+            return hosted ? { text: "系统模型暂不可用，请联系管理员", actionLabel: "重试", action: "retry" } : { text: "VisiDeep AI 还没连接好", actionLabel: "去连接", action: "model-settings" };
         case "host_starting":
             return { text: "助手正在启动…", starting: true };
         case "host_start_failed":

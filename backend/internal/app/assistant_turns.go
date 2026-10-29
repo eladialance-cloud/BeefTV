@@ -58,6 +58,20 @@ func (s *Service) BeginAssistantTurn(userID, canvasID, turnID string, input Assi
 	return s.assistantTurnsOrInit().Begin(userID, canvasID, turnID, input)
 }
 
+func (s *Service) AssistantTurnUserIDForHost(turnID string) (string, bool, error) {
+	if s == nil || s.repo == nil {
+		return "", false, errors.New("助手回合存储不可用")
+	}
+	row, err := s.repo.AssistantTurnByID(nil, turnID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return row.UserID, true, nil
+}
+
 func (s *Service) AssistantTurnScopeForHost(userID, turnID string) (AssistantTurnScope, bool, error) {
 	return s.assistantTurnsOrInit().ScopeForHost(userID, turnID)
 }

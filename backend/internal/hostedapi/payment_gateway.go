@@ -50,27 +50,32 @@ func RegisterPaymentRoutes(r *gin.RouterGroup, svc PaymentGatewayService, resolv
 		writeOK(c, gin.H{"payment": launch})
 	})
 
-	r.POST("/payments/:provider/notify", func(c *gin.Context) {
+	notify := func(c *gin.Context) {
 		provider := strings.ToLower(strings.TrimSpace(c.Param("provider")))
 		body, err := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, paymentCallbackMaxBytes))
 		if err != nil {
 			writeGatewayCallbackError(c, provider, kernel.BadAuthRequest("支付回调内容过大或读取失败"))
 			return
 		}
+		if len(body) == 0 && c.Request.URL.RawQuery != "" {
+			body = []byte(c.Request.URL.Query().Encode())
+		}
 		if _, err := svc.ProcessCallback(provider, c.Request.Header.Clone(), body); err != nil {
 			writeGatewayCallbackError(c, provider, err)
 			return
 		}
-		if provider == model.PaymentProviderAlipay {
+		if provider == model.PaymentProviderAlipay || provider == model.PaymentProviderEPay {
 			c.String(http.StatusOK, "success")
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"code": "SUCCESS", "message": "成功"})
-	})
+	}
+	r.POST("/payments/:provider/notify", notify)
+	r.GET("/payments/:provider/notify", notify)
 }
 
 func writeGatewayCallbackError(c *gin.Context, provider string, err error) {
-	if provider == model.PaymentProviderAlipay {
+	if provider == model.PaymentProviderAlipay || provider == model.PaymentProviderEPay {
 		c.String(http.StatusBadRequest, "failure")
 		return
 	}

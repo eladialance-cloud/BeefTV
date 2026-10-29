@@ -17,9 +17,9 @@ import zipfile
 
 
 def smoke(archive, platform):
-    relative = ("cli/beeftv.exe" if platform == "windows-amd64" else
-                "BeefTV-linux/cli/beeftv" if platform == "linux-amd64" else
-                "BeefTV.app/Contents/MacOS/cli/beeftv")
+    relative = ("cli/visideep.exe" if platform == "windows-amd64" else
+                "VisiDeepAI-linux/cli/visideep" if platform == "linux-amd64" else
+                "VisiDeepAI.app/Contents/MacOS/cli/visideep")
     with tempfile.TemporaryDirectory(prefix="beeftv-package-smoke-") as directory:
         root = Path(directory)
         cli = root / relative
@@ -110,8 +110,8 @@ def smoke(archive, platform):
                     "protocolVersion": "2024-11-05", "capabilities": {},
                     "clientInfo": {"name": "release-smoke", "version": "1.0"}}})
                 initialized = receive(1)
-                if initialized.get("serverInfo", {}).get("name") != "beeftv":
-                    raise RuntimeError("initialize did not identify beeftv")
+                if initialized.get("serverInfo", {}).get("name") != "visideep":
+                    raise RuntimeError("initialize did not identify visideep")
                 send({"method": "notifications/initialized"})
                 send({"id": 2, "method": "tools/list", "params": {}})
                 tools = receive(2).get("tools", [])

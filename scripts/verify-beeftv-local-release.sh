@@ -52,4 +52,4 @@ dependency_count="$(cd "$ROOT_DIR/backend" && go list -deps ./cmd/desktop | sort
 source_kib="$(du -sk "$ROOT_DIR/backend/internal" "$ROOT_DIR/web/src" | awk '{total += $1} END {print total}')"
 echo "Local metrics: go_dependencies=$dependency_count source_kib=$source_kib"
 
-echo "BeefTV local release gate passed"
+echo "VisiDeep AI local release gate passed"

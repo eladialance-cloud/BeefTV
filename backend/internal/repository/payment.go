@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"time"
+
 	"infinite-canvas/backend/internal/model"
 
 	"gorm.io/gorm"
@@ -76,7 +78,98 @@ func (r *Repository) UpdatePaymentOrder(item *model.PaymentOrder) error {
 		"paid_at": item.PaidAt, "settled_at": item.SettledAt, "settled_by": item.SettledBy,
 		"provider_config_id": item.ProviderConfigID,
 		"close_reason":       item.CloseReason, "updated_at": item.UpdatedAt,
+		"expires_at":  item.ExpiresAt,
+		"refunded_at": item.RefundedAt, "refunded_by": item.RefundedBy,
+		"refund_reason": item.RefundReason, "refund_provider_no": item.RefundProviderNo,
+		"refund_reversed": item.RefundReversed,
 	}).Error
+}
+
+// ExpirePendingPaymentOrders closes unpaid orders whose deadline has passed.
+// Legacy rows with a NULL expires_at fall back to created_at so an upgraded
+// database never leaves old orders payable forever. Closing is guarded by the
+// pending status, so an order settled between the read and the write survives.
+func (r *Repository) ExpirePendingPaymentOrders(cutoff time.Time, reason string, limit int, now time.Time) (int64, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	var ids []string
+	if err := r.db.Model(&model.PaymentOrder{}).
+		Where("status = ? AND ((expires_at IS NOT NULL AND expires_at <= ?) OR (expires_at IS NULL AND created_at <= ?))",
+			model.PaymentOrderPendingPayment, cutoff, cutoff).
+		Order("created_at asc").Limit(limit).Pluck("id", &ids).Error; err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	result := r.db.Model(&model.PaymentOrder{}).
+		Where("id IN ? AND status = ?", ids, model.PaymentOrderPendingPayment).
+		Updates(map[string]any{"status": model.PaymentOrderClosed, "close_reason": reason, "updated_at": now.UTC()})
+	return result.RowsAffected, result.Error
+}
+
+// PaymentOrderCountsByStatus groups orders by status for the reconciliation
+// report. A status with zero rows is simply absent from the map.
+func (r *Repository) PaymentOrderCountsByStatus() (map[string]int64, error) {
+	var rows []struct {
+		Status string
+		Total  int64
+	}
+	if err := r.db.Model(&model.PaymentOrder{}).
+		Select("status, COUNT(*) AS total").Group("status").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	counts := make(map[string]int64, len(rows))
+	for _, row := range rows {
+		counts[row.Status] = row.Total
+	}
+	return counts, nil
+}
+
+// PaymentOrderSettledTotals sums money and credits for orders that actually
+// settled, so reconciliation can compare the gateway total with our ledger.
+func (r *Repository) PaymentOrderSettledTotals() (amountFen int64, credits int64, err error) {
+	var row struct {
+		AmountFen int64
+		Credits   int64
+	}
+	if err = r.db.Model(&model.PaymentOrder{}).
+		Select("COALESCE(SUM(amount_fen), 0) AS amount_fen, COALESCE(SUM(credits), 0) AS credits").
+		Where("status = ?", model.PaymentOrderPaid).
+		Scan(&row).Error; err != nil {
+		return 0, 0, err
+	}
+	return row.AmountFen, row.Credits, nil
+}
+
+// PaymentOrderCountsNeedingAttention counts the two states that mean a human
+// should look: a paid order without settlement, and an overdue unpaid order.
+func (r *Repository) PaymentOrderCountsNeedingAttention(cutoff time.Time) (paidUnsettled int64, pendingOverdue int64, err error) {
+	if err = r.db.Model(&model.PaymentOrder{}).
+		Where("status = ? AND settled_at IS NULL", model.PaymentOrderPaid).
+		Count(&paidUnsettled).Error; err != nil {
+		return 0, 0, err
+	}
+	if err = r.db.Model(&model.PaymentOrder{}).
+		Where("status = ? AND ((expires_at IS NOT NULL AND expires_at <= ?) OR (expires_at IS NULL AND created_at <= ?))",
+			model.PaymentOrderPendingPayment, cutoff, cutoff).
+		Count(&pendingOverdue).Error; err != nil {
+		return 0, 0, err
+	}
+	return paidUnsettled, pendingOverdue, nil
+}
+
+// PaymentNotificationCounts reports callback rows that did not cleanly settle,
+// so a stuck callback is visible instead of silently dropping the payment.
+func (r *Repository) PaymentNotificationCounts() (unprocessed int64, failed int64, err error) {
+	if err = r.db.Model(&model.PaymentNotification{}).Where("processed = ?", false).Count(&unprocessed).Error; err != nil {
+		return 0, 0, err
+	}
+	if err = r.db.Model(&model.PaymentNotification{}).Where("error <> ''").Count(&failed).Error; err != nil {
+		return 0, 0, err
+	}
+	return unprocessed, failed, nil
 }
 
 // CreatePaymentNotification 写入一条回调记录；已存在同一通知时返回 found=false。

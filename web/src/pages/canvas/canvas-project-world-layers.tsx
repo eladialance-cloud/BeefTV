@@ -14,6 +14,7 @@ import type { CanvasBatchConnectionPreview } from "@/lib/canvas/canvas-batch-con
 import { sortCanvasNodesByStackOrder, type CanvasNodeStackOrder } from "@/lib/canvas/canvas-node-stack-order";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { isFrameNode } from "@/lib/canvas/canvas-frame";
+import { isManjuManagedTable, manjuCanvasAssetRevision } from "@/lib/canvas/canvas-manju-asset-table";
 import type { CanvasDisplayConnection, CanvasFolderStyle, CanvasFolderTheme, CanvasNodeData, ConnectionHandle, Position, SelectionBox } from "@/types/canvas";
 
 type DragPreview = { x: number; y: number; nodeIds: Set<string> } | null;
@@ -142,6 +143,7 @@ export const CanvasProjectWorldLayers = memo(function CanvasProjectWorldLayers(p
         ...props.visibleNodes.filter(isFrameNode),
         ...sortCanvasNodesByStackOrder(props.visibleNodes.filter((node) => !isFrameNode(node)), props.nodeStackOrder),
     ], [props.nodeStackOrder, props.visibleNodes]);
+    const manjuAssetRevision = useMemo(() => manjuCanvasAssetRevision([...props.nodeById.values()]), [props.nodeById]);
     const batchPreviews = useMemo(() => new Map(props.visibleNodes.filter((node) => node.metadata?.isBatchRoot).map((node) => [
         node.id,
         (node.metadata?.batchChildIds || []).filter((id) => id !== node.metadata?.primaryImageId)
@@ -237,6 +239,7 @@ export const CanvasProjectWorldLayers = memo(function CanvasProjectWorldLayers(p
                         reduceMediaEffects={props.reduceMediaEffects || props.mediaEffectsDisabledNodeId === node.id}
                         resourceLabel={props.resourceReferenceByNodeId.get(node.id)}
                         mentionReferences={props.mentionReferencesByNodeId.get(node.id) || EMPTY_RESOURCE_REFERENCES}
+                        resourceRevision={isManjuManagedTable(node) ? manjuAssetRevision : undefined}
                         renderNodeContent={props.renderCanvasNodeContent}
                         drawingProjectId={props.projectId}
                         onMouseDown={props.onNodeMouseDown}

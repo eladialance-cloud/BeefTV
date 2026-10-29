@@ -314,6 +314,26 @@ func TestHTTPErrorErrorUsesBody(t *testing.T) {
 	}
 }
 
+func TestToAPIOutputCopyrightCodeIsModerationOutput(t *testing.T) {
+	raw := `{
+		"error": {
+			"code": "generation_failed",
+			"message": "输入或生成内容未通过安全审核. 请修改输入后重试.",
+			"raw_message": "The request failed because the output video may be related to copyright restrictions.",
+			"reason": "content_policy_rejected",
+			"upstream_code": "OutputVideoSensitiveContentDetected.PolicyViolation"
+		},
+		"status": "failed"
+	}`
+	failure := generation.ClassifyText(raw)
+	if failure.Category != generation.CategoryModerationOutput {
+		t.Fatalf("category = %s, want %s: %+v", failure.Category, generation.CategoryModerationOutput, failure)
+	}
+	if !strings.Contains(failure.Reason, "生成视频") || !strings.Contains(failure.Reason, "版权") {
+		t.Fatalf("reason = %q", failure.Reason)
+	}
+}
+
 func TestLikenessCodeNotPromptWording(t *testing.T) {
 	echoed := generation.ClassifyText(`{"error":{"message":"invalid parameter: prompt=生成油画肖像"}}`)
 	if echoed.Category != generation.CategoryInvalidParams {

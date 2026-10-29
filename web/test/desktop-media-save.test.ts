@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { ownedResourceIdFromMediaRef } from "@/services/api/resources";
+import { ownedResourceIdFromMediaRef, resourceDownloadFileUrl } from "@/services/api/resources";
 import { apiClient, configureApiRuntime } from "@/services/api/request";
 import { downloadOwnedOrBrowserMedia, isWailsNativeShell, reportOwnedMediaSave, saveOwnedOrBrowserBlob, saveOwnedOrBrowserVideoBlob } from "@/services/desktop-media-save";
 import { sanitizeDownloadFileName } from "@/lib/canvas/canvas-media-download";
@@ -11,12 +11,14 @@ import { getActiveUserScope, setActiveUserScope } from "@/lib/user-scope";
 import { captureUserScope, UserScopeAbandonedError } from "@/lib/user-scope-guard";
 
 const originalWindow = globalThis.window;
+const originalDocument = globalThis.document;
 const originalFetch = globalThis.fetch;
 const originalAdapter = apiClient.defaults.adapter;
 const originalScope = getActiveUserScope();
 
 afterEach(() => {
     globalThis.window = originalWindow;
+    globalThis.document = originalDocument;
     globalThis.fetch = originalFetch;
     apiClient.defaults.adapter = originalAdapter;
     setActiveUserScope(originalScope);
@@ -37,6 +39,68 @@ describe("native media save", () => {
     test("sanitizes download file names", () => {
         expect(sanitizeDownloadFileName("../evil:name?.mp4")).toBe("evil_name.mp4");
         expect(sanitizeDownloadFileName("镜头 01.MP4")).toBe("镜头 01.mp4");
+    });
+
+    test("browser downloads route owned resources through the same-origin attachment endpoint", () => {
+        configureApiRuntime("/api", "");
+        const url = resourceDownloadFileUrl("abc123", "镜头 01.mp4");
+        expect(url).toBe("/api/resources/abc123/file?proxy=1&download=1&filename=%E9%95%9C%E5%A4%B4+01.mp4");
+    });
+
+    test("browser owned downloads start a same-origin anchor download immediately", async () => {
+        configureApiRuntime("/api", "");
+        const appended: unknown[] = [];
+        const timers: Array<() => void> = [];
+        const anchor = { href: "", download: "", rel: "", style: { display: "" }, clicked: false, removed: false, click() { this.clicked = true; }, remove() { this.removed = true; } };
+        Object.assign(globalThis, {
+            window: { location: { protocol: "http:" }, setTimeout: (callback: () => void) => { timers.push(callback); return 1; } },
+            document: { createElement: () => anchor, body: { append: (node: unknown) => appended.push(node) } },
+        });
+        apiClient.defaults.adapter = async () => {
+            throw new Error("owned downloads must not prefetch a blob");
+        };
+        expect(await downloadOwnedOrBrowserMedia({ fileName: "asset.png", resourceId: "abc123" })).toBe("saved");
+        expect(anchor).toMatchObject({
+            href: "/api/resources/abc123/file?proxy=1&download=1&filename=asset.png",
+            download: "asset.png",
+            rel: "noopener",
+            clicked: true,
+            removed: false,
+        });
+        expect(appended).toEqual([anchor]);
+        expect(timers).toHaveLength(1);
+    });
+
+    test("browser legacy remote assets fetch a blob instead of navigating to the remote URL", async () => {
+        Object.assign(globalThis, { window: { location: { protocol: "http:" } } });
+        const requested = [];
+        globalThis.fetch = (async (input: string | URL | Request) => {
+            requested.push(String(input));
+            return new Response(new Blob(["legacy-image"], { type: "image/png" }), {
+                status: 200,
+                headers: { "Content-Type": "image/png" },
+            });
+        }) as typeof fetch;
+        expect(await downloadOwnedOrBrowserMedia({ fileName: "legacy.png", browserUrl: "https://cdn.example.com/legacy.png" })).toBe("saved");
+        expect(requested).toEqual(["https://cdn.example.com/legacy.png"]);
+    });
+
+    test("browser legacy remote assets import through the server when cross-origin fetch is blocked", async () => {
+        Object.assign(globalThis, { window: { location: { protocol: "http:" } } });
+        globalThis.fetch = (async () => { throw new TypeError("Failed to fetch"); }) as typeof fetch;
+        const requests: string[] = [];
+        apiClient.defaults.adapter = async (config) => {
+            requests.push(config.url!);
+            if (config.url === "/resources/import") {
+                expect(config.data).toMatchObject({ url: "https://cdn.example.com/legacy.mp4", kind: "video" });
+                return { data: { code: 0, data: { resource: { id: "imported-legacy", status: "ready" } } }, status: 200, statusText: "OK", headers: {}, config };
+            }
+            expect(config.url).toBe("/resources/imported-legacy/file");
+            expect(config.params).toEqual({ proxy: "1", download: "1" });
+            return { data: new Blob(["legacy-video"], { type: "video/mp4" }), status: 200, statusText: "OK", headers: {}, config };
+        };
+        expect(await downloadOwnedOrBrowserMedia({ fileName: "legacy.mp4", browserUrl: "https://cdn.example.com/legacy.mp4" })).toBe("saved");
+        expect(requests).toEqual(["/resources/import", "/resources/imported-legacy/file"]);
     });
 
     test("native shell uses the Wails save binding and treats empty path as cancel", async () => {
@@ -91,7 +155,9 @@ describe("native media save", () => {
         expect(runtime).toContain("SaveOwnedMedia");
         expect(runtime).toContain("SaveOwnedArtifact");
         const helper = readFileSync(resolve(import.meta.dir, "../src/services/desktop-media-save.ts"), "utf8");
-        expect(helper).toContain("saveAs(browserUrl, fileName)");
+        expect(helper).toContain("resourceDownloadFileUrl");
+        expect(helper).toContain("startBrowserResourceDownload");
+        expect(helper).toContain("browserUrl");
         expect(helper).toContain("SaveOwnedArtifact");
         expect(helper).toContain("bytesToBase64");
         expect(helper).not.toContain("Array.from(bytes)");

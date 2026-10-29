@@ -1,14 +1,17 @@
-BeefTV
-Copyright (C) 2026 BeefTV contributors
+VisiDeep AI
+Copyright (C) 2026 VisiDeep AI contributors
 
-BeefTV is distributed under the MIT License. The complete license text is
+This product is based on BeefTV (https://github.com/glanderness/BeefTV).
+BeefTV copyright and license notices are preserved in LICENSE and this NOTICE.
+
+VisiDeep AI is distributed under the MIT License. The complete license text is
 provided in LICENSE.
 
 Project scope
 -------------
 
-BeefTV is a local-first, single-user desktop workspace for AI-assisted video
-creation. The desktop application uses a React user interface embedded by
+VisiDeep AI is a local-first AI-assisted video creation platform. The desktop
+application uses a React user interface embedded by
 Wails and a Go backend that listens on loopback. Projects, canvas state,
 generated assets, model-channel settings, and durable task state are stored in
 the user's local workspace. Requests leave the device only when a user invokes
@@ -30,10 +33,11 @@ The upstream project was relicensed to MIT in commit
 890ba95858bbb13496d23978003716656109abb2. Its copyright and permission notice
 are preserved in LICENSE.
 
-BeefTV changes
---------------
+VisiDeep AI changes
+------------------
 
-BeefTV adds and maintains the local Go application layer, SQLite and local
+Based on the BeefTV codebase, VisiDeep AI adds and maintains the local Go
+application layer, SQLite and local
 asset persistence, durable generation tasks, provider and protocol adapters,
 the Wails desktop shell, media workflows, timeline tools, the local Agent, and
 substantial canvas and workspace UI changes.

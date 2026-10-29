@@ -374,7 +374,10 @@ export function inferVideoOperation(input: ModelInputSummary) {
 }
 
 export function resolveVideoOperation(input: ModelInputSummary, storedOperation?: string) {
-    if (storedOperation === "reference_to_video" && input.imageCount + input.characterCount + input.videoCount + input.audioCount > 0) return storedOperation;
+    // 音频只是附加参考。没有图片、角色或视频时，历史“全模态参考”状态
+    // 不能继续生效，否则纯音频输入会被错误筛成 reference_to_video，导致
+    // 支持 audio_to_video 的模型在下方全部不可选。
+    if (storedOperation === "reference_to_video" && input.imageCount + input.characterCount + input.videoCount > 0) return storedOperation;
     if (storedOperation === "extend" && input.videoCount > 0) return storedOperation;
     if (storedOperation && !["text_to_video", "image_to_video", "audio_to_video", "extend", "reference_to_video"].includes(storedOperation)) return storedOperation;
     return inferVideoOperation(input);

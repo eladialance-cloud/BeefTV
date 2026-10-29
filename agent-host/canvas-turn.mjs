@@ -175,7 +175,7 @@ export function turnContextPrefix({ canvasId, selectedNodeIds = [], references =
 // 这些未在实际接入的兼容服务上验证过。
 export function providerRegistration({ api, baseUrl, modelId, maxTokens, contextWindow }) {
   return {
-    name: 'BeefTV', baseUrl, apiKey: '$BEEFTV_AGENT_API_KEY', api,
+    name: 'VisiDeep AI', baseUrl, apiKey: '$BEEFTV_AGENT_API_KEY', api,
     models: [{ id: modelId, name: modelId, reasoning: api === 'anthropic-messages', input: ['text', 'image'],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow, maxTokens }],

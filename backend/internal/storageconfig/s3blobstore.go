@@ -24,9 +24,11 @@ func newS3Client(target Target, timeout time.Duration) *s3.Client {
 		region = "us-east-1"
 	}
 	options := s3.Options{
-		Region:       region,
-		Credentials:  credentials.NewStaticCredentialsProvider(target.AccessKeyID, target.SecretAccessKey, ""),
-		UsePathStyle: target.PathStyle,
+		RequestChecksumCalculation: aws.RequestChecksumCalculationWhenRequired,
+		ResponseChecksumValidation: aws.ResponseChecksumValidationWhenRequired,
+		Region:                     region,
+		Credentials:                credentials.NewStaticCredentialsProvider(target.AccessKeyID, target.SecretAccessKey, ""),
+		UsePathStyle:               target.PathStyle,
 	}
 	if endpoint := strings.TrimSpace(target.Endpoint); endpoint != "" {
 		options.BaseEndpoint = aws.String(endpoint)

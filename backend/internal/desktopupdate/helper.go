@@ -358,9 +358,9 @@ func physicalPath(path string) (string, error) {
 
 func helperFileName() string {
 	if runtime.GOOS == "windows" {
-		return "BeefTV-update-helper.exe"
+		return "VisiDeepAI-update-helper.exe"
 	}
-	return "BeefTV-update-helper"
+	return "VisiDeepAI-update-helper"
 }
 
 func waitForPrepared(ctx context.Context, path string, timeout time.Duration) error {

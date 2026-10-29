@@ -73,9 +73,9 @@ func (a *DesktopApp) ChooseStorageDirectory() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	path, err := wailsruntime.OpenDirectoryDialog(ctx, wailsruntime.OpenDialogOptions{Title: "选择 BeefTV 数据存储文件夹"})
+	path, err := wailsruntime.OpenDirectoryDialog(ctx, wailsruntime.OpenDialogOptions{Title: "选择 VisiDeep AI 数据存储文件夹"})
 	if err == nil && path != "" && filepath.Dir(path) == path {
-		path = filepath.Join(path, "BeefTV")
+		path = filepath.Join(path, "VisiDeepAI")
 	}
 	return path, err
 }
@@ -140,7 +140,7 @@ func (a *DesktopApp) MigrateStorage(target string) (desktopstorage.Usage, error)
 			a.installStorageRuntime(source, old)
 			return desktopstorage.Usage{}, fmt.Errorf("迁移未完成，已恢复原工作区，存储目录未更改。请查看错误详情\n\n%w", cause)
 		}
-		return desktopstorage.Usage{}, fmt.Errorf("迁移未完成，原数据已保留，但工作区未能重新打开。请重启 BeefTV\n\n%w", errors.Join(cause, openErr))
+		return desktopstorage.Usage{}, fmt.Errorf("迁移未完成，原数据已保留，但工作区未能重新打开。请重启 VisiDeep AI\n\n%w", errors.Join(cause, openErr))
 	}
 	if err != nil {
 		a.mu.Lock()

@@ -248,7 +248,7 @@ func skippableCanvasBindError(err error) bool {
 		return false
 	}
 	switch opErr.Reason {
-	case "node_deleted", "node_task_mismatch", "node_mismatch", "canvas_mismatch",
+	case "node_deleted", "node_task_mismatch", "node_mismatch", "canvas_mismatch", "not_found",
 		"conversation_deleted", "message_deleted", "message_mismatch", "conversation_mismatch",
 		"message_task_mismatch",
 		"task_not_found", "task_not_succeeded", "task_foreign",

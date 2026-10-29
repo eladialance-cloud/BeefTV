@@ -178,6 +178,50 @@ describe("bindBackendCanvasGenerationResult waits for delivery", () => {
         expect(bindCalls).toBe(2);
     });
 
+    test("recovers a succeeded result into a server-created node when the original node is gone", async () => {
+        const original = canvasNode("node-stale", { taskId: "task-1", status: "error", resourceReloadAvailable: true });
+        useCanvasStore.setState({ projects: [canvasProject("canvas-1", [original], 3)] });
+        const recovered = canvasNode("recover-task-1-0", {
+            taskId: "task-1", taskStatus: "succeeded", status: "success",
+            content: "/api/resources/res-1/file", storageKey: "resource:res-1", assetId: "generation_abc",
+        });
+        recovered.title = "自动恢复";
+        recovered.position = { x: 12, y: 34 };
+        const project = canvasProject("canvas-1", [recovered], 8);
+        const nodesRef = { current: [original] };
+        const identity = captured("user-a", 1);
+        let recoveryInput: { operationId: string } | undefined;
+
+        await applyLikeCaller({
+            canvasId: "canvas-1",
+            nodeId: original.id,
+            task: mediaTask({ outputs: [{ outputIndex: 0, mediaType: "image", materializedAssetId: "generation_abc" }] }),
+            isCurrent: () => true,
+            nodesRef,
+            setNodes: (value) => {
+                nodesRef.current = typeof value === "function" ? value(nodesRef.current) : value;
+            },
+            runtime: {
+                hydrateOutputs: async () => undefined,
+                persistDocument: async () => undefined,
+                bindOutput: async () => {
+                    throw new ApiError("只能绑定到任务原先指定的节点", { status: 409, reason: "node_mismatch" });
+                },
+                recoverOutput: async (input) => {
+                    recoveryInput = input;
+                    return bindResponse(input.operationId, project, recovered.id);
+                },
+                adoptConfirmedProjection: async (adopted) => adopted,
+                captureScope: () => identity,
+                liveScope: () => identity,
+            },
+        });
+
+        expect(recoveryInput?.operationId).toBe("recover-node-v2:task-1:0");
+        expect(nodesRef.current.map((node) => node.id)).toContain(recovered.id);
+        expect(nodesRef.current.find((node) => node.id === recovered.id)?.metadata?.status).toBe("success");
+    });
+
     test.each(["output_not_ready", "resource_not_ready"])("stops repeated %s rejections even when the output claims a materialized asset", async (reason) => {
         const identity = captured("user-a", 1);
         const deliveredTask = mediaTask({ outputs: [{ outputIndex: 0, mediaType: "image", materializedAssetId: "missing-asset" }] });

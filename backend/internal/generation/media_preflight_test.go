@@ -20,6 +20,7 @@ func TestMediaTransportUsesSelectedContractBeforeReadingFiles(t *testing.T) {
 		{"URL only inline", "newapi-channel-2", "seedance_v2.5", "https://custom.example", Media{DataURL: "data:image/png;base64,YQ=="}, true},
 		{"URL only blob", "newapi-channel-2", "seedance_v2.5", "https://custom.example", Media{URL: "blob:local"}, true},
 		{"URL only HTTPS", "newapi-channel-2", "seedance_v2.5", "https://custom.example", Media{URL: "https://cdn.example/image.png"}, false},
+		{"ToAPI auto upload", "toapis-video", "MiniMax-H3", "https://toapis.cn", Media{StorageKey: "resource:local"}, false},
 		{"full video upload", "full-video", "seedance-2.5", "https://custom.example", Media{StorageKey: "resource:local"}, false},
 		{"inline protocol", "newapi-channel-1", "video", "https://custom.example", Media{StorageKey: "resource:local"}, false},
 		{"BeefAPI upload", "newapi", "seedance-2.0-mini", "https://enterprise.beefapi.com", Media{StorageKey: "resource:local"}, false},
@@ -107,6 +108,31 @@ func TestMediaTransportNamesOnlyBlockedReferences(t *testing.T) {
 	input.ReferenceAudios = nil
 	if err := ValidateMediaTransport(context.Background(), input); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestToAPITransportRejectsInlineAudioAndVideo(t *testing.T) {
+	input := Input{
+		Mode: "video",
+		Config: Config{
+			InterfaceType: "toapis-video",
+			BaseURL:       "https://toapis.cn",
+		},
+		ReferenceImages: []Media{{StorageKey: "resource:image"}},
+		ReferenceAudios: []Media{{DataURL: "data:audio/mpeg;base64,YQ=="}},
+	}
+	if err := ValidateMediaTransport(context.Background(), input); err == nil || !strings.Contains(err.Error(), "参考音频 1") {
+		t.Fatalf("inline audio must be rejected before create: %v", err)
+	}
+	input.ReferenceAudios = nil
+	input.ReferenceVideos = []Media{{DataURL: "data:video/mp4;base64,YQ=="}}
+	if err := ValidateMediaTransport(context.Background(), input); err == nil || !strings.Contains(err.Error(), "参考视频 1") {
+		t.Fatalf("inline video must be rejected before create: %v", err)
+	}
+	input.ReferenceAudios = []Media{{URL: "https://cdn.example/voice.mp3"}}
+	input.ReferenceVideos = []Media{{URL: "https://cdn.example/clip.mp4"}}
+	if err := ValidateMediaTransport(context.Background(), input); err != nil {
+		t.Fatalf("public ToAPI audio/video rejected: %v", err)
 	}
 }
 

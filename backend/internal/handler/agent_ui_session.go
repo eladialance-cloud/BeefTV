@@ -95,8 +95,8 @@ func RegisterAgentUISessionRoutes(r gin.IRouter, svc *app.Service, ui *uiSession
 			fail(c, http.StatusForbidden, app.BadAuthRequest("外部客户端不能签发界面会话"))
 			return
 		}
-		if !isLoopbackRequest(c.Request) {
-			fail(c, http.StatusForbidden, app.BadAuthRequest("只接受本机同源请求"))
+		if !opsRequestAllowed(c) {
+			fail(c, http.StatusForbidden, app.BadAuthRequest("只接受本机或已放行前端的同源请求"))
 			return
 		}
 		user, err := currentUser(c, svc)
@@ -106,10 +106,13 @@ func RegisterAgentUISessionRoutes(r gin.IRouter, svc *app.Service, ui *uiSession
 		}
 		ownerOK := agentops.OwnerTokenMatches(svc.DataDir(), strings.TrimSpace(c.GetHeader("X-Beeftv-Owner")))
 		devBootstrap := strings.TrimSpace(os.Getenv("BEEFTV_UI_BOOTSTRAP")) == "1"
+		// 托管形态（server profile）里没有桌面壳，也没有本机 owner 文件：
+		// 已登录且来自同源/已放行前端的页面就是这块界面的正当主体，否则网页版助手与画布提交没有凭据可用。
+		hostedShell := hostedUIAuthority(c)
 		// The UI bootstrap secret comes through the Wails binding, separately from entry credentials.
 		desktopShell := desktopTrust != nil && desktopTrust(c.Request)
-		if !ownerOK && !devBootstrap && !desktopShell {
-			fail(c, http.StatusForbidden, app.BadAuthRequest("签发内置 UI 会话需要 owner 凭据或显式本地引导"))
+		if !ownerOK && !devBootstrap && !desktopShell && !hostedShell {
+			fail(c, http.StatusForbidden, app.BadAuthRequest("签发内置 UI 会话需要 owner 凭据、显式本地引导或受信前端"))
 			return
 		}
 		session := ui.issue(user.ID)

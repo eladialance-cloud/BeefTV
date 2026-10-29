@@ -25,15 +25,17 @@ type PricingRule struct {
 	BillingMode             string            `json:"billingMode,omitempty"`
 	Selector                map[string]string `json:"selector,omitempty"`
 	UnitPriceMicrocredits   int64             `json:"unitPriceMicrocredits"`
-	MinimumChargeCredits    int64             `json:"minimumChargeCredits"`
-	Enabled                 bool              `json:"enabled"`
-	SortOrder               int               `json:"sortOrder"`
-	EffectiveFrom           time.Time         `json:"effectiveFrom"`
-	EffectiveTo             *time.Time        `json:"effectiveTo,omitempty"`
-	Note                    string            `json:"note,omitempty"`
-	CreatedBy               string            `json:"createdBy,omitempty"`
-	CreatedAt               time.Time         `json:"createdAt"`
-	UpdatedAt               time.Time         `json:"updatedAt"`
+	// MinimumChargeCredits is a legacy field name whose persisted and API value
+	// is now expressed in microcredits.
+	MinimumChargeCredits int64      `json:"minimumChargeCredits"`
+	Enabled              bool       `json:"enabled"`
+	SortOrder            int        `json:"sortOrder"`
+	EffectiveFrom        time.Time  `json:"effectiveFrom"`
+	EffectiveTo          *time.Time `json:"effectiveTo,omitempty"`
+	Note                 string     `json:"note,omitempty"`
+	CreatedBy            string     `json:"createdBy,omitempty"`
+	CreatedAt            time.Time  `json:"createdAt"`
+	UpdatedAt            time.Time  `json:"updatedAt"`
 }
 
 // ModelPricing is the logical-model default price. It is the last fallback

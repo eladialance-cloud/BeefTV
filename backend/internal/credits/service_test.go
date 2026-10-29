@@ -10,6 +10,8 @@ import (
 	"infinite-canvas/backend/internal/model"
 )
 
+const testCredit = MicrocreditsPerCredit
+
 // memoryRepository is a pure in-memory wallet repository. It deliberately avoids
 // SQLite so these tests never trip the Windows temp-file handle cleanup issue,
 // and it reproduces the ApplyEntry contract: single mutation path, idempotent on
@@ -129,25 +131,25 @@ func grant(t *testing.T, service *Service, userID string, amount int64) {
 
 func TestReserveFreezesWithoutSpending(t *testing.T) {
 	service := New(newMemoryRepository(), fixedClock(time.Now()))
-	grant(t, service, "u1", 100)
-	result, err := service.Reserve("u1", "task-1", 30)
+	grant(t, service, "u1", 100*testCredit)
+	result, err := service.Reserve("u1", "task-1", 30*testCredit)
 	if err != nil {
 		t.Fatalf("冻结失败: %v", err)
 	}
 	if !result.Applied {
 		t.Fatal("首次冻结必须 applied=true")
 	}
-	if result.Account.Balance != 100 || result.Account.Frozen != 30 || result.Account.Available() != 70 {
+	if result.Account.Balance != 100*testCredit || result.Account.Frozen != 30*testCredit || result.Account.Available() != 70*testCredit {
 		t.Fatalf("冻结后账户应为 余额100/冻结30/可用70，得到 %#v", result.Account)
 	}
-	if result.Entry.FrozenBefore != 0 || result.Entry.FrozenAfter != 30 || result.Entry.BalanceAfter != 100 {
+	if result.Entry.FrozenBefore != 0 || result.Entry.FrozenAfter != 30*testCredit || result.Entry.BalanceAfter != 100*testCredit {
 		t.Fatalf("流水前后值应记录冻结变化，得到 %#v", result.Entry)
 	}
 	account, err := service.Account("u1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if account.Balance != 100 || account.Frozen != 30 {
+	if account.Balance != 100*testCredit || account.Frozen != 30*testCredit {
 		t.Fatalf("持久化账户与返回值不一致: %#v", account)
 	}
 }
@@ -155,11 +157,11 @@ func TestReserveFreezesWithoutSpending(t *testing.T) {
 func TestReserveRefusesInsufficientAvailable(t *testing.T) {
 	repo := newMemoryRepository()
 	service := New(repo, fixedClock(time.Now()))
-	grant(t, service, "u1", 100)
-	if _, err := service.Reserve("u1", "task-1", 30); err != nil {
+	grant(t, service, "u1", 100*testCredit)
+	if _, err := service.Reserve("u1", "task-1", 30*testCredit); err != nil {
 		t.Fatalf("首次冻结失败: %v", err)
 	}
-	_, err := service.Reserve("u1", "task-2", 80)
+	_, err := service.Reserve("u1", "task-2", 80*testCredit)
 	if err == nil {
 		t.Fatal("可用额不足时必须拒绝")
 	}
@@ -168,7 +170,7 @@ func TestReserveRefusesInsufficientAvailable(t *testing.T) {
 		t.Fatalf("应返回 403 积分不足，得到 %v", err)
 	}
 	account, _ := service.Account("u1")
-	if account.Frozen != 30 {
+	if account.Frozen != 30*testCredit {
 		t.Fatalf("失败的冻结不得改动账户，得到 %#v", account)
 	}
 	if _, found := repo.entries[ReserveKey("task-2")]; found {
@@ -179,12 +181,12 @@ func TestReserveRefusesInsufficientAvailable(t *testing.T) {
 func TestReserveIsIdempotentPerTask(t *testing.T) {
 	repo := newMemoryRepository()
 	service := New(repo, fixedClock(time.Now()))
-	grant(t, service, "u1", 100)
-	first, err := service.Reserve("u1", "task-1", 30)
+	grant(t, service, "u1", 100*testCredit)
+	first, err := service.Reserve("u1", "task-1", 30*testCredit)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := service.Reserve("u1", "task-1", 30)
+	second, err := service.Reserve("u1", "task-1", 30*testCredit)
 	if err != nil {
 		t.Fatalf("重放不得报错: %v", err)
 	}
@@ -192,7 +194,7 @@ func TestReserveIsIdempotentPerTask(t *testing.T) {
 		t.Fatalf("首次 applied=true、重放 applied=false，得到 %v/%v", first.Applied, second.Applied)
 	}
 	account, _ := service.Account("u1")
-	if account.Frozen != 30 {
+	if account.Frozen != 30*testCredit {
 		t.Fatalf("重放不得重复冻结，得到 %#v", account)
 	}
 	if len(repo.entries) != 2 {
@@ -202,32 +204,32 @@ func TestReserveIsIdempotentPerTask(t *testing.T) {
 
 func TestSettleReleasesFreezeAndDeductsActual(t *testing.T) {
 	service := New(newMemoryRepository(), fixedClock(time.Now()))
-	grant(t, service, "u1", 100)
-	if _, err := service.Reserve("u1", "task-1", 30); err != nil {
+	grant(t, service, "u1", 100*testCredit)
+	if _, err := service.Reserve("u1", "task-1", 30*testCredit); err != nil {
 		t.Fatal(err)
 	}
-	result, err := service.Settle("u1", "task-1", 30, 12)
+	result, err := service.Settle("u1", "task-1", 30*testCredit, 12*testCredit)
 	if err != nil {
 		t.Fatalf("结算失败: %v", err)
 	}
-	if result.Account.Balance != 88 || result.Account.Frozen != 0 {
+	if result.Account.Balance != 88*testCredit || result.Account.Frozen != 0 {
 		t.Fatalf("结算后应 余额88/冻结0，得到 %#v", result.Account)
 	}
-	if result.Entry.Amount != 12 || result.Entry.FrozenAfter != 0 {
+	if result.Entry.Amount != 12*testCredit || result.Entry.FrozenAfter != 0 {
 		t.Fatalf("结算流水应记录实际用量并释放冻结，得到 %#v", result.Entry)
 	}
 }
 
 func TestSettleTwiceDoesNotDoubleCharge(t *testing.T) {
 	service := New(newMemoryRepository(), fixedClock(time.Now()))
-	grant(t, service, "u1", 100)
-	if _, err := service.Reserve("u1", "task-1", 30); err != nil {
+	grant(t, service, "u1", 100*testCredit)
+	if _, err := service.Reserve("u1", "task-1", 30*testCredit); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Settle("u1", "task-1", 30, 12); err != nil {
+	if _, err := service.Settle("u1", "task-1", 30*testCredit, 12*testCredit); err != nil {
 		t.Fatal(err)
 	}
-	second, err := service.Settle("u1", "task-1", 30, 12)
+	second, err := service.Settle("u1", "task-1", 30*testCredit, 12*testCredit)
 	if err != nil {
 		t.Fatalf("重复结算不得报错: %v", err)
 	}
@@ -235,46 +237,61 @@ func TestSettleTwiceDoesNotDoubleCharge(t *testing.T) {
 		t.Fatal("重复结算必须收敛为 applied=false")
 	}
 	account, _ := service.Account("u1")
-	if account.Balance != 88 || account.Frozen != 0 {
+	if account.Balance != 88*testCredit || account.Frozen != 0 {
 		t.Fatalf("重复结算不得双扣，得到 %#v", account)
 	}
 }
 
 func TestSettleAllowsOvershootWithinBalance(t *testing.T) {
 	service := New(newMemoryRepository(), fixedClock(time.Now()))
-	grant(t, service, "u1", 100)
-	if _, err := service.Reserve("u1", "task-1", 30); err != nil {
+	grant(t, service, "u1", 100*testCredit)
+	if _, err := service.Reserve("u1", "task-1", 30*testCredit); err != nil {
 		t.Fatal(err)
 	}
-	result, err := service.Settle("u1", "task-1", 30, 55)
+	result, err := service.Settle("u1", "task-1", 30*testCredit, 55*testCredit)
 	if err != nil {
 		t.Fatalf("余额足够时超估结算应放行: %v", err)
 	}
-	if result.Account.Balance != 45 || result.Account.Frozen != 0 {
+	if result.Account.Balance != 45*testCredit || result.Account.Frozen != 0 {
 		t.Fatalf("超估结算后应 余额45/冻结0，得到 %#v", result.Account)
 	}
 }
 
 func TestSettleRejectsWhenBalanceCannotCoverActual(t *testing.T) {
 	service := New(newMemoryRepository(), fixedClock(time.Now()))
-	grant(t, service, "u1", 10)
-	if _, err := service.Reserve("u1", "task-1", 10); err != nil {
+	grant(t, service, "u1", 10*testCredit)
+	if _, err := service.Reserve("u1", "task-1", 10*testCredit); err != nil {
 		t.Fatal(err)
 	}
-	_, err := service.Settle("u1", "task-1", 10, 50)
+	_, err := service.Settle("u1", "task-1", 10*testCredit, 50*testCredit)
 	if err == nil {
 		t.Fatal("余额不足时必须拒绝结算")
 	}
 	account, _ := service.Account("u1")
-	if account.Balance != 10 || account.Frozen != 10 {
+	if account.Balance != 10*testCredit || account.Frozen != 10*testCredit {
 		t.Fatalf("失败的结算必须整体回滚，得到 %#v", account)
+	}
+}
+
+func TestWalletSupportsFractionalCreditReserveAndSettlement(t *testing.T) {
+	service := New(newMemoryRepository(), fixedClock(time.Now()))
+	grant(t, service, "u1", testCredit)
+	if _, err := service.Reserve("u1", "task-fractional", 500_000); err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.Settle("u1", "task-fractional", 500_000, 250_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Account.Balance != 750_000 || result.Account.Frozen != 0 {
+		t.Fatalf("0.25 积分扣费后余额应为 0.75 积分，得到 %#v", result.Account)
 	}
 }
 
 func TestSettleRejectsMissingFreeze(t *testing.T) {
 	service := New(newMemoryRepository(), fixedClock(time.Now()))
-	grant(t, service, "u1", 100)
-	_, err := service.Settle("u1", "task-1", 30, 12)
+	grant(t, service, "u1", 100*testCredit)
+	_, err := service.Settle("u1", "task-1", 30*testCredit, 12*testCredit)
 	if err == nil {
 		t.Fatal("没有冻结记录时结算必须失败")
 	}
@@ -286,15 +303,15 @@ func TestSettleRejectsMissingFreeze(t *testing.T) {
 
 func TestReleaseReturnsFreezeWithoutTouchingBalance(t *testing.T) {
 	service := New(newMemoryRepository(), fixedClock(time.Now()))
-	grant(t, service, "u1", 100)
-	if _, err := service.Reserve("u1", "task-1", 30); err != nil {
+	grant(t, service, "u1", 100*testCredit)
+	if _, err := service.Reserve("u1", "task-1", 30*testCredit); err != nil {
 		t.Fatal(err)
 	}
-	result, err := service.Release("u1", "task-1", 30)
+	result, err := service.Release("u1", "task-1", 30*testCredit)
 	if err != nil {
 		t.Fatalf("释放失败: %v", err)
 	}
-	if result.Account.Balance != 100 || result.Account.Frozen != 0 || result.Account.Available() != 100 {
+	if result.Account.Balance != 100*testCredit || result.Account.Frozen != 0 || result.Account.Available() != 100*testCredit {
 		t.Fatalf("释放后应全额可用，得到 %#v", result.Account)
 	}
 	if result.Entry.Kind != KindUnfreeze || result.Entry.Stage != StageRelease {
@@ -304,39 +321,39 @@ func TestReleaseReturnsFreezeWithoutTouchingBalance(t *testing.T) {
 
 func TestReleaseRejectsWhenNothingFrozen(t *testing.T) {
 	service := New(newMemoryRepository(), fixedClock(time.Now()))
-	grant(t, service, "u1", 100)
-	if _, err := service.Release("u1", "task-1", 10); err == nil {
+	grant(t, service, "u1", 100*testCredit)
+	if _, err := service.Release("u1", "task-1", 10*testCredit); err == nil {
 		t.Fatal("没有冻结时必须拒绝释放")
 	}
 }
 
 func TestAdjustCannotPushBalanceNegative(t *testing.T) {
 	service := New(newMemoryRepository(), fixedClock(time.Now()))
-	grant(t, service, "u1", 50)
-	if _, err := service.Adjust("u1", -60, "admin-1", "纠错", "adjust:1"); err == nil {
+	grant(t, service, "u1", 50*testCredit)
+	if _, err := service.Adjust("u1", -60*testCredit, "admin-1", "纠错", "adjust:1"); err == nil {
 		t.Fatal("扣减超过余额必须拒绝")
 	}
 	account, _ := service.Account("u1")
-	if account.Balance != 50 {
+	if account.Balance != 50*testCredit {
 		t.Fatalf("被拒的调整不得改动余额，得到 %#v", account)
 	}
 }
 
 func TestAdjustRequiresReason(t *testing.T) {
 	service := New(newMemoryRepository(), fixedClock(time.Now()))
-	grant(t, service, "u1", 50)
-	if _, err := service.Adjust("u1", 10, "admin-1", "   ", "adjust:reason"); err == nil {
+	grant(t, service, "u1", 50*testCredit)
+	if _, err := service.Adjust("u1", 10*testCredit, "admin-1", "   ", "adjust:reason"); err == nil {
 		t.Fatal("缺少原因必须拒绝")
 	}
 }
 
 func TestRechargeIsIdempotentOnOrderKey(t *testing.T) {
 	service := New(newMemoryRepository(), fixedClock(time.Now()))
-	first, err := service.Recharge("u1", 500, "alipay", "支付宝订单 A", "order:alipay:1001")
+	first, err := service.Recharge("u1", 500*testCredit, "alipay", "支付宝订单 A", "order:alipay:1001")
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := service.Recharge("u1", 500, "alipay", "支付宝订单 A", "order:alipay:1001")
+	second, err := service.Recharge("u1", 500*testCredit, "alipay", "支付宝订单 A", "order:alipay:1001")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +361,7 @@ func TestRechargeIsIdempotentOnOrderKey(t *testing.T) {
 		t.Fatalf("充值回调必须幂等，得到 %v/%v", first.Applied, second.Applied)
 	}
 	account, _ := service.Account("u1")
-	if account.Balance != 500 {
+	if account.Balance != 500*testCredit {
 		t.Fatalf("重复回调只能入账一次，得到 %#v", account)
 	}
 }
@@ -352,14 +369,14 @@ func TestRechargeIsIdempotentOnOrderKey(t *testing.T) {
 func TestLedgerRebuildsAccountAndOrdersNewestFirst(t *testing.T) {
 	repo := newMemoryRepository()
 	service := New(repo, fixedClock(time.Now()))
-	grant(t, service, "u1", 100)
-	if _, err := service.Reserve("u1", "task-1", 30); err != nil {
+	grant(t, service, "u1", 100*testCredit)
+	if _, err := service.Reserve("u1", "task-1", 30*testCredit); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Settle("u1", "task-1", 30, 12); err != nil {
+	if _, err := service.Settle("u1", "task-1", 30*testCredit, 12*testCredit); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Reserve("u1", "task-2", 20); err != nil {
+	if _, err := service.Reserve("u1", "task-2", 20*testCredit); err != nil {
 		t.Fatal(err)
 	}
 	entries, err := service.Ledger("u1", 10)
@@ -381,7 +398,7 @@ func TestLedgerRebuildsAccountAndOrdersNewestFirst(t *testing.T) {
 	if balance != account.Balance || frozen != account.Frozen {
 		t.Fatalf("流水累计应重建账户：期望 %d/%d，得到 %d/%d", account.Balance, account.Frozen, balance, frozen)
 	}
-	if account.Balance != 88 || account.Frozen != 20 {
+	if account.Balance != 88*testCredit || account.Frozen != 20*testCredit {
 		t.Fatalf("最终账户应为 余额88/冻结20，得到 %#v", account)
 	}
 }
@@ -410,7 +427,7 @@ func TestLedgerUnknownUserIsEmpty(t *testing.T) {
 func TestConcurrentReserveNeverOversubscribes(t *testing.T) {
 	repo := newMemoryRepository()
 	service := New(repo, fixedClock(time.Now()))
-	grant(t, service, "u1", 100)
+	grant(t, service, "u1", 100*testCredit)
 
 	const attempts = 20
 	var (
@@ -422,7 +439,7 @@ func TestConcurrentReserveNeverOversubscribes(t *testing.T) {
 	for i := 0; i < attempts; i++ {
 		go func(index int) {
 			defer wg.Done()
-			result, err := service.Reserve("u1", "task-"+time.Duration(index).String(), 10)
+			result, err := service.Reserve("u1", "task-"+time.Duration(index).String(), 10*testCredit)
 			if err != nil || result == nil || !result.Applied {
 				return
 			}
@@ -437,7 +454,7 @@ func TestConcurrentReserveNeverOversubscribes(t *testing.T) {
 		t.Fatalf("余额 100、每笔冻结 10，应恰好成功 10 笔，得到 %d", succeeded)
 	}
 	account, _ := service.Account("u1")
-	if account.Frozen != 100 || account.Balance != 100 || account.Available() != 0 {
+	if account.Frozen != 100*testCredit || account.Balance != 100*testCredit || account.Available() != 0 {
 		t.Fatalf("并发冻结后应为 余额100/冻结100/可用0，得到 %#v", account)
 	}
 }

@@ -48,7 +48,9 @@ func (p appResourcePort) HTTPSPublicURL(info generation.ResourceInfo, expiresAt 
 }
 
 func (p appResourcePort) LocalMode() bool {
-	return p.service != nil && p.service.IsLocalMode()
+	// The hosted server reuses the local execution kernel with a COS/S3 blob
+	// resolver. Only a desktop profile has the local-file-only media limit.
+	return p.service != nil && p.service.IsLocalMode() && !p.service.IsHostedProfile()
 }
 
 type appLimitsPort struct{ service *Service }

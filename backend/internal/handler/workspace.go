@@ -18,6 +18,42 @@ import (
 // this endpoint never reads a cookie or creates an AuthSession.
 func RegisterWorkspaceRoutes(r *gin.RouterGroup, svc *app.Service) {
 	r.GET("/workspace/bootstrap", func(c *gin.Context) {
+		if IsHostedRequest(c) {
+			user, exists := SessionUser(c)
+			if !exists || user == nil {
+				fail(c, http.StatusUnauthorized, errors.New("请先登录"))
+				return
+			}
+			limits, err := svc.PublicRuntimeLimits()
+			if err != nil {
+				failService(c, err)
+				return
+			}
+			features, err := svc.FeatureAvailability()
+			if err != nil {
+				failService(c, err)
+				return
+			}
+			ok(c, gin.H{
+				"contractVersion": DesktopContractVersion,
+				"profile":         "remote",
+				"capabilities": gin.H{
+					"localAssets":   false,
+					"providerCalls": true,
+				},
+				"workspace": gin.H{
+					"id":      user.ID,
+					"name":    "账号工作区",
+					"owner":   user.ID,
+					"storage": "server",
+				},
+				"user":          app.AuthUser{User: *user},
+				"storageMode":   "remote",
+				"runtimeLimits": limits,
+				"features":      features,
+			})
+			return
+		}
 		scope, err := CurrentWorkspace(c)
 		if err != nil {
 			fail(c, http.StatusInternalServerError, err)
@@ -61,6 +97,10 @@ func RegisterWorkspaceRoutes(r *gin.RouterGroup, svc *app.Service) {
 		})
 	})
 	r.GET("/workspace/model-config", func(c *gin.Context) {
+		if IsHostedRequest(c) {
+			fail(c, http.StatusForbidden, errors.New("模型配置仅由管理后台维护"))
+			return
+		}
 		if _, err := workspaceForLocalRequest(c, svc); err != nil {
 			fail(c, http.StatusUnauthorized, err)
 			return
@@ -92,6 +132,10 @@ func RegisterWorkspaceRoutes(r *gin.RouterGroup, svc *app.Service) {
 		ok(c, gin.H{"config": redactModelConfig(c, svc, config)})
 	})
 	r.PUT("/workspace/model-config", func(c *gin.Context) {
+		if IsHostedRequest(c) {
+			fail(c, http.StatusForbidden, errors.New("模型配置仅由管理后台维护"))
+			return
+		}
 		if _, err := workspaceForLocalRequest(c, svc); err != nil {
 			fail(c, http.StatusUnauthorized, err)
 			return

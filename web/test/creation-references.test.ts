@@ -37,6 +37,23 @@ describe("creation references", () => {
         expect(result.removedReferences).toEqual([]);
     });
 
+    test("图片、视频和音频按各自容量独立保留", () => {
+        const attachments = [
+            imageAttachment("first"),
+            imageAttachment("second"),
+            { id: "audio", name: "voice.mp3", type: "audio/mpeg", url: "blob:audio", storageKey: "audio:key", bytes: 1024, previewUrl: "" } satisfies CreationAttachment,
+        ];
+        const result = reconcileCreationAttachmentLimit(attachments, buildCreationMentionReferences([], attachments), {
+            image: 1,
+            video: 0,
+            audio: 1,
+            file: 0,
+        });
+
+        expect(result.attachments.map((attachment) => attachment.id)).toEqual(["first", "audio"]);
+        expect(result.removedReferences.map((reference) => reference.attachmentId)).toEqual(["second"]);
+    });
+
     test("文本创作允许媒体和常用文档，图片创作仍只接受图片", () => {
         expect(creationFileAccepted("text", { name: "story.pdf", type: "application/pdf" })).toBe(true);
         expect(creationFileAccepted("text", { name: "clip.mp4", type: "video/mp4" })).toBe(true);

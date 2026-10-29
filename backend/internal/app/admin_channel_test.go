@@ -264,6 +264,48 @@ func TestFetchAdminChannelModelsReaddsDeletedModel(t *testing.T) {
 	}
 }
 
+func TestFetchAdminChannelModelsKeepsUpstreamCatalogMetadataAndPricing(t *testing.T) {
+	t.Setenv("CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS", "127.0.0.1")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"video-a","display_name":"Video A","model_type":"video","supported_endpoint_types":["openai-video"],"video_pricing":{"currency":"CNY","mode":"seconds","rates":{"720p":{"output":0.25,"reference_video":0}}}}]}`))
+	}))
+	defer upstream.Close()
+
+	svc, db := newChannelModelTestService(t)
+	admin := &model.User{ID: "admin", Role: model.UserRoleAdmin}
+	channel := model.ModelChannel{ID: "channel-1", UserID: admin.ID, Scope: model.ChannelScopeSystem, Enabled: true, Name: "Test", BaseURL: upstream.URL + "/v1", APIKey: "key", APIFormat: "openai", ModelsJSON: `[]`}
+	if err := db.Create(&channel).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := svc.FetchAdminChannelModels(context.Background(), admin, channel.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"videoPricing"`) || !strings.Contains(string(encoded), `"mode":"seconds"`) {
+		t.Fatalf("fetch result dropped upstream pricing: %s", encoded)
+	}
+
+	var stored model.ChannelModel
+	if err := db.First(&stored, "channel_id = ? AND model_key = ?", channel.ID, "video-a").Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.DisplayName != "Video A" || stored.Capability != "video" || stored.Protocol == "" || stored.CapabilityConfigJSON == "" {
+		t.Fatalf("stored catalog metadata = %#v", stored)
+	}
+	if stored.Enabled {
+		t.Fatal("newly fetched models must stay disabled until an administrator prices and enables them")
+	}
+	if !strings.Contains(stored.UpstreamPricingJSON, `"currency":"CNY"`) {
+		t.Fatalf("stored upstream pricing = %q", stored.UpstreamPricingJSON)
+	}
+}
+
 func TestImportAdminChannelModelsOnlyImportsSelectedModels(t *testing.T) {
 	t.Setenv("CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS", "127.0.0.1")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

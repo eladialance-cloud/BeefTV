@@ -9,6 +9,7 @@ import (
 
 	"infinite-canvas/backend/internal/app"
 	"infinite-canvas/backend/internal/workspace"
+	"infinite-canvas/backend/internal/model"
 
 	"github.com/gin-gonic/gin"
 )
@@ -114,4 +115,54 @@ func modelConfigResponseData(t *testing.T, recorder *httptest.ResponseRecorder) 
 		t.Fatal(err)
 	}
 	return envelope.Data
+}
+
+func TestWorkspaceBootstrapUsesHostedSessionIdentity(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := app.NewLocal(nil, t.TempDir())
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		MarkHostedRequest(c)
+		SetSessionUser(c, &model.User{ID: "user-1", Username: "alice", DisplayName: "Alice", Role: model.UserRoleUser, Status: model.UserStatusActive})
+		c.Next()
+	})
+	RegisterWorkspaceRoutes(router.Group("/api"), service)
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/workspace/bootstrap", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	data := modelConfigResponseData(t, recorder)
+	if data["profile"] != "remote" || data["storageMode"] != "remote" {
+		t.Fatalf("hosted bootstrap profile/storage = %#v/%#v", data["profile"], data["storageMode"])
+	}
+	user, _ := data["user"].(map[string]any)
+	if user["id"] != "user-1" {
+		t.Fatalf("hosted bootstrap user = %#v", user)
+	}
+	workspace, _ := data["workspace"].(map[string]any)
+	if workspace["id"] != "user-1" || workspace["owner"] != "user-1" || workspace["storage"] != "server" {
+		t.Fatalf("hosted bootstrap workspace = %#v", workspace)
+	}
+}
+
+func TestHostedWorkspaceModelConfigIsAdminOnly(t *testing.T) {
+	hostedRouter := gin.New()
+	hostedRouter.Use(func(c *gin.Context) {
+		MarkHostedRequest(c)
+		c.Next()
+	})
+	RegisterWorkspaceRoutes(hostedRouter.Group("/api"), app.NewLocal(nil, t.TempDir()))
+
+	for _, request := range []*http.Request{
+		httptest.NewRequest(http.MethodGet, "/api/workspace/model-config", nil),
+		httptest.NewRequest(http.MethodPut, "/api/workspace/model-config", bytes.NewReader([]byte(`{"config":{"channels":[]}}`))),
+	} {
+		recorder := httptest.NewRecorder()
+		hostedRouter.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusForbidden {
+			t.Fatalf("hosted model-config %s status = %d body=%s", request.Method, recorder.Code, recorder.Body.String())
+		}
+	}
 }

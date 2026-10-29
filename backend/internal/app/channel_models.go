@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -53,7 +54,7 @@ func (s *Service) AdminChannelModels(actor *model.User, channelID string) ([]mod
 	if err != nil {
 		return nil, err
 	}
-	return modelcatalog.HydrateChannelModelCapabilityConfig(items), nil
+	return hydrateChannelModelUpstreamPricing(modelcatalog.HydrateChannelModelCapabilityConfig(items)), nil
 }
 
 func (s *Service) SystemChannelModel(channelID string, modelKey string) (*model.ChannelModel, error) {
@@ -77,18 +78,11 @@ func (s *Service) FetchAdminChannelModels(ctx context.Context, actor *model.User
 	if err := s.RequireAdmin(actor); err != nil {
 		return nil, err
 	}
-	channel, err := s.adminSystemChannel(channelID)
+	channel, catalog, err := s.fetchAdminChannelCatalog(ctx, actor, channelID)
 	if err != nil {
 		return nil, err
 	}
-	headers, err := ParseOutboundHeadersJSON(channel.HeadersJSON)
-	if err != nil {
-		return nil, err
-	}
-	models, err := s.FetchChannelModels(ctx, actor, ChannelModelsRequest{BaseURL: channel.BaseURL, APIKey: channel.APIKey, APIFormat: channel.APIFormat, Headers: headers})
-	if err != nil {
-		return nil, err
-	}
+	models := modelcatalog.CatalogModelIDs(catalog)
 	existing, err := s.repo.ChannelModels(channelID, true)
 	if err != nil {
 		return nil, err
@@ -97,35 +91,48 @@ func (s *Service) FetchAdminChannelModels(ctx context.Context, actor *model.User
 	if err != nil {
 		return nil, err
 	}
+	applyChannelCatalogMetadata(*channel, missing, catalog)
 	added, err := s.repo.CreateMissingChannelModels(missing)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.refreshChannelCatalogMetadata(*channel, catalog, existing); err != nil {
 		return nil, err
 	}
 	if added > 0 {
 		s.invalidateRouteCatalog()
 	}
-	return &AdminChannelModelFetchResult{Models: models, Added: added}, nil
+	return &AdminChannelModelFetchResult{Models: models, Added: added, Catalog: catalog}, nil
 }
 
 func (s *Service) PreviewAdminChannelModels(ctx context.Context, actor *model.User, channelID string) ([]string, error) {
+	catalog, err := s.PreviewAdminChannelModelCatalog(ctx, actor, channelID)
+	if err != nil {
+		return nil, err
+	}
+	return modelcatalog.CatalogModelIDs(catalog), nil
+}
+
+func (s *Service) PreviewAdminChannelModelCatalog(ctx context.Context, actor *model.User, channelID string) ([]ChannelModelCatalogItem, error) {
 	if err := s.RequireAdmin(actor); err != nil {
 		return nil, err
 	}
-	return s.fetchAdminChannelModelCatalog(ctx, actor, channelID)
+	_, catalog, err := s.fetchAdminChannelCatalog(ctx, actor, channelID)
+	if err != nil {
+		return nil, err
+	}
+	return catalog, nil
 }
 
 func (s *Service) ImportAdminChannelModels(ctx context.Context, actor *model.User, channelID string, selected []string) (*AdminChannelModelFetchResult, error) {
 	if err := s.RequireAdmin(actor); err != nil {
 		return nil, err
 	}
-	channel, err := s.adminSystemChannel(channelID)
+	channel, catalog, err := s.fetchAdminChannelCatalog(ctx, actor, channelID)
 	if err != nil {
 		return nil, err
 	}
-	models, err := s.fetchAdminChannelModelCatalog(ctx, actor, channelID)
-	if err != nil {
-		return nil, err
-	}
+	models := modelcatalog.CatalogModelIDs(catalog)
 	chosen, err := modelcatalog.SelectCatalogModels(selected, models)
 	if err != nil {
 		return nil, err
@@ -138,30 +145,34 @@ func (s *Service) ImportAdminChannelModels(ctx context.Context, actor *model.Use
 	if err != nil {
 		return nil, err
 	}
+	applyChannelCatalogMetadata(*channel, missing, catalog)
 	added, err := s.repo.CreateMissingChannelModels(missing)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.refreshChannelCatalogMetadata(*channel, catalog, existing); err != nil {
 		return nil, err
 	}
 	if added > 0 {
 		s.invalidateRouteCatalog()
 	}
-	return &AdminChannelModelFetchResult{Models: chosen, Added: added}, nil
+	return &AdminChannelModelFetchResult{Models: chosen, Added: added, Catalog: catalog}, nil
 }
 
-func (s *Service) fetchAdminChannelModelCatalog(ctx context.Context, actor *model.User, channelID string) ([]string, error) {
+func (s *Service) fetchAdminChannelCatalog(ctx context.Context, actor *model.User, channelID string) (*model.ModelChannel, []ChannelModelCatalogItem, error) {
 	channel, err := s.adminSystemChannel(channelID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	headers, err := ParseOutboundHeadersJSON(channel.HeadersJSON)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	models, err := s.FetchChannelModels(ctx, actor, ChannelModelsRequest{BaseURL: channel.BaseURL, APIKey: channel.APIKey, APIFormat: channel.APIFormat, Headers: headers})
+	catalog, err := s.FetchChannelModelCatalog(ctx, actor, ChannelModelsRequest{BaseURL: channel.BaseURL, APIKey: channel.APIKey, APIFormat: channel.APIFormat, Headers: headers})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return uniqueNonEmpty(models), nil
+	return channel, catalog, nil
 }
 
 func (s *Service) SaveAdminChannelModel(actor *model.User, channelID string, id string, req ChannelModelRequest) (*model.ChannelModel, error) {
@@ -190,6 +201,11 @@ func (s *Service) SaveAdminChannelModel(actor *model.User, channelID string, id 
 			return nil, err
 		}
 	}
+	// 管理后台只需要选择模型和协议；文本、图片、视频的底层能力参数
+	// 在没有显式输入时使用协议默认值，编辑已有模型则保留原配置。
+	if req.CapabilityConfig == nil && (capability == "text" || capability == "image" || capability == "video") {
+		req.CapabilityConfig = adminChannelModelDefaultCapabilityConfig(existing, protocol, providerModelKey)
+	}
 	item, tiers, err := modelcatalog.PrepareChannelModelSave(channelID, id, req, modelKey, providerModelKey, capability, protocol, existing, s.repo.NextPrefixedID)
 	if err != nil {
 		return nil, err
@@ -205,7 +221,17 @@ func (s *Service) SaveAdminChannelModel(actor *model.User, channelID string, id 
 	if err := s.syncLogicalModelsFromChannelModel(actor, item); err != nil {
 		return nil, err
 	}
-	return item, nil
+	hydrated := hydrateChannelModelUpstreamPricing([]model.ChannelModel{*item})
+	return &hydrated[0], nil
+}
+
+func adminChannelModelDefaultCapabilityConfig(existing *model.ChannelModel, protocol model.ChannelInterfaceType, providerModelKey string) *ModelCapabilityConfig {
+	if existing != nil && strings.TrimSpace(existing.CapabilityConfigJSON) != "" {
+		if config, err := modelcatalog.DecodeModelCapabilityConfig(existing.CapabilityConfigJSON); err == nil && config != nil {
+			return config
+		}
+	}
+	return modelcatalog.DefaultModelCapabilityConfigForModel(string(protocol), providerModelKey)
 }
 
 func (s *Service) syncLogicalModelsFromChannelModel(actor *model.User, channelModel *model.ChannelModel) error {
@@ -426,4 +452,178 @@ func (s *Service) capabilityForProtocol(protocol model.ChannelInterfaceType) str
 		return ""
 	}
 	return protocolCapabilityFromMetadata(metadata)
+}
+
+func hydrateChannelModelUpstreamPricing(items []model.ChannelModel) []model.ChannelModel {
+	for index := range items {
+		items[index].UpstreamPricing = nil
+		raw := strings.TrimSpace(items[index].UpstreamPricingJSON)
+		if raw == "" || raw == "null" {
+			continue
+		}
+		var value map[string]any
+		if json.Unmarshal([]byte(raw), &value) == nil && len(value) > 0 {
+			items[index].UpstreamPricing = value
+		}
+	}
+	return items
+}
+
+func applyChannelCatalogMetadata(channel model.ModelChannel, rows []model.ChannelModel, catalog []ChannelModelCatalogItem) {
+	byKey := make(map[string]ChannelModelCatalogItem, len(catalog))
+	for _, item := range catalog {
+		byKey[channelModelCatalogKey(item.ID)] = item
+	}
+	for index := range rows {
+		item, ok := byKey[channelModelCatalogKey(rows[index].ModelKey)]
+		if !ok {
+			item, ok = byKey[channelModelCatalogKey(rows[index].ProviderModelKey)]
+		}
+		if ok {
+			applyChannelCatalogItemMetadata(&rows[index], channel, item)
+		}
+	}
+}
+
+func (s *Service) refreshChannelCatalogMetadata(channel model.ModelChannel, catalog []ChannelModelCatalogItem, existing []model.ChannelModel) error {
+	byKey := make(map[string]ChannelModelCatalogItem, len(catalog))
+	for _, item := range catalog {
+		byKey[channelModelCatalogKey(item.ID)] = item
+	}
+	for index := range existing {
+		item, ok := byKey[channelModelCatalogKey(existing[index].ModelKey)]
+		if !ok {
+			item, ok = byKey[channelModelCatalogKey(existing[index].ProviderModelKey)]
+		}
+		if !ok || !applyChannelCatalogItemMetadata(&existing[index], channel, item) {
+			continue
+		}
+		if err := s.repo.SaveChannelModel(&existing[index]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func applyChannelCatalogItemMetadata(channelModel *model.ChannelModel, channel model.ModelChannel, item ChannelModelCatalogItem) bool {
+	if channelModel == nil {
+		return false
+	}
+	changed := false
+	displayName := strings.TrimSpace(item.DisplayName)
+	if displayName != "" && (strings.TrimSpace(channelModel.DisplayName) == "" || channelModel.DisplayName == channelModel.ModelKey) && channelModel.DisplayName != displayName {
+		channelModel.DisplayName = displayName
+		changed = true
+	}
+	capability := inferCatalogCapability(item)
+	if strings.TrimSpace(channelModel.Capability) == "" && capability != "" {
+		channelModel.Capability = capability
+		changed = true
+	}
+	if strings.TrimSpace(string(channelModel.Protocol)) == "" && capability != "" {
+		channelModel.Protocol = inferCatalogProtocol(channel, capability, item)
+		changed = true
+	}
+	if strings.TrimSpace(channelModel.CapabilityConfigJSON) == "" && capability != "" && strings.TrimSpace(string(channelModel.Protocol)) != "" {
+		if encoded := catalogCapabilityConfigJSON(capability, string(channelModel.Protocol), item); encoded != "" {
+			channelModel.CapabilityConfigJSON = encoded
+			changed = true
+		}
+	}
+	pricingJSON := ""
+	if raw := strings.TrimSpace(string(item.VideoPricing)); raw != "" && raw != "null" && json.Valid([]byte(raw)) {
+		pricingJSON = raw
+	}
+	if channelModel.UpstreamPricingJSON != pricingJSON {
+		channelModel.UpstreamPricingJSON = pricingJSON
+		channelModel.UpstreamPricing = nil
+		changed = true
+	}
+	return changed
+}
+
+func inferCatalogCapability(item ChannelModelCatalogItem) string {
+	if capability := modelcatalog.NormalizeCatalogModelType(item.ModelType); capability != "" {
+		return capability
+	}
+	endpoints := strings.ToLower(strings.Join(item.SupportedEndpointTypes, " "))
+	switch {
+	case strings.Contains(endpoints, "video"):
+		return "video"
+	case strings.Contains(endpoints, "image"):
+		return "image"
+	case strings.Contains(endpoints, "audio"), strings.Contains(endpoints, "speech"), strings.Contains(endpoints, "music"):
+		return "audio"
+	case strings.Contains(endpoints, "response"), strings.Contains(endpoints, "chat"), strings.Contains(endpoints, "gemini"), strings.Contains(endpoints, "anthropic"), strings.Contains(endpoints, "messages"):
+		return "text"
+	}
+	name := strings.ToLower(item.ID)
+	switch {
+	case strings.Contains(name, "seedance"), strings.Contains(name, "veo"), strings.Contains(name, "video"), strings.Contains(name, "-t2v"), strings.Contains(name, "-i2v"):
+		return "video"
+	case strings.Contains(name, "image"), strings.Contains(name, "flux"), strings.Contains(name, "banana"):
+		return "image"
+	case strings.Contains(name, "speech"), strings.Contains(name, "tts"), strings.Contains(name, "music"), strings.Contains(name, "audio"):
+		return "audio"
+	case strings.Contains(name, "gpt"), strings.Contains(name, "claude"), strings.Contains(name, "gemini"), strings.Contains(name, "deepseek"), strings.Contains(name, "qwen"), strings.Contains(name, "llama"):
+		return "text"
+	default:
+		return ""
+	}
+}
+
+func inferCatalogProtocol(channel model.ModelChannel, capability string, item ChannelModelCatalogItem) model.ChannelInterfaceType {
+	endpoints := strings.ToLower(strings.Join(item.SupportedEndpointTypes, " "))
+	switch capability {
+	case "text":
+		if strings.Contains(endpoints, "response") {
+			return model.ChannelInterfaceOpenAIResponse
+		}
+		if strings.Contains(endpoints, "anthropic") || strings.Contains(endpoints, "messages") {
+			return model.ChannelInterfaceClaudeAPI
+		}
+		return model.ChannelInterfaceChatCompletion
+	case "image":
+		if channel.APIFormat == "gemini" || strings.Contains(endpoints, "gemini") {
+			return model.ChannelInterfaceGeminiImage
+		}
+		return model.ChannelInterfaceOpenAIImage
+	case "video":
+		if strings.Contains(endpoints, "gemini") {
+			return model.ChannelInterfaceGeminiVeo
+		}
+		if strings.Contains(endpoints, "volcengine") || strings.Contains(endpoints, "ark") {
+			return model.ChannelInterfaceVolcengineArkVideo
+		}
+		return model.ChannelInterfaceNewAPIChannel2
+	case "audio":
+		return model.ChannelInterfaceOpenAIAudio
+	default:
+		return ""
+	}
+}
+
+func catalogCapabilityConfigJSON(capability string, protocol string, item ChannelModelCatalogItem) string {
+	profile := modelcatalog.DefaultModelCapabilityConfigForModel(protocol, item.ID)
+	if profile == nil {
+		return ""
+	}
+	if capability == "video" && len(strings.TrimSpace(string(item.VideoCapabilities))) > 0 {
+		var video VideoCapabilityConfig
+		if json.Unmarshal(item.VideoCapabilities, &video) == nil {
+			candidate := &ModelCapabilityConfig{Version: 1, Video: &video}
+			if normalized, err := modelcatalog.NormalizeModelCapabilityConfigForModel(capability, protocol, item.ID, candidate); err == nil {
+				profile = normalized
+			}
+		}
+	}
+	normalized, err := modelcatalog.NormalizeModelCapabilityConfigForModel(capability, protocol, item.ID, profile)
+	if err != nil || normalized == nil {
+		return ""
+	}
+	encoded, err := json.Marshal(normalized)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
 }

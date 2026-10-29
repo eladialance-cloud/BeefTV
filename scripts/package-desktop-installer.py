@@ -13,14 +13,14 @@ SUFFIXES = {'darwin-arm64': '.dmg', 'darwin-amd64': '.dmg',
 
 
 def installer_name(version, platform):
-    return f'BeefTV-{version}-{platform}{SUFFIXES[platform]}'
+    return f'VisiDeepAI-{version}-{platform}{SUFFIXES[platform]}'
 
 
 def package(version, platform, payload, output):
     if not re.fullmatch(r'v\d+\.\d+\.\d+', version):
         raise ValueError('Installers require a stable repository version')
     payload, output = payload.resolve(), output.resolve()
-    exe = payload / ('Contents/MacOS/BeefTV' if platform.startswith('darwin-') else 'BeefTV.exe' if platform == 'windows-amd64' else 'BeefTV')
+    exe = payload / ('Contents/MacOS/VisiDeepAI' if platform.startswith('darwin-') else 'VisiDeepAI.exe' if platform == 'windows-amd64' else 'VisiDeepAI')
     if not exe.is_file():
         raise ValueError('Release payload executable is missing')
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -29,10 +29,10 @@ def package(version, platform, payload, output):
         with tempfile.TemporaryDirectory(prefix='beeftv-dmg-') as directory:
             stage = Path(directory) / 'image'
             stage.mkdir()
-            subprocess.run(['ditto', str(payload), str(stage / 'BeefTV.app')], check=True)
+            subprocess.run(['ditto', str(payload), str(stage / 'VisiDeepAI.app')], check=True)
             (stage / 'Applications').symlink_to('/Applications')
             shutil.copy2(ROOT / 'docs/desktop-install.md', stage / 'Installation.txt')
-            subprocess.run(['hdiutil', 'create', '-volname', 'BeefTV', '-srcfolder', str(stage),
+            subprocess.run(['hdiutil', 'create', '-volname', 'VisiDeep AI', '-srcfolder', str(stage),
                             '-format', 'UDZO', '-ov', str(output)], check=True)
     elif platform == 'windows-amd64':
         compiler = shutil.which('makensis') or r'C:\Program Files (x86)\NSIS\makensis.exe'
@@ -45,30 +45,30 @@ def package(version, platform, payload, output):
     else:
         with tempfile.TemporaryDirectory(prefix='beeftv-deb-') as directory:
             stage = Path(directory)
-            bundle = stage / 'opt/beeftv/BeefTV-linux'
+            bundle = stage / 'opt/visideep/VisiDeepAI-linux'
             shutil.copytree(payload, bundle, symlinks=True)
             (bundle / '.package-managed').write_text('deb\n')
             control = stage / 'DEBIAN'
             control.mkdir()
             (control / 'control').write_text(
-                f'Package: beeftv\nVersion: {version[1:]}\nArchitecture: amd64\n'
-                'Maintainer: BeefTV Contributors <58928515+glanderness@users.noreply.github.com>\n'
+                f'Package: visideep\nVersion: {version[1:]}\nArchitecture: amd64\n'
+                'Maintainer: VisiDeep AI Contributors <58928515+glanderness@users.noreply.github.com>\n'
                 'Homepage: https://github.com/glanderness/BeefTV\nSection: graphics\nPriority: optional\n'
                 'Depends: libgtk-3-0t64, libwebkit2gtk-4.1-0, gstreamer1.0-plugins-good, '
                 'gstreamer1.0-plugins-bad, gstreamer1.0-libav, ffmpeg, fonts-noto-cjk\n'
-                'Description: BeefTV creative workspace (Ubuntu 24.04)\n')
+                'Description: VisiDeep AI creative workspace (Ubuntu 24.04)\n')
             applications = stage / 'usr/share/applications'
             applications.mkdir(parents=True)
-            (applications / 'beeftv.desktop').write_text(
-                '[Desktop Entry]\nType=Application\nName=BeefTV\n'
-                'Exec=/opt/beeftv/BeefTV-linux/BeefTV\nIcon=beeftv\n'
-                'Terminal=false\nCategories=Graphics;AudioVideo;\nStartupWMClass=BeefTV\n')
+            (applications / 'visideep.desktop').write_text(
+                '[Desktop Entry]\nType=Application\nName=VisiDeep AI\n'
+                'Exec=/opt/visideep/VisiDeepAI-linux/VisiDeepAI\nIcon=visideep\n'
+                'Terminal=false\nCategories=Graphics;AudioVideo;\nStartupWMClass=VisiDeep AI\n')
             icons = stage / 'usr/share/pixmaps'
             icons.mkdir(parents=True)
-            shutil.copy2(ROOT / 'assets/app-icon.png', icons / 'beeftv.png')
+            shutil.copy2(ROOT / 'assets/app-icon.png', icons / 'visideep.png')
             bins = stage / 'usr/bin'
             bins.mkdir(parents=True)
-            (bins / 'beeftv').symlink_to('/opt/beeftv/BeefTV-linux/cli/beeftv')
+            (bins / 'visideep').symlink_to('/opt/visideep/VisiDeepAI-linux/cli/visideep')
             # copytree keeps build modes, including Node and bundled CLI executables.
             for path in stage.rglob('*'):
                 if path.is_dir():
@@ -87,9 +87,9 @@ def main():
     payload = args.input or ROOT / 'backend/cmd/desktop/build/bin'
     if not args.input:
         if args.platform.startswith('darwin-'):
-            payload /= 'BeefTV.app'
+            payload /= 'VisiDeepAI.app'
         elif args.platform == 'linux-amd64':
-            payload /= 'BeefTV-linux'
+            payload /= 'VisiDeepAI-linux'
     package(args.version, args.platform, payload, args.output_dir / installer_name(args.version, args.platform))
 
 

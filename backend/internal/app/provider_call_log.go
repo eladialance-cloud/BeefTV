@@ -15,7 +15,7 @@ func (s *Service) EnrichAPICallLog(log *model.ApiCallLog, responseBody []byte) {
 	if log == nil {
 		return
 	}
-	if log.ProviderRequestID == "" {
+	if log.ProviderRequestID == "" && (log.RequestKind == "poll" || log.RequestKind == "download") {
 		log.ProviderRequestID = providerRequestIDFromPath(log.Path)
 	}
 	for _, payload := range providerResponsePayloads(responseBody) {
@@ -104,8 +104,12 @@ func (s *Service) enrichAPICallLogPayload(log *model.ApiCallLog, payload map[str
 		}
 		log.CachedTokens = firstInt64(usage, "cachedContentTokenCount")
 	}
-	if extracted, err := firstJSONString(payload, "task_id", "id", "request_id", "name"); err == nil {
+	if extracted, err := firstJSONString(payload, "task_id", "taskId", "id", "name"); err == nil {
 		log.ProviderRequestID = firstNonEmpty(nestedTaskID, extracted, log.ProviderRequestID)
+	} else if log.RequestKind != "create" {
+		if requestID, err := firstJSONString(payload, "request_id", "requestId"); err == nil {
+			log.ProviderRequestID = firstNonEmpty(nestedTaskID, requestID, log.ProviderRequestID)
+		}
 	} else {
 		log.ProviderRequestID = firstNonEmpty(nestedTaskID, log.ProviderRequestID)
 	}
@@ -166,10 +170,10 @@ func providerRequestIDFromPath(path string) string {
 	parts := strings.Split(strings.Trim(strings.TrimSpace(path), "/"), "/")
 	for index := len(parts) - 1; index >= 0; index-- {
 		part := strings.TrimSpace(parts[index])
-		if part == "" || part == "content" || part == "download" {
+		if part == "" || part == "content" || part == "download" || part == "generations" || part == "tasks" || part == "videos" {
 			continue
 		}
-		if index > 0 && (parts[index-1] == "videos" || parts[index-1] == "tasks") {
+		if index > 0 && (parts[index-1] == "videos" || parts[index-1] == "tasks" || parts[index-1] == "generations") {
 			return part
 		}
 		break

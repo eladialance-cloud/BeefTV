@@ -1,7 +1,27 @@
-# BeefTV 托管工作台（网页版前端）
+# VisiDeep AI 管理后台（网页版前端）
 
-给 BeefTV 网页版（后端 `server` profile）用的独立前端：登录/注册、我的钱包与积分流水、
-管理后台的用户积分、对象存储与支付渠道配置。
+给 VisiDeep AI 网页版（后端 `server` profile）用的管理后台前端，只服务管理员。
+用户端（注册登录、项目库、画布、积分充值）是另一个应用，代码在 `../web-user/`，
+两边共用同一个后端 JSON API。
+
+登录页是左右分栏的深色版式：左侧整屏主视觉 + 品牌标语，右侧登录表单，
+小屏下自动收起左侧图，只留表单。用普通用户账号登录会停在「没有管理后台权限」页，
+不会看到任何后台数据。
+
+导航按七个分组排列：
+
+| 分组 | 页面 | 状态 |
+| --- | --- | --- |
+| 概览 | 运营概览 | 已接真实数据 |
+| 用户 | 用户管理、注册策略与邀请码、积分账户 | 均已接通 |
+| 内容 | 项目管理、素材库 | 均已接通 |
+| 创作模板 | 工作流模板、提示词库、画风预设 | 均已接通 |
+| 模型 | 模型渠道、价格规则 | 均已接通 |
+| 商业化 | 套餐与积分包、订单、充值流水、支付渠道 | 均已接通 |
+| 系统 | 站点配置、对象存储、审计日志 | 均已接通 |
+
+所有导航页都由真实接口驱动，不再保留 `modules.js` 占位渲染器。
+用户、项目、素材、站点配置和内容治理写操作都会写入审计日志。
 
 ## 为什么单独一个目录
 
@@ -13,13 +33,16 @@
 
 ## 零依赖
 
-只有一个 HTML、一个 CSS、一个 ES module，没有构建步骤，也没有 npm 依赖：
+只有一个 HTML、一个 CSS、两个 ES module，没有构建步骤，也没有运行时 npm 依赖：
 
 ```
 web-hosted/
 ├── index.html
 ├── styles.css
-└── app.js
+├── app.js          # 路由、页面渲染、数据加载与表单处理
+├── format.js       # 纯格式化函数，带单测
+├── assets/         # VisiDeep AI 品牌与登录主视觉
+└── test/           # API 契约与格式化单测
 ```
 
 ## 怎么跑
@@ -61,6 +84,19 @@ python -m http.server 4173
 | 注册 | POST | `/api/register` |
 | 当前用户 | GET | `/api/auth/me` |
 | 退出 | POST | `/api/logout` |
+| 运营概览（管理员） | GET | `/api/admin/overview?days=7` |
+| 用户列表（管理员） | GET | `/api/admin/users` |
+| 新增用户（管理员） | POST | `/api/admin/users` |
+| 修改用户状态/角色（管理员） | PATCH | `/api/admin/users/:id` |
+| 重置用户密码（管理员） | POST | `/api/admin/users/:id/password` |
+| 项目/画布列表（管理员） | GET | `/api/admin/projects` |
+| 归档/恢复项目（管理员） | POST | `/api/admin/projects/:id/archive\|restore` |
+| 素材列表（管理员） | GET | `/api/admin/assets` |
+| 下架/恢复素材（管理员） | POST | `/api/admin/assets/:id/block\|unblock` |
+| 积分流水（管理员） | GET | `/api/admin/credit-ledger` |
+| 站点配置（管理员） | GET/PUT | `/api/admin/site` |
+| 公开站点配置 | GET | `/api/site/config` |
+| 审计日志（管理员） | GET | `/api/admin/audit` |
 | 我的钱包 | GET | `/api/credits/wallet` |
 | 我的流水 | GET | `/api/credits/ledger` |
 | 账户列表（管理员） | GET | `/api/admin/credits/accounts` |
@@ -88,17 +124,26 @@ python -m http.server 4173
 | 支付订单（管理员） | GET | `/api/admin/payment-orders` |
 | 确认支付（管理员） | POST | `/api/admin/payment-orders/:id/mark-paid` |
 | 关闭订单（管理员） | POST | `/api/admin/payment-orders/:id/close` |
+| 对账概览（管理员） | GET | `/api/admin/payment-orders/reconciliation` |
+| 关闭超时订单（管理员） | POST | `/api/admin/payment-orders/expire` |
+| 记录退款（管理员） | POST | `/api/admin/payment-orders/:id/refund` |
 
 价格规则的 `:kind` 取 `model`（模型默认价）、`channel_tier`（渠道模型价格档）或 `logical_sku`（逻辑模型 SKU）。运行时报价优先级为：逻辑模型 SKU → 渠道模型价格档 → 模型默认价。单价以微积分存储，`1 积分 = 1,000,000 微积分`；计费方式支持每次请求、每秒、每张图、每千 token、每 MB。
 
 任务提交时按 `capability` 匹配规则：文本任务用 `text`，图片任务用 `image`，视频任务用 `video`，音频任务用 `audio`；时间线转写/渲染、深度捕捉属于本地执行器，用 `local`，没配规则时不收费。
 没有命中的托管模型任务会被拒绝提交（失败关闭），因此上线前必须为每个实际使用的 `capability` 配一条 `fixed_request` 或用量单价规则。
 
-## 还没做
+## 上线前检查
 
-- 真实网关联调：支付宝电脑网站支付与微信 Native 已接入签名、验签和金额校验，但还需要拿商户真实密钥联调。
-- 微信二维码目前先把 `code_url` 交给用户复制，后续可接二维码组件直接显示。
-- 订单超时自动关闭、退款与对账。
-- 任务提交已接三段式计费：提交前按价格规则报价并写 `task_cost_charges` 快照，余额不足直接拒绝提交，成功结算，失败或取消释放，重试按新的计费尝试记账。
-- 用量回执：结算会读 `api_call_logs` 里该任务的成功调用，按真实 token / 图片张数 / 视频秒数重算并释放多余冻结；拿不到回执（如 `per_megabyte`、音频按秒）时回退到预估额，真实用量超过冻结额时封顶在冻结额。
-- 本地执行器（时间线转写/渲染、深度捕捉）和自定义渠道任务暂不收费；托管模型任务在没有任何匹配价格规则时会拒绝提交。
+- 支付宝电脑网站支付与微信 Native 已接入签名、验签和金额校验，上线前仍需使用商户真实密钥完成支付与回调联调。
+- 微信 Native 当前先展示 `code_url`，可按部署需要增加二维码展示组件。
+- 生产环境使用 PostgreSQL，并完成数据库备份、迁移回滚和最小权限账号配置。
+- 为对象存储配置正式凭据、CDN/CORS 和默认存储位置，并执行一次上传、下载、删除测试。
+- 管理后台必须通过 HTTPS 反向代理部署，限制 `/api/admin/*` 来源并保留登录 Cookie 的同站配置。
+- 接入运行日志、异常告警、数据库备份和积分对账任务。
+
+## 当前计费行为
+
+- 任务提交采用三段式计费：提交前按价格规则报价并写 `task_cost_charges` 快照，余额不足直接拒绝提交，成功后结算，失败或取消时释放冻结。
+- 结算读取 `api_call_logs` 中该任务的成功调用，按真实 token、图片张数或视频秒数重算并释放多余冻结；没有可用回执时回退到预估额，真实用量超过冻结额时按冻结额封顶。
+- 本地执行器（时间线转写/渲染、深度捕捉）和自定义渠道任务暂不收费；托管模型任务没有任何匹配价格规则时会失败关闭。

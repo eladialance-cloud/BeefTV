@@ -8,6 +8,26 @@ import (
 	"infinite-canvas/backend/internal/model"
 )
 
+func TestApplyGenerationBindMetadataCarriesManagedTableIdentity(t *testing.T) {
+	metadata := map[string]any{}
+	applyGenerationBindMetadata(metadata, TaskOutputBind{
+		TaskID: "generation-task",
+		Metadata: map[string]any{
+			"manjuStage":        "p2_assets",
+			"manjuAssetTableId": "asset-table",
+			"manjuAssetRowId":   "asset-row",
+			"manjuAssetCode":    "CHR-01",
+		},
+	})
+
+	if metadata["manjuAssetRowId"] != "asset-row" || metadata["manjuAssetCode"] != "CHR-01" {
+		t.Fatalf("managed table identity not applied: %#v", metadata)
+	}
+	if metadata["taskId"] != "generation-task" || metadata["status"] != "success" {
+		t.Fatalf("generation fields not applied: %#v", metadata)
+	}
+}
+
 func TestEmptyRenderBindingRequiresTrustedFlagAndEmptyVideo(t *testing.T) {
 	patch := TaskOutputBind{AllowEmptyVideo: true, MediaType: "video"}
 	for _, tc := range []struct {
@@ -38,6 +58,66 @@ func TestEmptyRenderBindingRequiresTrustedFlagAndEmptyVideo(t *testing.T) {
 	}
 	if patch.AllowEmptyVideo {
 		t.Fatal("internal flag accepted from JSON")
+	}
+}
+
+func TestEmptyImageBindingRequiresTrustedFlagAndOriginalEmptyNode(t *testing.T) {
+	patch := TaskOutputBind{AllowEmptyImage: true, MediaType: "image", TaskID: "task-image"}
+	for _, tc := range []struct {
+		name  string
+		node  map[string]any
+		allow bool
+	}{
+		{"empty image", map[string]any{"type": "image", "metadata": map[string]any{"status": "idle", "content": ""}}, true},
+		{"other node", map[string]any{"type": "video"}, false},
+		{"old task", map[string]any{"type": "image", "metadata": map[string]any{"taskId": "old"}}, false},
+		{"existing content", map[string]any{"type": "image", "metadata": map[string]any{"content": "/api/resources/old/file"}}, false},
+		{"existing asset", map[string]any{"type": "image", "metadata": map[string]any{"assetId": "asset-old"}}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := canBindEmptyImageNode(tc.node, patch); got != tc.allow {
+				t.Fatalf("got %v want %v", got, tc.allow)
+			}
+		})
+	}
+	patch.AllowEmptyImage = false
+	if canBindEmptyImageNode(map[string]any{"type": "image"}, patch) {
+		t.Fatal("untrusted image bind allowed")
+	}
+	if err := json.Unmarshal([]byte(`{"AllowEmptyImage":true}`), &patch); err != nil {
+		t.Fatal(err)
+	}
+	if patch.AllowEmptyImage {
+		t.Fatal("internal image flag accepted from JSON")
+	}
+}
+
+func TestReplaceImageBindingRequiresNewerSuccessfulTaskForSameNode(t *testing.T) {
+	now := time.Now().UTC()
+	node := map[string]any{"type": "image", "metadata": map[string]any{"taskId": "old-task", "content": "/api/resources/old/file"}}
+	patch := TaskOutputBind{AllowReplaceImage: true, MediaType: "image", TaskID: "new-task", CanvasID: "canvas"}
+	if !canReplaceImageNodeAt(node, patch, now, now.Add(-time.Minute)) {
+		t.Fatal("newer image task should replace the prior task on the same node")
+	}
+	for _, tc := range []struct {
+		name     string
+		node     map[string]any
+		patch    TaskOutputBind
+		incoming time.Time
+		current  time.Time
+	}{
+		{"untrusted", node, TaskOutputBind{MediaType: "image", TaskID: "new-task"}, now, now.Add(-time.Minute)},
+		{"wrong media", node, TaskOutputBind{AllowReplaceImage: true, MediaType: "video", TaskID: "new-task"}, now, now.Add(-time.Minute)},
+		{"wrong node type", map[string]any{"type": "video", "metadata": map[string]any{"taskId": "old-task"}}, patch, now, now.Add(-time.Minute)},
+		{"same task", node, TaskOutputBind{AllowReplaceImage: true, MediaType: "image", TaskID: "old-task"}, now, now.Add(-time.Minute)},
+		{"older incoming", node, patch, now.Add(-time.Minute), now},
+		{"missing current time", node, patch, now, time.Time{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if canReplaceImageNodeAt(tc.node, tc.patch, tc.incoming, tc.current) {
+				t.Fatal("unsafe image replacement was accepted")
+			}
+		})
 	}
 }
 

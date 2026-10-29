@@ -21,7 +21,7 @@ func TestWindowsCrossVolumeSQLiteAndEncryptedConfigSurviveRestart(t *testing.T) 
 		t.Skip("Python SQLite fixture unavailable")
 	}
 	source := t.TempDir()
-	target, err := os.MkdirTemp(volume, "BeefTV-workspace-test-")
+	target, err := os.MkdirTemp(volume, "VisiDeepAI-workspace-test-")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,9 +1,9 @@
 {
-    "name": "beeftv-web-hosted",
+    "name": "visideep-web-hosted",
     "private": true,
     "type": "module",
-    "description": "BeefTV 托管工作台（零依赖静态前端）",
+    "description": "VisiDeep AI 管理后台（零依赖静态前端）",
     "scripts": {
-        "test": "node --test --test-isolation=none test/format.test.js test/api-paths.test.js"
+        "test": "node --test --test-isolation=none test/format.test.js test/api-paths.test.js test/pricing-editor.test.js test/channel-model-test.test.js test/ledger-detail.test.js test/backend-upstream.test.js"
     }
 }

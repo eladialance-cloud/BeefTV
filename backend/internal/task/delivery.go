@@ -65,6 +65,10 @@ func AttachNodeEffectKey(taskID, nodeID string, outputIndex int) string {
 	return "attach-node:" + strings.TrimSpace(taskID) + ":" + strings.TrimSpace(nodeID) + ":" + strconv.Itoa(outputIndex)
 }
 
+func RecoverNodeEffectKey(taskID string, outputIndex int) string {
+	return "recover-node-v2:" + strings.TrimSpace(taskID) + ":" + strconv.Itoa(outputIndex)
+}
+
 func AttachMessageEffectKey(taskID, messageID string, outputIndex int) string {
 	return "attach-message:" + strings.TrimSpace(taskID) + ":" + strings.TrimSpace(messageID) + ":" + strconv.Itoa(outputIndex)
 }

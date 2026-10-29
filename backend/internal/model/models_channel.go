@@ -50,6 +50,10 @@ type ChannelModel struct {
 	CapabilityConfigJSON string               `json:"-" gorm:"type:text"`
 	CapabilityVersion    int64                `json:"capabilityVersion"`
 	CapabilityConfig     map[string]any       `json:"capabilityConfig,omitempty" gorm:"-"`
+	// UpstreamPricingJSON is the provider quote captured during catalog refresh.
+	// It is cost metadata for administrators; user-facing catalogs never expose it.
+	UpstreamPricingJSON string         `json:"-" gorm:"type:text"`
+	UpstreamPricing     map[string]any `json:"upstreamPricing,omitempty" gorm:"-"`
 	// Variants map a supported option combination to an upstream model key.
 	Variants  []ChannelModelVariant `json:"variants" gorm:"-"`
 	CreatedAt time.Time             `json:"createdAt"`

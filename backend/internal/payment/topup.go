@@ -1,11 +1,14 @@
 package payment
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
+	"infinite-canvas/backend/internal/credits"
 	"infinite-canvas/backend/internal/kernel"
 	"infinite-canvas/backend/internal/model"
 
@@ -40,13 +43,37 @@ type Notification struct {
 	ProviderTradeNo        string
 	OrderID                string
 	Status                 string
+	ProviderStatus         string
 	AmountFen              int64
 	PayloadJSON            string
 }
 
+const (
+	// PaymentOrderTTL is the default payable window. The sweeper closes overdue unpaid orders.
+	PaymentOrderTTL     = 30 * time.Minute
+	paymentExpireReason = "超时未支付关闭"
+)
+
 // RechargeKey is the stable idempotency key for one order's credit movement.
 // A repeated callback or a retried admin confirmation converges on this key.
 func RechargeKey(orderID string) string { return "topup:" + orderID + ":recharge" }
+
+// RefundKey is the stable idempotency key for the ledger reversal of one order.
+// Retrying a refund therefore cannot subtract the same credits twice.
+func RefundKey(orderID string) string { return "topup:" + orderID + ":refund" }
+
+// Reconciliation is a read-only snapshot for the admin console. It keeps
+// gateway-independent totals in fen and credits so operators can compare them
+// with the merchant platform without pulling raw logs by hand.
+type Reconciliation struct {
+	OrdersByStatus           map[string]int64 `json:"ordersByStatus"`
+	SettledAmountFen         int64            `json:"settledAmountFen"`
+	SettledCredits           int64            `json:"settledCredits"`
+	PaidUnsettled            int64            `json:"paidUnsettled"`
+	PendingOverdue           int64            `json:"pendingOverdue"`
+	NotificationsUnprocessed int64            `json:"notificationsUnprocessed"`
+	NotificationsFailed      int64            `json:"notificationsFailed"`
+}
 
 // ListTopupProducts returns SKUs for the storefront. includeDisabled is used by
 // the admin console; ordinary users only ever see enabled SKUs.
@@ -172,6 +199,8 @@ func (s *Service) CreatePaymentOrder(userID string, productID string, provider s
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
+	expiresAt := now.Add(PaymentOrderTTL)
+	order.ExpiresAt = &expiresAt
 	order.CreditIdempotency = RechargeKey(order.ID)
 	if err := s.repo.CreatePaymentOrder(order); err != nil {
 		return nil, err
@@ -217,13 +246,20 @@ func (s *Service) settleOrder(orderID string, operatorID string, providerTradeNo
 	switch order.Status {
 	case model.PaymentOrderPaid:
 		return order, nil
+	case model.PaymentOrderRefunded:
+		return nil, kernel.NewAppError(kernel.CodeConflict, "订单已退款，不能再确认支付")
 	case model.PaymentOrderClosed:
-		return nil, kernel.NewAppError(kernel.CodeConflict, "订单已关闭，不能再确认支付")
+		// A provider success callback may arrive after the local sweeper closed
+		// the order. The gateway is authoritative for money movement, so settle
+		// that late callback instead of losing the user's paid credits.
+		if operatorID != "" || strings.TrimSpace(providerTradeNo) == "" {
+			return nil, kernel.NewAppError(kernel.CodeConflict, "订单已关闭，不能再手工确认支付")
+		}
 	}
 	if s.credits == nil {
 		return nil, kernel.NewAppError(kernel.CodeUnavailable, "积分服务尚未初始化，暂时无法入账")
 	}
-	if err := s.credits.Recharge(order.UserID, order.Credits, operatorID,
+	if err := s.credits.Recharge(order.UserID, credits.FromWholeCredits(order.Credits), operatorID,
 		fmt.Sprintf("充值：%s", order.ProductName), order.CreditIdempotency); err != nil {
 		return nil, err
 	}
@@ -260,6 +296,9 @@ func (s *Service) ClosePaymentOrder(orderID string, reason string) (*model.Payme
 	}
 	if order.Status == model.PaymentOrderPaid {
 		return nil, kernel.NewAppError(kernel.CodeConflict, "已支付订单不能关闭")
+	}
+	if order.Status == model.PaymentOrderRefunded {
+		return nil, kernel.NewAppError(kernel.CodeConflict, "已退款订单不能关闭")
 	}
 	now := s.now()
 	order.Status = model.PaymentOrderClosed
@@ -409,6 +448,16 @@ func normalizeOrderLimit(limit int) int {
 	return limit
 }
 
+func normalizeExpireLimit(limit int) int {
+	if limit <= 0 {
+		return 200
+	}
+	if limit > 200 {
+		return 200
+	}
+	return limit
+}
+
 // SortTopupProducts orders the storefront by sort order then price, so the admin
 // console and the user page agree without relying on database ordering.
 func SortTopupProducts(items []model.TopupProduct) {
@@ -418,4 +467,116 @@ func SortTopupProducts(items []model.TopupProduct) {
 		}
 		return items[i].PriceFen < items[j].PriceFen
 	})
+}
+
+// ExpirePendingOrders closes unpaid orders whose payable window has passed.
+// A production deployment should run this periodically; the admin console also
+// exposes a manual trigger for operators.
+func (s *Service) ExpirePendingOrders(limit int) (int64, error) {
+	now := s.now()
+	return s.repo.ExpirePendingPaymentOrders(now, paymentExpireReason, normalizeExpireLimit(limit), now)
+}
+
+// RunExpireLoop keeps the payable window enforceable without relying on an
+// administrator to press the manual cleanup button. The caller owns process
+// lifetime, so shutdown cancels the context instead of leaking the goroutine.
+func (s *Service) RunExpireLoop(ctx context.Context, every time.Duration, onErr func(error)) {
+	if s == nil {
+		return
+	}
+	if every <= 0 {
+		every = time.Minute
+	}
+	sweep := func() {
+		if _, err := s.ExpirePendingOrders(200); err != nil && onErr != nil {
+			onErr(err)
+		}
+	}
+	sweep()
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			sweep()
+		}
+	}
+}
+
+// Reconcile returns a gateway-independent snapshot for the admin console.
+func (s *Service) Reconcile() (*Reconciliation, error) {
+	counts, err := s.repo.PaymentOrderCountsByStatus()
+	if err != nil {
+		return nil, err
+	}
+	amountFen, credits, err := s.repo.PaymentOrderSettledTotals()
+	if err != nil {
+		return nil, err
+	}
+	now := s.now()
+	paidUnsettled, pendingOverdue, err := s.repo.PaymentOrderCountsNeedingAttention(now)
+	if err != nil {
+		return nil, err
+	}
+	notificationsUnprocessed, notificationsFailed, err := s.repo.PaymentNotificationCounts()
+	if err != nil {
+		return nil, err
+	}
+	return &Reconciliation{
+		OrdersByStatus:           counts,
+		SettledAmountFen:         amountFen,
+		SettledCredits:           credits,
+		PaidUnsettled:            paidUnsettled,
+		PendingOverdue:           pendingOverdue,
+		NotificationsUnprocessed: notificationsUnprocessed,
+		NotificationsFailed:      notificationsFailed,
+	}, nil
+}
+
+// RefundPaymentOrder reverses a paid order's credit grant and records the
+// operator's external refund reference. Repeating a completed refund is
+// idempotent; a user who has already spent the credits must be corrected by a
+// separate admin adjustment so the ledger never goes below zero.
+func (s *Service) RefundPaymentOrder(actor *model.User, orderID string, reason string, providerRefundNo string) (*model.PaymentOrder, error) {
+	if err := requireActor(actor); err != nil {
+		return nil, err
+	}
+	order, err := s.loadOrder(orderID)
+	if err != nil {
+		return nil, err
+	}
+	if order.Status == model.PaymentOrderRefunded {
+		return order, nil
+	}
+	if order.Status != model.PaymentOrderPaid {
+		return nil, kernel.NewAppError(kernel.CodeConflict, "只有已支付订单可以退款")
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return nil, kernel.BadAuthRequest("请填写退款原因")
+	}
+	if s.adjuster == nil {
+		return nil, kernel.NewAppError(kernel.CodeUnavailable, "积分服务尚未初始化，暂时无法退款")
+	}
+	if err := s.adjuster.Adjust(order.UserID, -credits.FromWholeCredits(order.Credits), actor.ID,
+		fmt.Sprintf("充值退款：%s", order.ProductName), RefundKey(order.ID)); err != nil {
+		return nil, err
+	}
+	now := s.now()
+	order.Status = model.PaymentOrderRefunded
+	order.RefundedAt = &now
+	order.RefundedBy = actor.ID
+	order.RefundReason = reason
+	order.RefundProviderNo = strings.TrimSpace(providerRefundNo)
+	order.RefundReversed = true
+	order.UpdatedAt = now
+	if err := s.repo.UpdatePaymentOrder(order); err != nil {
+		return nil, err
+	}
+	if err := s.audit(actor, "payment_order.refund", order.ID, reason); err != nil {
+		return nil, err
+	}
+	return order, nil
 }

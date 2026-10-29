@@ -20,7 +20,7 @@ const (
 	WalletPath       = "/console/topup"
 )
 
-// CanonicalOrigin defaults to BeefTV and only accepts the legacy enterprise
+// CanonicalOrigin defaults to VisiDeep AI and only accepts the legacy enterprise
 // origin or an explicit loopback test origin.
 func CanonicalOrigin(explicit string) (string, error) {
 	candidate := strings.TrimRight(strings.TrimSpace(explicit), "/")

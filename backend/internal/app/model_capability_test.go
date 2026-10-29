@@ -544,6 +544,28 @@ func TestDefaultVolcengineArkVideoCapabilitySupportsFullModalReference(t *testin
 	}
 }
 
+func TestToAPILegacySeedanceProfileAllowsImageAndAudio(t *testing.T) {
+	legacy := DefaultModelCapabilityConfigForModel("", "seedance-2")
+	normalized, err := NormalizeModelCapabilityConfigForModel("video", "toapis-video", "seedance-2", legacy)
+	if err != nil {
+		t.Fatalf("NormalizeModelCapabilityConfigForModel() error = %v", err)
+	}
+	input := canvasGenerationInput{
+		Prompt:          "follow the reference performance",
+		Config:          providerConfig{InterfaceType: "toapis-video", Model: "seedance-2", VideoSeconds: "5", Size: "16:9", VQuality: "720p"},
+		ReferenceImages: []providerMedia{{URL: "https://cdn.example.com/reference.png", Width: 1376, Height: 768, Bytes: 1024}},
+		ReferenceAudios: []providerMedia{{URL: "https://cdn.example.com/reference.wav", DurationMs: 3000, Bytes: 1024}},
+		Metadata:        map[string]interface{}{"videoEditOperation": "reference_to_video"},
+	}
+	if err := validateVideoTask(normalized.Video, input); err != nil {
+		t.Fatalf("valid image-plus-audio request rejected: %v", err)
+	}
+	input.ReferenceImages = nil
+	if err := validateVideoTask(normalized.Video, input); err == nil || !strings.Contains(err.Error(), "不支持只用音频") {
+		t.Fatalf("Seedance 2.0 audio-only request = %v", err)
+	}
+}
+
 func TestValidateVolcengineArkFullModalReferenceRejectsTextAndAudioOnly(t *testing.T) {
 	profile := DefaultModelCapabilityConfigForModel("volcengine-ark-video", "doubao-seedance-2-0-260128").Video
 	input := canvasGenerationInput{

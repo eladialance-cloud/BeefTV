@@ -2,6 +2,8 @@ package app
 
 import (
 	"bytes"
+	"image"
+	"image/png"
 	"io"
 	"os"
 	"path/filepath"
@@ -136,5 +138,26 @@ func TestLocalServiceStillRejectsCloudRows(t *testing.T) {
 	}
 	if _, err := svc.resourceDomain().OpenOwnedRange("local", resource, ""); err == nil {
 		t.Fatal("a local-workspace domain accepted a cloud row")
+	}
+}
+
+func TestRoutedUploadLocalResourceAcceptsObjectStorageResult(t *testing.T) {
+	remote := newRoutedBlobStore()
+	dataDir := t.TempDir()
+	svc := newStorageRouteService(t, &routedAssetResolver{local: localasset.NewFileStore(dataDir), remote: remote})
+	var body bytes.Buffer
+	if err := png.Encode(&body, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	header := multipartFileHeader(t, "reference.png", "image/png", body.Bytes())
+	resource, err := svc.ResourceService().UploadLocalResource("user-1", header, "image", 2, 2, 0)
+	if err != nil {
+		t.Fatalf("UploadLocalResource with routed object storage: %v", err)
+	}
+	if resource.Provider != "s3" || resource.Status != model.ResourceStatusReady {
+		t.Fatalf("resource = %#v", resource)
+	}
+	if _, ok := remote.objects[resource.ObjectKey]; !ok {
+		t.Fatalf("routed object missing: %q", resource.ObjectKey)
 	}
 }

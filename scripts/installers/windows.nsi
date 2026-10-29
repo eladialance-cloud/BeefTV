@@ -6,17 +6,18 @@
 !include "FileFunc.nsh"
 ${StrStr}
 ${UnStrStr}
-Name "BeefTV"
+Name "VisiDeep AI"
 OutFile "${OUTPUT}"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
-InstallDir "$LOCALAPPDATA\Programs\BeefTV"
+InstallDir "$LOCALAPPDATA\Programs\VisiDeep AI"
 # Upgrades default to the previous location; the user can still choose another folder.
-InstallDirRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV" "InstallLocation"
+InstallDirRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\VisiDeep AI" "InstallLocation"
 Var BackupDir
 Var CleanDir
 Var InstallParent
 Var PreviousInstallDir
+Var LegacyInstallDir
 Var RegisteredInstallDir
 Var InstallerMutex
 Var InstallLog
@@ -28,28 +29,28 @@ Var MoveError
 Var MoveAttempt
 Var OldMoved
 VIProductVersion "${VERSION}.0"
-VIAddVersionKey "ProductName" "BeefTV"
+VIAddVersionKey "ProductName" "VisiDeep AI"
 VIAddVersionKey "FileVersion" "${VERSION}"
-VIAddVersionKey "FileDescription" "BeefTV Setup"
-VIAddVersionKey "LegalCopyright" "BeefTV"
+VIAddVersionKey "FileDescription" "VisiDeep AI Setup"
+VIAddVersionKey "LegalCopyright" "VisiDeep AI"
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE DirectoryPageLeave
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
-!define MUI_FINISHPAGE_RUN "$INSTDIR\BeefTV.exe"
+!define MUI_FINISHPAGE_RUN "$INSTDIR\VisiDeepAI.exe"
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_LANGUAGE "SimpChinese"
 
-LangString BEEFTV_DIR_FOREIGN ${LANG_ENGLISH} "This folder already holds other files and is not a BeefTV installation. Choose an empty folder or the current BeefTV location."
-LangString BEEFTV_DIR_FOREIGN ${LANG_SIMPCHINESE} "这个文件夹里已有其他文件，不是 BeefTV 安装位置。请选择一个空文件夹，或当前的 BeefTV 安装位置。"
-LangString BEEFTV_DIR_WRITE ${LANG_ENGLISH} "BeefTV cannot write here. Administrator rights are required, so choose another folder."
+LangString BEEFTV_DIR_FOREIGN ${LANG_ENGLISH} "This folder already holds other files and is not a VisiDeep AI installation. Choose an empty folder or the current VisiDeep AI location."
+LangString BEEFTV_DIR_FOREIGN ${LANG_SIMPCHINESE} "这个文件夹里已有其他文件，不是 VisiDeep AI 安装位置。请选择一个空文件夹，或当前的 VisiDeep AI 安装位置。"
+LangString BEEFTV_DIR_WRITE ${LANG_ENGLISH} "VisiDeep AI cannot write here. Administrator rights are required, so choose another folder."
 LangString BEEFTV_DIR_WRITE ${LANG_SIMPCHINESE} "需要管理员权限，请选择其他文件夹。"
-LangString BEEFTV_BUSY ${LANG_ENGLISH} "Another BeefTV installer or uninstaller is running. Close it and try again."
-LangString BEEFTV_BUSY ${LANG_SIMPCHINESE} "另一个 BeefTV 安装或卸载程序正在运行。请先关闭它，再试一次。"
-LangString BEEFTV_CLOSE ${LANG_ENGLISH} "Please close BeefTV and its CLI, then choose Retry."
-LangString BEEFTV_CLOSE ${LANG_SIMPCHINESE} "请退出 BeefTV 及其命令行程序，然后点击“重试”。"
+LangString BEEFTV_BUSY ${LANG_ENGLISH} "Another VisiDeep AI installer or uninstaller is running. Close it and try again."
+LangString BEEFTV_BUSY ${LANG_SIMPCHINESE} "另一个 VisiDeep AI 安装或卸载程序正在运行。请先关闭它，再试一次。"
+LangString BEEFTV_CLOSE ${LANG_ENGLISH} "Please close VisiDeep AI and its CLI, then choose Retry."
+LangString BEEFTV_CLOSE ${LANG_SIMPCHINESE} "请退出 VisiDeep AI 及其命令行程序，然后点击“重试”。"
 LangString BEEFTV_RETRY ${LANG_ENGLISH} "Windows could not move this application folder (error $MoveError):$\r$\n$MoveFrom$\r$\n$\r$\nClose programs or terminal windows using it, then choose Retry. Cancel stops this installation.$\r$\nLog: $InstallLog"
 LangString BEEFTV_RETRY ${LANG_SIMPCHINESE} "Windows 无法移动以下程序文件夹（错误 $MoveError）：$\r$\n$MoveFrom$\r$\n$\r$\n请关闭正在使用它的程序或终端窗口，然后点击“重试”。点击“取消”将停止安装。$\r$\n安装日志：$InstallLog"
 LangString BEEFTV_PRESERVED ${LANG_ENGLISH} "Installation stopped. The previous application is still at $INSTDIR. Your projects are preserved.$\r$\nLog: $InstallLog"
@@ -63,7 +64,7 @@ LangString BEEFTV_RESTORE_FAILED ${LANG_SIMPCHINESE} "Windows 未能恢复原程
 # race while moving folders or updating the per-user registration.
 !macro InstallerLock PREFIX
 Function ${PREFIX}AcquireInstallerLock
-  System::Call 'kernel32::CreateMutexW(p 0, i 0, w "Local\BeefTV.Installation") p .r0 ?e'
+  System::Call 'kernel32::CreateMutexW(p 0, i 0, w "Local\VisiDeep AI.Installation") p .r0 ?e'
   Pop $1
   StrCpy $InstallerMutex $0
   ${If} $0 == 0
@@ -114,15 +115,15 @@ Function MoveInstallFolder
   StrCpy $0 0
 FunctionEnd
 
-# Appends a dedicated BeefTV subfolder to the chosen location (including drive
+# Appends a dedicated VisiDeep AI subfolder to the chosen location (including drive
 # roots like D:\ or E:\), then validates that final folder. Choosing E:\ or
-# D:\Apps therefore installs to E:\BeefTV or D:\Apps\BeefTV and never mixes the
+# D:\Apps therefore installs to E:\VisiDeep AI or D:\Apps\VisiDeep AI and never mixes the
 # payload with the user's other files. Sets $0 to 0 when valid, or 2 (foreign
 # folder), 3 (not writable).
 Function PrepareInstallDir
   StrCpy $0 0
   ${If} $INSTDIR == ""
-    StrCpy $INSTDIR "$LOCALAPPDATA\Programs\BeefTV"
+    StrCpy $INSTDIR "$LOCALAPPDATA\Programs\VisiDeep AI"
   ${EndIf}
   # Drop trailing separators so the last component is a real name.
   StrCpy $1 "$INSTDIR"
@@ -138,19 +139,19 @@ Function PrepareInstallDir
     ${EndIf}
   ${GetRoot} "$1" $2
   ${If} $2 == "$1"
-    StrCpy $1 "$1\BeefTV"
+    StrCpy $1 "$1\VisiDeep AI"
   ${Else}
     ${GetFileName} "$1" $2
-    ${If} $2 != "BeefTV"
-      StrCpy $1 "$1\BeefTV"
+    ${If} $2 != "VisiDeep AI"
+      StrCpy $1 "$1\VisiDeep AI"
     ${EndIf}
   ${EndIf}
-  # An existing final folder is only reused when it is a previous BeefTV
-  # install (or portable BeefTV directory) or empty.
+  # An existing final folder is only reused when it is a previous VisiDeep AI
+  # install (or portable VisiDeep AI directory) or empty.
   StrCpy $5 ""
   ${If} ${FileExists} "$1\*.*"
     ${IfNot} ${FileExists} "$1\.installed-root-files.txt"
-    ${AndIfNot} ${FileExists} "$1\BeefTV.exe"
+    ${AndIfNot} ${FileExists} "$1\VisiDeepAI.exe"
       StrCpy $3 ""
       FindFirst $2 $4 "$1\*"
       PrepareInstallDir_scan:
@@ -179,12 +180,12 @@ Function PrepareInstallDir
   # administrator-only folders must be rejected before anything is written.
   ClearErrors
   CreateDirectory "$1"
-  FileOpen $2 "$1\.beeftv-write-test" w
+  FileOpen $2 "$1\.visideep-write-test" w
   ${If} ${Errors}
     StrCpy $0 3
   ${Else}
     FileClose $2
-    Delete "$1\.beeftv-write-test"
+    Delete "$1\.visideep-write-test"
   ${EndIf}
   # Leave no empty folder behind if the user goes back and picks another one.
   ${If} $5 == "created"
@@ -216,19 +217,19 @@ Function ${PREFIX}RequireClosed
   retry_closed_${PREFIX}:
   StrCpy $3 0
   check_closed_${PREFIX}:
-  nsExec::ExecToStack '"$SYSDIR\tasklist.exe" /FI "IMAGENAME eq BeefTV.exe" /NH'
+  nsExec::ExecToStack '"$SYSDIR\tasklist.exe" /FI "IMAGENAME eq VisiDeepAI.exe" /NH'
   Pop $0
   Pop $1
 !if "${PREFIX}" == "un."
-  ${UnStrStr} $2 $1 "BeefTV.exe"
+  ${UnStrStr} $2 $1 "VisiDeepAI.exe"
 !else
-  ${StrStr} $2 $1 "BeefTV.exe"
+  ${StrStr} $2 $1 "VisiDeepAI.exe"
 !endif
   ${If} $2 == ""
 !if "${PREFIX}" == "un."
-    ${UnStrStr} $2 $1 "beeftv.exe"
+    ${UnStrStr} $2 $1 "visideep.exe"
 !else
-    ${StrStr} $2 $1 "beeftv.exe"
+    ${StrStr} $2 $1 "visideep.exe"
 !endif
   ${EndIf}
   ${If} $0 == 0
@@ -241,9 +242,9 @@ Function ${PREFIX}RequireClosed
   ${EndIf}
   IntOp $3 $3 + 1
   ${If} $3 == 1
-    # Ask BeefTV's main window to close cleanly first so SQLite and WebView2
+    # Ask VisiDeep AI's main window to close cleanly first so SQLite and WebView2
     # flush state before exiting.
-    nsExec::Exec '"$SYSDIR\taskkill.exe" /IM BeefTV.exe'
+    nsExec::Exec '"$SYSDIR\taskkill.exe" /IM VisiDeepAI.exe'
     Pop $0
     Sleep 500
     Goto check_closed_${PREFIX}
@@ -251,10 +252,10 @@ Function ${PREFIX}RequireClosed
     Sleep 500
     Goto check_closed_${PREFIX}
   ${ElseIf} $3 == 11
-    # Force-terminate any remaining BeefTV or CLI process tree.
-    nsExec::Exec '"$SYSDIR\taskkill.exe" /F /IM BeefTV.exe /T'
+    # Force-terminate any remaining VisiDeep AI or CLI process tree.
+    nsExec::Exec '"$SYSDIR\taskkill.exe" /F /IM VisiDeepAI.exe /T'
     Pop $0
-    nsExec::Exec '"$SYSDIR\taskkill.exe" /F /IM beeftv.exe /T'
+    nsExec::Exec '"$SYSDIR\taskkill.exe" /F /IM visideep.exe /T'
     Pop $0
     Sleep 500
     Goto check_closed_${PREFIX}
@@ -302,7 +303,7 @@ Function ${PREFIX}RemovePayload
     done_${PREFIX}:
     FileClose $0
   ${EndIf}
-  Delete "$CleanDir\BeefTV.exe"
+  Delete "$CleanDir\VisiDeepAI.exe"
   Delete "$CleanDir\.installed-root-files.txt"
   Delete "$CleanDir\Uninstall.exe"
   RMDir /r "$CleanDir\agent-host"
@@ -319,8 +320,8 @@ Function .onInit
   SetShellVarContext current
   Call AcquireInstallerLock
   ClearErrors
-  CreateDirectory "$LOCALAPPDATA\BeefTV\Installer"
-  GetTempFileName $InstallLog "$LOCALAPPDATA\BeefTV\Installer"
+  CreateDirectory "$LOCALAPPDATA\VisiDeep AI\Installer"
+  GetTempFileName $InstallLog "$LOCALAPPDATA\VisiDeep AI\Installer"
   ${If} ${Errors}
     ClearErrors
     GetTempFileName $InstallLog "$TEMP"
@@ -335,7 +336,8 @@ Function .onInit
   StrCpy $InstallPhase "startup"
   StrCpy $LogLine 'version=${VERSION} destination="$INSTDIR"'
   Call WriteInstallLog
-  ReadRegStr $PreviousInstallDir HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV" "InstallLocation"
+  ReadRegStr $PreviousInstallDir HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\VisiDeep AI" "InstallLocation"
+  ReadRegStr $LegacyInstallDir HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV" "InstallLocation"
   Call RequireClosed
   # Interactive runs validate on the directory page; /D= needs the same checks here.
   ${If} ${Silent}
@@ -359,7 +361,7 @@ Function .onInstFailed
   Call WriteInstallLog
 FunctionEnd
 
-Section "BeefTV (required)" SEC_APP
+Section "VisiDeep AI (required)" SEC_APP
   SectionIn RO
   Call RequireClosed
   StrCpy $InstallPhase "prepare"
@@ -471,18 +473,18 @@ Section "BeefTV (required)" SEC_APP
   Abort
   install_registered:
   SetOutPath "$INSTDIR"
-  CreateDirectory "$SMPROGRAMS\BeefTV"
-  CreateShortcut "$SMPROGRAMS\BeefTV\BeefTV.lnk" "$INSTDIR\BeefTV.exe"
-  CreateShortcut "$SMPROGRAMS\BeefTV\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
-  CreateShortcut "$DESKTOP\BeefTV.lnk" "$INSTDIR\BeefTV.exe"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV" "DisplayName" "BeefTV"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV" "DisplayVersion" "${VERSION}"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV" "UninstallString" '$\"$INSTDIR\Uninstall.exe$\"'
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV" "QuietUninstallString" '$\"$INSTDIR\Uninstall.exe$\" /S'
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV" "InstallLocation" "$INSTDIR"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV" "DisplayIcon" "$INSTDIR\BeefTV.exe"
-  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV" "NoModify" 1
-  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV" "NoRepair" 1
+  CreateDirectory "$SMPROGRAMS\VisiDeep AI"
+  CreateShortcut "$SMPROGRAMS\VisiDeep AI\VisiDeep AI.lnk" "$INSTDIR\VisiDeepAI.exe"
+  CreateShortcut "$SMPROGRAMS\VisiDeep AI\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
+  CreateShortcut "$DESKTOP\VisiDeep AI.lnk" "$INSTDIR\VisiDeepAI.exe"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\VisiDeep AI" "DisplayName" "VisiDeep AI"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\VisiDeep AI" "DisplayVersion" "${VERSION}"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\VisiDeep AI" "UninstallString" '$\"$INSTDIR\Uninstall.exe$\"'
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\VisiDeep AI" "QuietUninstallString" '$\"$INSTDIR\Uninstall.exe$\" /S'
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\VisiDeep AI" "InstallLocation" "$INSTDIR"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\VisiDeep AI" "DisplayIcon" "$INSTDIR\VisiDeepAI.exe"
+  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\VisiDeep AI" "NoModify" 1
+  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\VisiDeep AI" "NoRepair" 1
   # A successful move replaces the registered install; remove only the old
   # installer's shipped payload. Unknown user files remain in that directory.
   ${If} $PreviousInstallDir != ""
@@ -490,6 +492,19 @@ Section "BeefTV (required)" SEC_APP
   ${AndIf} ${FileExists} "$PreviousInstallDir\.installed-root-files.txt"
     StrCpy $CleanDir "$PreviousInstallDir"
     Call RemovePayload
+  ${EndIf}
+  # Rebrand upgrades may come from the pre-VisiDeep installer. Remove only the
+  # old shipped payload, shortcuts and registry entry; keep unknown user files.
+  ${If} $LegacyInstallDir != ""
+  ${AndIf} $LegacyInstallDir != $INSTDIR
+  ${AndIf} ${FileExists} "$LegacyInstallDir\.installed-root-files.txt"
+    StrCpy $CleanDir "$LegacyInstallDir"
+    Call RemovePayload
+    Delete "$DESKTOP\BeefTV.lnk"
+    Delete "$SMPROGRAMS\BeefTV\BeefTV.lnk"
+    Delete "$SMPROGRAMS\BeefTV\Uninstall.lnk"
+    RMDir "$SMPROGRAMS\BeefTV"
+    DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV"
   ${EndIf}
   SetOutPath "$INSTDIR"
   StrCpy $InstallPhase "registered"
@@ -510,12 +525,12 @@ Section "Uninstall"
   Call un.RemovePayload
   # A stale uninstaller copied from an older location must not unregister
   # or remove shortcuts for the current installation.
-  ReadRegStr $RegisteredInstallDir HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV" "InstallLocation"
+  ReadRegStr $RegisteredInstallDir HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\VisiDeep AI" "InstallLocation"
   ${If} $RegisteredInstallDir == $INSTDIR
-    Delete "$DESKTOP\BeefTV.lnk"
-    Delete "$SMPROGRAMS\BeefTV\BeefTV.lnk"
-    Delete "$SMPROGRAMS\BeefTV\Uninstall.lnk"
-    RMDir "$SMPROGRAMS\BeefTV"
-    DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeefTV"
+    Delete "$DESKTOP\VisiDeep AI.lnk"
+    Delete "$SMPROGRAMS\VisiDeep AI\VisiDeep AI.lnk"
+    Delete "$SMPROGRAMS\VisiDeep AI\Uninstall.lnk"
+    RMDir "$SMPROGRAMS\VisiDeep AI"
+    DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\VisiDeep AI"
   ${EndIf}
 SectionEnd

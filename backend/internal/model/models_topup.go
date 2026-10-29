@@ -29,27 +29,36 @@ const (
 	PaymentOrderPendingPayment = "pending_payment"
 	PaymentOrderPaid           = "paid"
 	PaymentOrderClosed         = "closed"
+	PaymentOrderRefunded       = "refunded"
 )
 
 // PaymentOrder is one recharge attempt. Credits snapshots the product's total
 // at order time so later price changes never rewrite historical receipts.
 // SettledAt and SettledBy are filled when the points are actually credited.
 type PaymentOrder struct {
-	ID                string     `json:"id" gorm:"primaryKey;size:36"`
-	UserID            string     `json:"userId" gorm:"size:36;index"`
-	ProductID         string     `json:"productId" gorm:"size:36;index"`
-	ProductName       string     `json:"productName" gorm:"size:128"`
-	Provider          string     `json:"provider" gorm:"size:32;index"`
-	ProviderConfigID  string     `json:"providerConfigId" gorm:"size:36;index"`
-	AmountFen         int64      `json:"amountFen"`
-	Credits           int64      `json:"credits"`
-	Status            string     `json:"status" gorm:"size:24;index"`
-	ProviderTradeNo   string     `json:"providerTradeNo" gorm:"size:128"`
-	CreatedAt         time.Time  `json:"createdAt" gorm:"index"`
+	ID               string    `json:"id" gorm:"primaryKey;size:36"`
+	UserID           string    `json:"userId" gorm:"size:36;index"`
+	ProductID        string    `json:"productId" gorm:"size:36;index"`
+	ProductName      string    `json:"productName" gorm:"size:128"`
+	Provider         string    `json:"provider" gorm:"size:32;index"`
+	ProviderConfigID string    `json:"providerConfigId" gorm:"size:36;index"`
+	AmountFen        int64     `json:"amountFen"`
+	Credits          int64     `json:"credits"`
+	Status           string    `json:"status" gorm:"size:24;index"`
+	ProviderTradeNo  string    `json:"providerTradeNo" gorm:"size:128"`
+	CreatedAt        time.Time `json:"createdAt" gorm:"index"`
+	// ExpiresAt is when an unpaid order stops being payable. The sweeper closes
+	// overdue orders, and launching payment after it is refused.
+	ExpiresAt         *time.Time `json:"expiresAt,omitempty" gorm:"index"`
 	PaidAt            *time.Time `json:"paidAt"`
 	SettledAt         *time.Time `json:"settledAt"`
 	SettledBy         string     `json:"settledBy" gorm:"size:36"`
 	CloseReason       string     `json:"closeReason" gorm:"type:text"`
+	RefundedAt        *time.Time `json:"refundedAt,omitempty"`
+	RefundedBy        string     `json:"refundedBy,omitempty" gorm:"size:36"`
+	RefundReason      string     `json:"refundReason,omitempty" gorm:"type:text"`
+	RefundProviderNo  string     `json:"refundProviderNo,omitempty" gorm:"size:128"`
+	RefundReversed    bool       `json:"refundReversed"`
 	CreditIdempotency string     `json:"-" gorm:"size:191;index"`
 	UpdatedAt         time.Time  `json:"updatedAt"`
 }

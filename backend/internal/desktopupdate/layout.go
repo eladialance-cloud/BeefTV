@@ -27,7 +27,7 @@ func validateExtractedLayout(root, platform string) error {
 
 func validateLinuxLayout(root string) error {
 	bundle := filepath.Join(root, linuxBundleName)
-	if err := requireRegularFile(filepath.Join(bundle, "BeefTV"), true); err != nil {
+	if err := requireRegularFile(filepath.Join(bundle, linuxExeName), true); err != nil {
 		return err
 	}
 	if err := requireRegularFile(filepath.Join(bundle, cliDirName, darwinCLIName), true); err != nil {
@@ -53,7 +53,7 @@ func validateLinuxLayout(root string) error {
 		return fmt.Errorf("更新包缺少官方插件")
 	}
 	return walkAllowed(root, func(rel string, entry fs.DirEntry) error {
-		if rel == "." || rel == linuxBundleName || rel == filepath.Join(linuxBundleName, "BeefTV") || rel == filepath.Join(linuxBundleName, "README.md") {
+		if rel == "." || rel == linuxBundleName || rel == filepath.Join(linuxBundleName, linuxExeName) || rel == filepath.Join(linuxBundleName, "README.md") {
 			return nil
 		}
 		for _, name := range []string{pluginDirName, "agent-host", cliDirName} {
@@ -70,15 +70,15 @@ func validateDarwinLayout(root string) error {
 	bundle := filepath.Join(root, appBundleName)
 	info, err := os.Lstat(bundle)
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("更新包缺少 BeefTV.app")
+		return fmt.Errorf("更新包缺少 VisiDeepAI.app")
 	}
-	exe := filepath.Join(bundle, "Contents", "MacOS", "BeefTV")
+	exe := filepath.Join(bundle, "Contents", "MacOS", "VisiDeepAI")
 	if err := requireRegularFile(exe, true); err != nil {
 		return err
 	}
 	// 随包 CLI 在主程序旁的 cli 目录里：外部 Agent 靠它接入，缺了就不是完整的安装版。
 	if err := requireRegularFile(filepath.Join(bundle, "Contents", "MacOS", cliDirName, darwinCLIName), true); err != nil {
-		return fmt.Errorf("更新包缺少随包 beeftv CLI: %w", err)
+		return fmt.Errorf("更新包缺少随包 visideep CLI: %w", err)
 	}
 	if err := validateAgentHost(filepath.Join(bundle, "Contents", "Resources", "agent-host"), "runtime/bin/node", true); err != nil {
 		return err
@@ -113,10 +113,10 @@ func validateWindowsLayout(root string) error {
 		}
 	}
 	if err := requireRegularFile(exe, false); err != nil {
-		return fmt.Errorf("更新包缺少 BeefTV.exe")
+		return fmt.Errorf("更新包缺少 VisiDeepAI.exe")
 	}
 	if err := requireRegularFile(filepath.Join(root, cliDirName, windowsCLIName), false); err != nil {
-		return fmt.Errorf("更新包缺少随包 beeftv CLI: %w", err)
+		return fmt.Errorf("更新包缺少随包 visideep CLI: %w", err)
 	}
 	plugins := filepath.Join(root, pluginDirName)
 	info, err := os.Lstat(plugins)

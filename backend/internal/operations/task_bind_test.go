@@ -340,6 +340,71 @@ func TestCanvasTaskBindRejectsDeletedWrongOwnerAndNewerTaskNode(t *testing.T) {
 	}
 }
 
+func TestCanvasTaskBindAllowsRecoveryNodeWithSameTaskAfterOriginalDeleted(t *testing.T) {
+	h := newHarness(t)
+	task := h.seedReadyCanvasImageTask(t, "task-recovery", "node-original", "原节点", 1, 1)
+	h.deleteNode(t, "node-original")
+	h.addNode(t, "node-recovery", "image", "恢复节点", map[string]any{
+		"taskId": task.ID, "status": "error", "resourceReloadAvailable": true,
+	})
+
+	result, err := h.bindTask(t, task.ID, "node-recovery", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Replayed {
+		t.Fatal("first recovery bind should write a receipt")
+	}
+	metadata := nodeMeta(h.node(t, "node-recovery"))
+	if metadata["status"] != "success" || metadata["taskId"] != task.ID {
+		t.Fatalf("recovered node metadata = %#v", metadata)
+	}
+	if h.receiptCount(t, localtask.AttachNodeEffectKey(task.ID, "node-recovery", 0)) != 1 {
+		t.Fatal("missing recovery bind receipt")
+	}
+}
+
+func TestCanvasTaskRecoverCreatesReplacementNodeWhenOriginalDeleted(t *testing.T) {
+	h := newHarness(t)
+	task := h.seedReadyCanvasImageTask(t, "task-auto-recovery", "node-auto-original", "原节点", 40, 60)
+	h.deleteNode(t, "node-auto-original")
+	params, err := json.Marshal(map[string]any{
+		"canvasId": h.canvasID, "taskId": task.ID, "outputIndex": 0,
+		"title": "自动恢复", "position": map[string]any{"x": 120, "y": 80},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opID := fmt.Sprintf("recover-node-v2:%s:0", task.ID)
+	result, err := h.executeRaw(t, "canvas.task.recover", opID, params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := result.Result.(map[string]any)
+	recoveredNodeID, _ := payload["nodeId"].(string)
+	if recoveredNodeID == "" {
+		t.Fatalf("恢复结果缺少 nodeId: %#v", payload)
+	}
+	node := h.node(t, recoveredNodeID)
+	metadata := nodeMeta(node)
+	if metadata["status"] != "success" || metadata["taskId"] != task.ID ||
+		metadata["content"] != "/api/resources/res-"+task.ID+"/file" {
+		t.Fatalf("恢复节点未正确绑定产物: %#v", node)
+	}
+	if title, _ := node["title"].(string); title != "自动恢复" {
+		t.Fatalf("恢复节点标题 = %q", title)
+	}
+
+	before := h.nodeCount(t)
+	replay, err := h.executeRaw(t, "canvas.task.recover", opID, params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replay.Replayed || h.nodeCount(t) != before {
+		t.Fatalf("重复恢复必须幂等，replay=%#v nodes=%d", replay, h.nodeCount(t))
+	}
+}
+
 func TestCanvasTaskBindRejectsClientResultPayload(t *testing.T) {
 	h := newHarness(t)
 	task := h.seedReadyCanvasImageTask(t, "task-client-url", "node-client", "节点", 1, 1)

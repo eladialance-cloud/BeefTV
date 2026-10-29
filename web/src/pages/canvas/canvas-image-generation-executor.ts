@@ -5,15 +5,26 @@ import { canGenerateImageInPlace, findAvailableGenerationGroupPosition, imageGen
 import { cancelIncompleteImageBatch, retireImageBatchChildren } from "@/lib/canvas/canvas-image-batch-retry";
 import { buildImageGenerationNodeTitle } from "@/lib/canvas/canvas-generation-title";
 import { nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
-import { canvasImageReferenceLimitError, buildImageGenerationMetadata, clearInPlaceMediaOutputMetadata, getGenerationCount, isGenerationCanceled, resetGenerationTaskMetadata, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
+import {
+    canvasImageReferenceLimitError,
+    buildImageGenerationMetadata,
+    clearInPlaceMediaOutputMetadata,
+    getGenerationCount,
+    isGenerationCanceled,
+    resetGenerationTaskMetadata,
+    runCanvasGenerationTaskToConsumer,
+} from "@/lib/canvas/canvas-project-generation";
 import { imageGenerationReferenceConnections } from "@/lib/canvas/canvas-resource-references";
 import { canvasGenerationPromptMetadata } from "@/lib/canvas/canvas-generation-submission";
+import { manjuGenerationTaskMetadata } from "@/lib/canvas/canvas-manju";
+import { creationTemplateGenerationMetadata } from "@/lib/canvas/creation-template-workflow";
 import { mediaResultMetadata } from "@/lib/canvas/canvas-node-semantics";
 import { CONTENT_MODERATION_ERROR_CODE, type GenerationFailureMetadata } from "@/lib/generation-error";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { captureUserScope, isUserScopeAbandonedError, userScopeMatches } from "@/lib/user-scope-guard";
 import { CanvasGenerationTargetSaveError } from "@/services/canvas-generation-errors";
+import { persistCanvasGenerationTarget } from "@/services/canvas-generation-target";
 
 import type { CanvasGenerationExecution } from "./canvas-generation-executor-types";
 import { canvasGenerationFailureMetadata, canvasImageGenerationHasPendingResult, isKeptGenerationResultCode } from "./canvas-generation-failure";
@@ -76,6 +87,7 @@ export async function executeImageGeneration({
     const referenceImages = generationContext.referenceImages;
     const generationType = referenceImages.length ? ("edit" as const) : ("generation" as const);
     const generationMetadata = buildImageGenerationMetadata(generationType, generationConfig, count, referenceImages);
+    const managedTableMetadata = manjuGenerationTaskMetadata(sourceNode?.metadata);
     const parentConfig = NODE_DEFAULT_SIZE[isConfigNode ? CanvasNodeType.Config : isImageNode ? CanvasNodeType.Image : CanvasNodeType.Text];
     const imageDefaults = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
     // 生成中占位框按设置比例显示，避免 16:9 任务显示成默认 340x240。
@@ -100,11 +112,7 @@ export async function executeImageGeneration({
     };
     const rootPosition = reuseSourceNode ? parentPosition : findAvailableGenerationGroupPosition(workingNodes, preferredPosition, imageGenerationGroupSize({ width: rootWidth, height: rootHeight }, outputNodeSize, childIds.length));
 
-    const reusableRootMetadata = reuseSourceNode
-        ? count > 1
-            ? resetGenerationTaskMetadata(sourceNode?.metadata, NODE_STATUS_LOADING)
-            : clearInPlaceMediaOutputMetadata(sourceNode?.metadata)
-        : {};
+    const reusableRootMetadata = reuseSourceNode ? (count > 1 ? resetGenerationTaskMetadata(sourceNode?.metadata, NODE_STATUS_LOADING) : clearInPlaceMediaOutputMetadata(sourceNode?.metadata)) : {};
     const rootNode: CanvasNodeData = {
         id: rootId,
         type: CanvasNodeType.Image,
@@ -124,6 +132,14 @@ export async function executeImageGeneration({
             primaryImageId: undefined,
             ...(reuseSourceNode && count > 1 && sourceNode?.metadata?.content ? { content: sourceNode.metadata.content } : {}),
             ...generationMetadata,
+            ...managedTableMetadata,
+            ...(sourceNode?.metadata?.manjuAssetTableId
+                ? {
+                      manjuAssetTableId: sourceNode.metadata.manjuAssetTableId,
+                      manjuAssetRowId: sourceNode.metadata.manjuAssetRowId,
+                      manjuAssetCode: sourceNode.metadata.manjuAssetCode,
+                  }
+                : {}),
             ...styleMetadata,
             ...skillMetadata,
             imageBatchExpanded: count > 1 ? true : undefined,
@@ -147,6 +163,7 @@ export async function executeImageGeneration({
             size: generationConfig.size,
             batchRootId: rootId,
             ...generationMetadata,
+            ...managedTableMetadata,
             ...styleMetadata,
             ...skillMetadata,
             generationErrorCode: undefined,
@@ -195,6 +212,18 @@ export async function executeImageGeneration({
 
     targetIds.forEach((targetId) => startGenerationRequest(targetId, nodeId, nodeId, controller));
     if (count > 1) startGenerationRequest(rootId, nodeId, nodeId, controller);
+    let targetSave: Promise<void> | undefined;
+    const prepareTarget = async () => {
+        if (!projectId) return;
+        targetSave ??= persistCanvasGenerationTarget({
+            projectId,
+            nodeId: targetIds[0],
+            signal: controller.signal,
+            expectedScope,
+            isCurrent,
+        });
+        await targetSave;
+    };
     let hasSuccess = false;
     let hasFailure = false;
     let failureCount = 0;
@@ -204,9 +233,7 @@ export async function executeImageGeneration({
     await Promise.all(
         targetIds.map(async (targetId, index) => {
             try {
-                const operationId = clientOperationId
-                    ? (count > 1 ? `${clientOperationId}:${index}` : clientOperationId)
-                    : retryContext?.clientOperationId;
+                const operationId = clientOperationId ? (count > 1 ? `${clientOperationId}:${index}` : clientOperationId) : retryContext?.clientOperationId;
                 await runCanvasGenerationTaskToConsumer(
                     {
                         projectId,
@@ -222,6 +249,8 @@ export async function executeImageGeneration({
                         signal: controller.signal,
                         metadata: {
                             sourceNodeId: nodeId,
+                            ...managedTableMetadata,
+                            ...creationTemplateGenerationMetadata(sourceNode?.metadata),
                             ...taskContext,
                             resolvedCharacterVersions: generationContext.resolvedCharacterVersions,
                             promptTemplateOperation: sourceNode?.metadata?.promptTemplateOperation,
@@ -231,6 +260,7 @@ export async function executeImageGeneration({
                         },
                     },
                     {
+                        prepareTarget,
                         bindTask: (task) => bindGenerationTask(targetId, task),
                         consumeTask: (task) => applyGenerationTaskResult(targetId, task),
                         isCurrent,

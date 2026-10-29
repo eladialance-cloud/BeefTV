@@ -129,25 +129,25 @@ func (a *DesktopApp) RuntimeConfig() DesktopRuntimeConfig {
 	return DesktopRuntimeConfig{BaseURL: runtime.BaseURL(), LaunchToken: runtime.LaunchToken(), UIBootstrapToken: runtime.UIBootstrapToken()}
 }
 
-func (a *DesktopApp) OpenBeefTVGitHub() error {
+func (a *DesktopApp) OpenVisiDeepAIGitHub() error {
 	ctx, err := a.dialogContext()
 	if err != nil {
 		return err
 	}
-	wailsruntime.BrowserOpenURL(ctx, "https://github.com/glanderness/BeefTV")
+	wailsruntime.BrowserOpenURL(ctx, "https://github.com/lixiaoxiao9888-create")
 	return nil
 }
 
-func (a *DesktopApp) OpenBeefTVWebsite() error {
+func (a *DesktopApp) OpenVisiDeepAIWebsite() error {
 	ctx, err := a.dialogContext()
 	if err != nil {
 		return err
 	}
-	wailsruntime.BrowserOpenURL(ctx, "https://beeftv.app/")
+	wailsruntime.BrowserOpenURL(ctx, "https://github.com/lixiaoxiao9888-create")
 	return nil
 }
 
-func (a *DesktopApp) OpenBeefTVX() error {
+func (a *DesktopApp) OpenVisiDeepAIX() error {
 	ctx, err := a.dialogContext()
 	if err != nil {
 		return err

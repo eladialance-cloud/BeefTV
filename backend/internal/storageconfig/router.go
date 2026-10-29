@@ -148,11 +148,17 @@ func (r *Router) storeFor(item *model.StorageLocation) (localasset.BlobStore, er
 	if err != nil {
 		return nil, err
 	}
-	store, err := NewS3BlobStore(Target{
+	target := Target{
 		Provider: item.Provider, Endpoint: item.Endpoint, Region: item.Region, Bucket: item.Bucket,
 		CDNBaseURL:  item.CDNBaseURL,
 		AccessKeyID: item.AccessKeyID, SecretAccessKey: secret, Prefix: item.Prefix, PathStyle: item.PathStyle,
-	}, filepath.Join(r.dataDir, "storage-temp"))
+	}
+	var store localasset.BlobStore
+	if normalizedProvider(item.Provider) == "cos" {
+		store, err = NewCOSBlobStore(target, filepath.Join(r.dataDir, "storage-temp"))
+	} else {
+		store, err = NewS3BlobStore(target, filepath.Join(r.dataDir, "storage-temp"))
+	}
 	if err != nil {
 		return nil, err
 	}

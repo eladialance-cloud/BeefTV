@@ -1,6 +1,6 @@
 //go:build windows
 
-// CI-only WebView2 host. It opens the production profile and origin while BeefTV
+// CI-only WebView2 host. It opens the production profile and origin while VisiDeep AI
 // is stopped; the unmodified production executable is tested separately.
 package main
 
@@ -26,7 +26,7 @@ func main() {
 		return result
 	}
 	class, _ := windows.UTF16PtrFromString("STATIC")
-	title, _ := windows.UTF16PtrFromString("BeefTV cache probe")
+	title, _ := windows.UTF16PtrFromString("VisiDeep AI cache probe")
 	hwnd := call("CreateWindowExW", 0, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(title)),
 		0x10cf0000, 0, 0, 640, 480, 0, 0, 0, 0)
 	if hwnd == 0 {
@@ -64,7 +64,7 @@ func main() {
 	}
 	view.Resize()
 	view.WebResourceRequestedCallback = func(_ *edge.ICoreWebView2WebResourceRequest, args *edge.ICoreWebView2WebResourceRequestedEventArgs) {
-		response, err := view.Environment().CreateWebResourceResponse([]byte("<!doctype html><title>BeefTV cache probe</title>"), 200, "OK", "Content-Type: text/html\r\n")
+		response, err := view.Environment().CreateWebResourceResponse([]byte("<!doctype html><title>VisiDeep AI cache probe</title>"), 200, "OK", "Content-Type: text/html\r\n")
 		if err != nil {
 			panic(err)
 		}

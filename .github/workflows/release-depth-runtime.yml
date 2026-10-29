@@ -60,9 +60,9 @@ jobs:
         run: |
           set -euo pipefail
           cat > "$RUNNER_TEMP/notes.md" <<'EOF'
-          Windows x64 optional depth-video runtime for BeefTV v1.6.12 and later.
+          Windows x64 optional depth-video runtime for VisiDeep AI v1.6.12 and later.
 
-          CPU inference has been tested on a Windows AMD machine with 2-second and 15-second clips. CUDA packages pass build and relocation checks; real NVIDIA GPU inference is a community testing preview. CUDA device failures fall back to CPU once. CPU processing can be slow and memory intensive. Please include GPU, driver version, BeefTV version and task diagnostics when reporting issues.
+          CPU inference has been tested on a Windows AMD machine with 2-second and 15-second clips. CUDA packages pass build and relocation checks; real NVIDIA GPU inference is a community testing preview. CUDA device failures fall back to CPU once. CPU processing can be slow and memory intensive. Please include GPU, driver version, VisiDeep AI version and task diagnostics when reporting issues.
 
           Packages and the Small model are downloaded on first use. The signed manifest verifies every archive and CUDA part. These are optional components, not desktop installers.
           EOF

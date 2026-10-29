@@ -114,19 +114,19 @@ jobs:
           platform='${{ matrix.platform }}'
           payload='backend/cmd/desktop/build/bin'
           suffix='-setup.exe'
-          if [[ "$platform" == darwin-* ]]; then payload="$payload/BeefTV.app"; suffix='.dmg'; fi
-          if [[ "$platform" == linux-* ]]; then payload="$payload/BeefTV-linux"; suffix='.deb'; fi
-          command=(python scripts/smoke-desktop-installer.py --platform "$platform" --installer "dist/BeefTV-${version}-${platform}${suffix}" --payload "$payload")
+          if [[ "$platform" == darwin-* ]]; then payload="$payload/VisiDeepAI.app"; suffix='.dmg'; fi
+          if [[ "$platform" == linux-* ]]; then payload="$payload/VisiDeepAI-linux"; suffix='.deb'; fi
+          command=(python scripts/smoke-desktop-installer.py --platform "$platform" --installer "dist/VisiDeepAI-${version}-${platform}${suffix}" --payload "$payload")
           if [[ "$platform" == linux-* ]]; then xvfb-run -a dbus-run-session -- "${command[@]}"; else "${command[@]}"; fi
       - name: Verify DEB dependencies on clean Ubuntu
         if: runner.os == 'Linux'
         run: |
           docker run --rm -v "${PWD}/dist:/packages:ro" ubuntu:24.04 sh -ec '
             apt-get update
-            apt-get install -y /packages/BeefTV-*.deb
+            apt-get install -y /packages/VisiDeepAI-*.deb
             dpkg --audit
-            dpkg --verify beeftv
-            ldd /opt/beeftv/BeefTV-linux/BeefTV > /tmp/links
+            dpkg --verify visideep
+            ldd /opt/visideep/VisiDeepAI-linux/VisiDeepAI > /tmp/links
             cat /tmp/links
             ! grep -q "not found" /tmp/links
           '
@@ -135,6 +135,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: installer-check-${{ matrix.platform }}
-          path: dist/BeefTV-*
+          path: dist/VisiDeepAI-*
           retention-days: 7
           if-no-files-found: error

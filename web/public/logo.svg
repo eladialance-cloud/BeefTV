@@ -1,3 +1,4 @@
-<svg viewBox="0 0 1360 800" xmlns="http://www.w3.org/2000/svg">
-  <image href="/beef-mark.png" width="560" height="800" preserveAspectRatio="xMidYMid meet"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">VisiDeep AI</title>
+  <image href="/visideep-ai.png" width="512" height="512" preserveAspectRatio="xMidYMid meet" />
 </svg>

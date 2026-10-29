@@ -29,7 +29,7 @@ def digest(path):
 def download_fixture(fixture, directory):
     version = fixture['version']
     archive = directory / (version + '.zip')
-    url = f'https://github.com/glanderness/BeefTV/releases/download/{version}/BeefTV-{version}-windows-amd64.zip'
+    url = f'https://github.com/glanderness/BeefTV/releases/download/{version}/VisiDeepAI-{version}-windows-amd64.zip'
     subprocess.run(['curl.exe', '-fLsS', '--retry', '2', '--max-time', '180', url, '-o', str(archive)], check=True)
     if digest(archive) != fixture['sha256']:
         raise RuntimeError('Published fixture hash mismatch: ' + version)
@@ -67,7 +67,7 @@ def stop_installed(executable):
 
 def install_tree(root):
     result = {}
-    for name in ['BeefTV.exe', 'cli', 'agent-host', 'plugin-packages', 'media-runtime']:
+    for name in ['VisiDeepAI.exe', 'cli', 'agent-host', 'plugin-packages', 'media-runtime']:
         path = root/name
         paths = [path] if path.is_file() else sorted(path.rglob('*')) if path.is_dir() else []
         for item in paths:
@@ -109,11 +109,11 @@ def exercise(source, candidate, version, directory, rollback=False):
     shutil.copytree(candidate, staged)
     if rollback:
         # Structurally valid archive, but CreateProcess must reject its program.
-        (staged/'BeefTV.exe').write_bytes(b'not a Windows executable')
+        (staged/'VisiDeepAI.exe').write_bytes(b'not a Windows executable')
     data.mkdir()
     db = data/'open_ai_canvas.db'
-    helper = directory/'BeefTV-update-helper.exe'
-    shutil.copy2(install/'BeefTV.exe', helper)
+    helper = directory/'VisiDeepAI-update-helper.exe'
+    shutil.copy2(install/'VisiDeepAI.exe', helper)
     token = secrets.token_hex(32)
     with socket.socket() as listener:
         listener.bind(('127.0.0.1', 0))
@@ -121,10 +121,10 @@ def exercise(source, candidate, version, directory, rollback=False):
     env = dict(os.environ, CANVAS_DESKTOP_DATA_DIR=str(data),
                CANVAS_DESKTOP_BACKEND_ADDR=f'127.0.0.1:{port}',
                CANVAS_DESKTOP_LAUNCH_TOKEN=token)
-    parent = subprocess.Popen([str(install/'BeefTV.exe')], env=env)
+    parent = subprocess.Popen([str(install/'VisiDeepAI.exe')], env=env)
     request = directory/'request.json'
     request.write_text(json.dumps(dict(schema=1, parentPid=parent.pid, platform='windows-amd64',
-        targetPath=str(install/'BeefTV.exe'), stagedPath=str(staged), backupPath=str(directory/'backup'),
+        targetPath=str(install/'VisiDeepAI.exe'), stagedPath=str(staged), backupPath=str(directory/'backup'),
         preparedPath=str(directory/'prepared'), resultPath=str(directory/'result.json'), waitTimeoutSec=180)), encoding='utf-8')
     process = None
     try:
@@ -171,7 +171,7 @@ def exercise(source, candidate, version, directory, rollback=False):
             process.wait(timeout=10)
         primary_error = sys.exc_info()[1]
         try:
-            stop_installed(install/'BeefTV.exe')
+            stop_installed(install/'VisiDeepAI.exe')
             parent.wait(timeout=10)
         except Exception as cleanup_error:
             if primary_error is not None:
@@ -191,7 +191,7 @@ def main():
     fixtures = json.loads(Path(__file__).with_name('windows-upgrade-fixtures.json').read_text())
     receipts = []
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='BeefTV-upgrade-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='VisiDeepAI-upgrade-') as temporary:
         # Windows TEMP can contain an 8.3 alias; CIM reports full executable paths.
         root = Path(temporary).resolve()
         candidate = root/'candidate'

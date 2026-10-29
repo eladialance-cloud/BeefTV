@@ -5,7 +5,42 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"infinite-canvas/backend/internal/model"
 )
+
+func TestHostedAssistantProviderUsesAdminSystemCatalog(t *testing.T) {
+	svc, db := newChannelModelTestService(t)
+	svc.dataDir = t.TempDir()
+	svc.SetHostedProfile(true)
+	channel := model.ModelChannel{
+		ID: "CHANNEL_000001", UserID: "admin", Scope: model.ChannelScopeSystem,
+		Enabled: true, Name: "官方文本", BaseURL: "https://relay.example.com/v1",
+		APIKey: "upstream-secret", APIFormat: "openai",
+	}
+	if err := svc.encryptSystemChannelSecrets(&channel); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&channel).Error; err != nil {
+		t.Fatal(err)
+	}
+	item := model.ChannelModel{
+		ID: "MODEL_000005", ChannelID: channel.ID, ModelKey: "deepseek-flash",
+		ProviderModelKey: "deepseek-flash", DisplayName: "DeepSeek Flash",
+		Capability: "text", Protocol: model.ChannelInterfaceChatCompletion, Enabled: true,
+	}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	provider, err := svc.ResolveAssistantProvider()
+	if err != nil {
+		t.Fatalf("hosted assistant should resolve the admin system model: %v", err)
+	}
+	if provider.ChannelID != channel.ID || provider.Model != "deepseek-flash" || provider.Protocol != "chat-completion" || provider.APIKey != "upstream-secret" {
+		t.Fatalf("unexpected hosted provider: %#v", provider)
+	}
+}
 
 func TestResolveAssistantProviderFromModelsOnlyLocalChannel(t *testing.T) {
 	for _, selection := range []string{"deepseek-v4-flash:free", "newapi-local::deepseek-v4-flash:free"} {

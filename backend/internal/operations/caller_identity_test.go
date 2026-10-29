@@ -38,6 +38,7 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	sqlDB.SetMaxOpenConns(1)
 	sqlDB.SetMaxIdleConns(1)
 	if err := database.MigrateLocalSchema(db); err != nil {

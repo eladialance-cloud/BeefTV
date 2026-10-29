@@ -51,9 +51,22 @@ func Bind(ports Ports, userID string, req Request) (Receipt, error) {
 	}
 	target := localtask.TargetBindingFromInput(task.InputJSON)
 	if nodeID := strings.TrimSpace(target.NodeID); nodeID != "" && nodeID != req.NodeID {
-		return Receipt{}, conflict("node_mismatch", "只能绑定到任务原先指定的节点")
+		recovery, ok := ports.(RecoveredNodePorts)
+		if !ok {
+			return Receipt{}, conflict("node_mismatch", "只能绑定到任务原先指定的节点")
+		}
+		allowed, err := recovery.CanBindRecoveredNode(userID, *task, req.NodeID, req.CreateMissingNode)
+		if err != nil {
+			return Receipt{}, mapPortError(err)
+		}
+		if !allowed {
+			return Receipt{}, conflict("node_mismatch", "只能绑定到任务原先指定的节点")
+		}
 	}
 	wantKey := localtask.AttachNodeEffectKey(req.TaskID, req.NodeID, req.OutputIndex)
+	if req.RecoveryMode {
+		wantKey = localtask.RecoverNodeEffectKey(req.TaskID, req.OutputIndex)
+	}
 	if req.EffectKey == "" {
 		req.EffectKey = wantKey
 	}
@@ -135,21 +148,26 @@ func durablePatch(ports Ports, userID string, task model.Task, req Request) (Nod
 		mediaType = strings.TrimSpace(resource.Kind)
 	}
 	return NodePatch{
-		CanvasID:    req.CanvasID,
-		NodeID:      req.NodeID,
-		TaskID:      req.TaskID,
-		OutputIndex: req.OutputIndex,
-		EffectKey:   req.EffectKey,
-		MediaType:   mediaType,
-		AssetID:     output.MaterializedAssetID,
-		ResourceID:  resource.ID,
-		StorageKey:  "resource:" + resource.ID,
-		Content:     assets.FileURL(resource.ID),
-		MimeType:    resource.MimeType,
-		Bytes:       resource.Size,
-		Width:       resource.Width,
-		Height:      resource.Height,
-		DurationMs:  resource.DurationMs,
+		CanvasID:          req.CanvasID,
+		NodeID:            req.NodeID,
+		TaskID:            req.TaskID,
+		OutputIndex:       req.OutputIndex,
+		EffectKey:         req.EffectKey,
+		MediaType:         mediaType,
+		AssetID:           output.MaterializedAssetID,
+		ResourceID:        resource.ID,
+		StorageKey:        "resource:" + resource.ID,
+		Content:           assets.FileURL(resource.ID),
+		MimeType:          resource.MimeType,
+		Bytes:             resource.Size,
+		Width:             resource.Width,
+		Height:            resource.Height,
+		DurationMs:        resource.DurationMs,
+		Metadata:          taskIdentityMetadata(task.InputJSON),
+		CreateMissingNode: req.CreateMissingNode,
+		NodeTitle:         req.NodeTitle,
+		NodePositionX:     req.NodePositionX,
+		NodePositionY:     req.NodePositionY,
 	}, nil
 }
 
@@ -165,15 +183,48 @@ func textPatch(task model.Task, req Request) (NodePatch, error) {
 		return NodePatch{}, precondition("output_not_ready", "文本任务还没有可绑定的结果")
 	}
 	return NodePatch{
-		CanvasID:    req.CanvasID,
-		NodeID:      req.NodeID,
-		TaskID:      req.TaskID,
-		OutputIndex: req.OutputIndex,
-		EffectKey:   req.EffectKey,
-		MediaType:   "text",
-		Content:     text,
-		Storyboard:  storyboard,
+		CanvasID:          req.CanvasID,
+		NodeID:            req.NodeID,
+		TaskID:            req.TaskID,
+		OutputIndex:       req.OutputIndex,
+		EffectKey:         req.EffectKey,
+		MediaType:         "text",
+		Content:           text,
+		Storyboard:        storyboard,
+		Metadata:          taskIdentityMetadata(task.InputJSON),
+		CreateMissingNode: req.CreateMissingNode,
+		NodeTitle:         req.NodeTitle,
+		NodePositionX:     req.NodePositionX,
+		NodePositionY:     req.NodePositionY,
 	}, nil
+}
+
+func taskIdentityMetadata(inputJSON string) map[string]any {
+	var input struct {
+		Metadata map[string]any `json:"metadata"`
+	}
+	if json.Unmarshal([]byte(inputJSON), &input) != nil {
+		return nil
+	}
+	allowed := []string{
+		"manjuProjectId",
+		"manjuStage",
+		"manjuAssetTableId",
+		"manjuAssetRowId",
+		"manjuAssetCode",
+		"manjuTaskId",
+		"manjuTaskCode",
+	}
+	result := make(map[string]any, len(allowed))
+	for _, key := range allowed {
+		if value, _ := input.Metadata[key].(string); strings.TrimSpace(value) != "" {
+			result[key] = strings.TrimSpace(value)
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 func isTextTask(task model.Task) bool {

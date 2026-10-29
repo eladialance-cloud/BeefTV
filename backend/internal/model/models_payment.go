@@ -8,6 +8,7 @@ import "time"
 const (
 	PaymentProviderAlipay = "alipay"
 	PaymentProviderWeChat = "wechat"
+	PaymentProviderEPay   = "epay"
 )
 
 // PaymentProviderConfig is an admin-managed payment channel. The non-secret
@@ -22,6 +23,9 @@ type PaymentProviderConfig struct {
 	MchID            string     `json:"mchId" gorm:"size:128"`
 	MchSerialNo      string     `json:"mchSerialNo" gorm:"size:128"`
 	NotifyURL        string     `json:"notifyUrl" gorm:"size:255"`
+	ReturnURL        string     `json:"returnUrl" gorm:"size:255"`
+	Endpoint         string     `json:"endpoint" gorm:"size:255"`
+	PayType          string     `json:"payType" gorm:"size:24"`
 	SecretsEncrypted string     `json:"-" gorm:"type:text"`
 	Enabled          bool       `json:"enabled"`
 	SortOrder        int        `json:"sortOrder"`

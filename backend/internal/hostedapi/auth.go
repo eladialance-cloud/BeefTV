@@ -1,6 +1,7 @@
 package hostedapi
 
 import (
+	"log"
 	"net/http"
 	"strings"
 
@@ -27,6 +28,7 @@ type AuthService interface {
 	IssueSession(userID string, meta auth.SessionMeta) (string, *model.AuthSession, error)
 	ValidateSession(token string) (*model.User, error)
 	RevokeSession(token string) error
+	RegistrationPolicyMode() (mode string, bonusCredits int64, err error)
 }
 
 // RegisterAuthRoutes mounts the hosted-only account surface: /register, /login,
@@ -39,6 +41,9 @@ type AuthOptions struct {
 	// a non-guessable name and register it immediately, because the first
 	// successful registration claims the name.
 	BootstrapAdminUsername string
+	// RegistrationBonus is best-effort after the account exists. The credit
+	// service uses a stable idempotency key, so retrying cannot double-credit.
+	RegistrationBonus func(user *model.User, amount int64) error
 }
 
 func RegisterAuthRoutes(r *gin.RouterGroup, svc AuthService, options AuthOptions) {
@@ -47,6 +52,7 @@ func RegisterAuthRoutes(r *gin.RouterGroup, svc AuthService, options AuthOptions
 			Username    string `json:"username"`
 			DisplayName string `json:"displayName"`
 			Password    string `json:"password"`
+			InviteCode  string `json:"inviteCode"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
 			writeError(c, kernel.BadAuthRequest("注册参数格式错误"))
@@ -57,11 +63,16 @@ func RegisterAuthRoutes(r *gin.RouterGroup, svc AuthService, options AuthOptions
 			role = model.UserRoleAdmin
 		}
 		user, err := svc.Register(auth.RegisterInput{
-			Username: body.Username, DisplayName: body.DisplayName, Password: body.Password, Role: role,
+			Username: body.Username, DisplayName: body.DisplayName, Password: body.Password, InviteCode: body.InviteCode, Role: role,
 		})
 		if err != nil {
 			writeError(c, err)
 			return
+		}
+		if _, bonus, policyErr := svc.RegistrationPolicyMode(); policyErr == nil && bonus > 0 && options.RegistrationBonus != nil {
+			if bonusErr := options.RegistrationBonus(user, bonus); bonusErr != nil {
+				log.Printf("registration bonus failed user=%s amount=%d: %v", user.ID, bonus, bonusErr)
+			}
 		}
 		if !issueSessionCookie(c, svc, user) {
 			return

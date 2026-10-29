@@ -1,11 +1,13 @@
 import { buildSkillMentionReferences } from "@/services/skill-runtime";
 import { canvasResourceMentionToken, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import type { Skill } from "@/services/api/skills";
-import { creationAttachmentKind, type CreationAttachment } from "./creation-assets";
+import { creationAttachmentKind, type CreationAttachment, type CreationAttachmentKind } from "./creation-assets";
 
 export type CreationReference = CanvasResourceReference & {
     attachmentId?: string;
 };
+
+export type CreationAttachmentLimits = Record<CreationAttachmentKind, number>;
 
 export function buildCreationMentionReferences(skills: Skill[], attachments: CreationAttachment[] = [], snapshots: CreationReference[] = []) {
     const counts = { image: 0, video: 0, audio: 0, file: 0 };
@@ -24,12 +26,22 @@ export function selectedCreationReferences(prompt: string, references: CreationR
     return references.filter((reference) => prompt.includes(canvasResourceMentionToken(reference)) || prompt.includes(`@${reference.label}`));
 }
 
-export function reconcileCreationAttachmentLimit(attachments: CreationAttachment[], references: CreationReference[], maxReferences: number) {
-    const limit = Math.max(0, Math.floor(maxReferences));
-    if (attachments.length <= limit) return { attachments, removedReferences: [] as CreationReference[] };
+export function reconcileCreationAttachmentLimit(attachments: CreationAttachment[], references: CreationReference[], maxReferences: number | Partial<CreationAttachmentLimits>) {
+    const counts: CreationAttachmentLimits = { image: 0, video: 0, audio: 0, file: 0 };
+    const limitFor = (kind: CreationAttachmentKind) => {
+        const value = typeof maxReferences === "number" ? maxReferences : maxReferences[kind] ?? 0;
+        return Math.max(0, Math.floor(Number(value) || 0));
+    };
+    const nextAttachments = attachments.filter((attachment) => {
+        const kind = creationAttachmentKind(attachment);
+        if (counts[kind] >= limitFor(kind)) return false;
+        counts[kind] += 1;
+        return true;
+    });
+    if (nextAttachments.length === attachments.length) return { attachments, removedReferences: [] as CreationReference[] };
 
-    const nextAttachments = attachments.slice(0, limit);
-    const removedAttachmentIds = new Set(attachments.slice(limit).map((attachment) => attachment.id));
+    const retainedAttachmentIds = new Set(nextAttachments.map((attachment) => attachment.id));
+    const removedAttachmentIds = new Set(attachments.filter((attachment) => !retainedAttachmentIds.has(attachment.id)).map((attachment) => attachment.id));
     const removedReferences = references.filter((reference) => reference.attachmentId && removedAttachmentIds.has(reference.attachmentId));
     return { attachments: nextAttachments, removedReferences };
 }

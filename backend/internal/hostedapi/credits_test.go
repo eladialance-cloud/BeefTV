@@ -110,10 +110,10 @@ func TestCreditWalletRequiresLogin(t *testing.T) {
 
 func TestCreditWalletReportsBalanceFrozenAndAvailable(t *testing.T) {
 	engine, service := newCreditTestEnv(t)
-	if _, err := service.Grant(testAliceID, 100, testAdminID, "初始赠送", "grant:alice"); err != nil {
+	if _, err := service.Grant(testAliceID, credits.FromWholeCredits(100), testAdminID, "初始赠送", "grant:alice"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Reserve(testAliceID, "task-1", 30); err != nil {
+	if _, err := service.Reserve(testAliceID, "task-1", credits.FromWholeCredits(30)); err != nil {
 		t.Fatal(err)
 	}
 	recorder := creditRequest(t, engine, http.MethodGet, "/api/credits/wallet", nil, "alice")
@@ -129,17 +129,17 @@ func TestCreditWalletReportsBalanceFrozenAndAvailable(t *testing.T) {
 		t.Fatal(err)
 	}
 	account := envelope.Data.Account
-	if account.Balance != 100 || account.Frozen != 30 || account.Available != 70 {
+	if account.Balance != credits.FromWholeCredits(100) || account.Frozen != credits.FromWholeCredits(30) || account.Available != credits.FromWholeCredits(70) {
 		t.Fatalf("钱包应为 余额100/冻结30/可用70，得到 %#v", account)
 	}
 }
 
 func TestCreditLedgerIsScopedToSessionUser(t *testing.T) {
 	engine, service := newCreditTestEnv(t)
-	if _, err := service.Grant(testAliceID, 100, testAdminID, "Alice 赠送", "grant:alice"); err != nil {
+	if _, err := service.Grant(testAliceID, credits.FromWholeCredits(100), testAdminID, "Alice 赠送", "grant:alice"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Grant("u-bob", 999, testAdminID, "Bob 赠送", "grant:bob"); err != nil {
+	if _, err := service.Grant("u-bob", credits.FromWholeCredits(999), testAdminID, "Bob 赠送", "grant:bob"); err != nil {
 		t.Fatal(err)
 	}
 	recorder := creditRequest(t, engine, http.MethodGet, "/api/credits/ledger", nil, "alice")
@@ -157,7 +157,7 @@ func TestCreditLedgerIsScopedToSessionUser(t *testing.T) {
 	if len(envelope.Data.Items) != 1 {
 		t.Fatalf("用户只能看到自己的流水，得到 %d 条", len(envelope.Data.Items))
 	}
-	if envelope.Data.Items[0].Amount != 100 {
+	if envelope.Data.Items[0].Amount != credits.FromWholeCredits(100) {
 		t.Fatalf("流水金额应属于 Alice，得到 %#v", envelope.Data.Items[0])
 	}
 }
@@ -198,7 +198,7 @@ func TestCreditAdjustWritesAuditedLedger(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
 		t.Fatal(err)
 	}
-	if !envelope.Data.Applied || envelope.Data.Account.Balance != 250 {
+	if !envelope.Data.Applied || envelope.Data.Account.Balance != credits.FromWholeCredits(250) {
 		t.Fatalf("调整后余额应为 250，得到 %#v", envelope.Data)
 	}
 	if envelope.Data.Entry.OperatorID != testAdminID || envelope.Data.Entry.Reason != "活动奖励" {
@@ -215,8 +215,26 @@ func TestCreditAdjustWritesAuditedLedger(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if account.Balance != 250 {
+	if account.Balance != credits.FromWholeCredits(250) {
 		t.Fatalf("重复调整不得二次入账，得到 %#v", account)
+	}
+}
+
+func TestCreditAdjustAcceptsMicrocreditAmount(t *testing.T) {
+	engine, service := newCreditTestEnv(t)
+	recorder := creditRequest(t, engine, http.MethodPost, "/api/admin/credits/adjust", map[string]any{
+		"userId": testAliceID, "amountMicrocredits": 500000, "reason": "小数奖励",
+		"idempotencyKey": "adjust:fractional-1",
+	}, "admin")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("小数积分调整应 200，得到 %d：%s", recorder.Code, recorder.Body.String())
+	}
+	account, err := service.Account(testAliceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if account.Balance != 500000 {
+		t.Fatalf("应到账 0.5 积分，得到 %#v", account)
 	}
 }
 
@@ -236,7 +254,7 @@ func TestCreditAdjustRejectsZeroAmountAndMissingReason(t *testing.T) {
 
 func TestCreditAdminAccountsJoinsUserDirectory(t *testing.T) {
 	engine, service := newCreditTestEnv(t)
-	if _, err := service.Grant(testAliceID, 100, testAdminID, "初始赠送", "grant:alice"); err != nil {
+	if _, err := service.Grant(testAliceID, credits.FromWholeCredits(100), testAdminID, "初始赠送", "grant:alice"); err != nil {
 		t.Fatal(err)
 	}
 	recorder := creditRequest(t, engine, http.MethodGet, "/api/admin/credits/accounts", nil, "admin")
@@ -255,7 +273,7 @@ func TestCreditAdminAccountsJoinsUserDirectory(t *testing.T) {
 		t.Fatalf("应只有 Alice 一个钱包，得到 %#v", envelope.Data.Items)
 	}
 	view := envelope.Data.Items[0]
-	if view.UserID != testAliceID || view.Username != "alice" || view.Balance != 100 {
+	if view.UserID != testAliceID || view.Username != "alice" || view.Balance != credits.FromWholeCredits(100) {
 		t.Fatalf("账户视图应带上用户名，得到 %#v", view)
 	}
 }

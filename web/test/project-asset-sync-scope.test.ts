@@ -177,6 +177,58 @@ describe("ensureCanvasNodeAsset scope and canonical writes", () => {
         }
     });
 
+    test("forceRemote persists a resource-backed asset in browser-local runtime", async () => {
+        const restore = switchScope("owner-a");
+        browserLocal();
+        const urls: string[] = [];
+        try {
+            await withAdapter(async (config) => {
+                urls.push(requestKey(config));
+                return envelope({
+                    asset: {
+                        id: requestAssetID(config),
+                        title: "新郎照片",
+                        category: "character",
+                        status: "confirmed",
+                        createdAt: "2026-10-22T00:00:00.000Z",
+                        updatedAt: "2026-10-22T00:00:00.000Z",
+                    },
+                });
+            }, async () => {
+                const asset: Asset = {
+                    id: "asset-upload",
+                    kind: "image",
+                    title: "新郎照片",
+                    coverUrl: "/api/resources/res-1/file",
+                    tags: ["工作流上传"],
+                    category: "character",
+                    status: "confirmed",
+                    source: "工作流上传",
+                    data: {
+                        dataUrl: "/api/resources/res-1/file",
+                        storageKey: "resource:res-1",
+                        width: 1024,
+                        height: 1024,
+                        bytes: 1024,
+                        mimeType: "image/jpeg",
+                    },
+                    createdAt: "2026-10-22T00:00:00.000Z",
+                    updatedAt: "2026-10-22T00:00:00.000Z",
+                };
+                useAssetStore.setState({ assets: [asset] });
+                await persistWorkspaceAssetLink({
+                    asset,
+                    source: "uploaded",
+                    forceRemote: true,
+                    expectedScope: captureUserScope(),
+                });
+                expect(urls).toEqual(["put /assets/asset-upload"]);
+            });
+        } finally {
+            restore();
+        }
+    });
+
     test("same-scope concurrent ensure shares the in-flight promise", async () => {
         const restore = switchScope("owner-a");
         desktopBackend();

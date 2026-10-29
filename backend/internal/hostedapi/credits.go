@@ -27,11 +27,12 @@ type CreditDirectory interface {
 }
 
 type creditWalletView struct {
-	UserID    string `json:"userId"`
-	Balance   int64  `json:"balance"`
-	Frozen    int64  `json:"frozen"`
-	Available int64  `json:"available"`
-	Version   int64  `json:"version"`
+	UserID string `json:"userId"`
+	// Balance, Frozen and Available are fixed-point microcredits.
+	Balance   int64 `json:"balance"`
+	Frozen    int64 `json:"frozen"`
+	Available int64 `json:"available"`
+	Version   int64 `json:"version"`
 }
 
 type creditAccountView struct {
@@ -161,10 +162,11 @@ func RegisterCreditAdminRoutes(r *gin.RouterGroup, svc CreditService, directory 
 			return
 		}
 		var body struct {
-			UserID         string `json:"userId"`
-			Amount         int64  `json:"amount"`
-			Reason         string `json:"reason"`
-			IdempotencyKey string `json:"idempotencyKey"`
+			UserID             string `json:"userId"`
+			Amount             int64  `json:"amount"`
+			AmountMicrocredits *int64 `json:"amountMicrocredits"`
+			Reason             string `json:"reason"`
+			IdempotencyKey     string `json:"idempotencyKey"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
 			writeError(c, kernel.NewAppError(kernel.CodeInvalidArgument, "积分调整参数格式错误"))
@@ -175,7 +177,11 @@ func RegisterCreditAdminRoutes(r *gin.RouterGroup, svc CreditService, directory 
 			writeError(c, kernel.NewAppError(kernel.CodeInvalidArgument, "缺少目标用户"))
 			return
 		}
-		result, err := svc.Adjust(target, body.Amount, operator.ID, body.Reason, body.IdempotencyKey)
+		amount := credits.FromWholeCredits(body.Amount)
+		if body.AmountMicrocredits != nil {
+			amount = *body.AmountMicrocredits
+		}
+		result, err := svc.Adjust(target, amount, operator.ID, body.Reason, body.IdempotencyKey)
 		if err != nil {
 			writeError(c, err)
 			return

@@ -121,6 +121,16 @@ func TestTaskRequestEvidenceCancellationAndBound(t *testing.T) {
 	}
 }
 
+func TestTaskRequestEvidenceLabelsMediaUploadsSeparately(t *testing.T) {
+	ctx, recorder := withTaskRequestEvidence(context.Background())
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "https://toapis.cn/v1/uploads/images", nil)
+	recordTaskRequestEvidence(req, model.TaskRequestEvidence{HTTPStatus: 200, Dispatched: true}, nil, nil)
+	d := recorder.snapshot(false)
+	if len(d.Requests) != 1 || d.Requests[0].Operation != "upload" {
+		t.Fatalf("media upload operation = %+v", d.Requests)
+	}
+}
+
 func TestTaskRequestEvidenceResumesOriginalSubmission(t *testing.T) {
 	prior := &model.TaskFailureDiagnostics{ExecutionResult: "pending", Requests: []model.TaskRequestEvidence{{Operation: "submit", RequestID: "req-original-submit", Outcome: "response_received", HTTPStatus: 200}}}
 	ctx, recorder := withTaskRequestEvidence(context.Background(), prior)

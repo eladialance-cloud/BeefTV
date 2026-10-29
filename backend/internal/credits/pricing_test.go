@@ -96,7 +96,7 @@ func TestPricingQuoteUsesLatestRuleByEffectiveInterval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if oldQuote.RuleID != "price-old" || oldQuote.EstimatedCredits != 1 {
+	if oldQuote.RuleID != "price-old" || oldQuote.EstimatedCredits != MicrocreditsPerCredit {
 		t.Fatalf("旧生效区间必须按旧价，得到 %#v", oldQuote)
 	}
 
@@ -107,7 +107,7 @@ func TestPricingQuoteUsesLatestRuleByEffectiveInterval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if newQuote.RuleID != "price-new" || newQuote.EstimatedCredits != 2 {
+	if newQuote.RuleID != "price-new" || newQuote.EstimatedCredits != 2*MicrocreditsPerCredit {
 		t.Fatalf("新生效区间必须按新价，得到 %#v", newQuote)
 	}
 }
@@ -119,13 +119,13 @@ func TestPricingQuotePrefersLogicalModelSKUForRequestedSelector(t *testing.T) {
 		{
 			ID: "sku-720", Kind: model.PricingKindLogicalSKU, LogicalModelID: "lm-video",
 			Capability: "video", BillingMode: "per_second", Selector: map[string]string{"quality": "720p"},
-			UnitPriceMicrocredits: 120000, MinimumChargeCredits: 2,
+			UnitPriceMicrocredits: 120000, MinimumChargeCredits: 2 * MicrocreditsPerCredit,
 			Enabled: true, EffectiveFrom: start,
 		},
 		{
 			ID: "sku-1080", Kind: model.PricingKindLogicalSKU, LogicalModelID: "lm-video",
 			Capability: "video", BillingMode: "per_second", Selector: map[string]string{"quality": "1080p"},
-			UnitPriceMicrocredits: 220000, MinimumChargeCredits: 3,
+			UnitPriceMicrocredits: 220000, MinimumChargeCredits: 3 * MicrocreditsPerCredit,
 			Enabled: true, EffectiveFrom: start,
 		},
 	}
@@ -138,8 +138,71 @@ func TestPricingQuotePrefersLogicalModelSKUForRequestedSelector(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if quote.RuleID != "sku-1080" || quote.RuleKind != model.PricingKindLogicalSKU || quote.EstimatedCredits != 3 {
+	if quote.RuleID != "sku-1080" || quote.RuleKind != model.PricingKindLogicalSKU || quote.EstimatedCredits != 3*MicrocreditsPerCredit {
 		t.Fatalf("同一逻辑模型必须能选到不同 SKU，得到 %#v", quote)
+	}
+}
+
+func TestChannelTierQuotePrefersResolutionSelectorOverNewerGeneralFallback(t *testing.T) {
+	start := time.Date(2026, 10, 16, 0, 0, 0, 0, time.UTC)
+	repo := newMemoryPricingRepository()
+	repo.rules[model.PricingKindChannelTier] = []model.PricingRule{
+		{
+			ID: "specific-2k", Kind: model.PricingKindChannelTier, ChannelID: "channel-1", ChannelModelID: "model-1",
+			Capability: "image", BillingMode: "per_image", Selector: map[string]string{"quality": "2k"},
+			UnitPriceMicrocredits: 2_000_000, Enabled: true, EffectiveFrom: start.Add(-2 * time.Hour), CreatedAt: start.Add(-2 * time.Hour),
+		},
+		{
+			ID: "general-newer", Kind: model.PricingKindChannelTier, ChannelID: "channel-1", ChannelModelID: "model-1",
+			Capability: "image", BillingMode: "per_image", Selector: map[string]string{},
+			UnitPriceMicrocredits: 1_000_000, Enabled: true, EffectiveFrom: start.Add(-time.Hour), CreatedAt: start.Add(-time.Hour),
+		},
+	}
+	service := NewPricing(repo, Config{})
+	quote, err := service.Quote(QuoteRequest{
+		ChannelID: "channel-1", ChannelModelID: "model-1", Capability: "image", BillingMode: "per_image",
+		Selector: map[string]string{"quality": "2k"}, Quantity: 1, At: start,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if quote.RuleID != "specific-2k" || quote.UnitPriceMicrocredits != 2_000_000 {
+		t.Fatalf("quote = %#v, want specific 2k price", quote)
+	}
+}
+
+func TestChannelTierQuoteMatchesEquivalentVideoResolutionNames(t *testing.T) {
+	start := pricingTime("2026-10-01T00:00:00Z")
+	tests := []struct {
+		name       string
+		ruleValue  string
+		requestVal string
+	}{
+		{name: "2k and 1440p", ruleValue: "2k", requestVal: "1440p"},
+		{name: "4k and 2160p", ruleValue: "4k", requestVal: "2160p"},
+		{name: "720p and provider 768P", ruleValue: "720p", requestVal: "768P"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repo := newMemoryPricingRepository()
+			repo.rules[model.PricingKindChannelTier] = []model.PricingRule{{
+				ID: "tier-resolution", Kind: model.PricingKindChannelTier,
+				ChannelID: "channel-1", ChannelModelID: "model-1", Capability: "video",
+				BillingMode: "per_second", Selector: map[string]string{"quality": test.ruleValue},
+				UnitPriceMicrocredits: 500_000, Enabled: true, EffectiveFrom: start,
+			}}
+			quote, err := NewPricing(repo, Config{}).Quote(QuoteRequest{
+				ChannelID: "channel-1", ChannelModelID: "model-1", Capability: "video",
+				BillingMode: "per_second", Selector: map[string]string{"quality": test.requestVal},
+				Quantity: 2, At: start,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if quote.RuleID != "tier-resolution" || quote.EstimatedCredits != MicrocreditsPerCredit {
+				t.Fatalf("quote = %#v", quote)
+			}
+		})
 	}
 }
 
@@ -185,14 +248,14 @@ func TestPricingQuoteFallsBackToChannelTierThenModelPricing(t *testing.T) {
 	}
 }
 
-func TestPricingQuoteRoundsUpAndHonorsMinimumCharge(t *testing.T) {
+func TestPricingQuoteHonorsMinimumCharge(t *testing.T) {
 	repo := newMemoryPricingRepository()
 	start := pricingTime("2026-10-01T00:00:00Z")
 	repo.rules[model.PricingKindModel] = []model.PricingRule{
 		{
 			ID: "rounded", Kind: model.PricingKindModel, LogicalModelID: "lm-text",
 			Capability: "text", BillingMode: "per_1k_tokens", UnitPriceMicrocredits: 125000,
-			MinimumChargeCredits: 2, Enabled: true, EffectiveFrom: start,
+			MinimumChargeCredits: 2 * MicrocreditsPerCredit, Enabled: true, EffectiveFrom: start,
 		},
 	}
 	service := NewPricing(repo, Config{})
@@ -204,8 +267,44 @@ func TestPricingQuoteRoundsUpAndHonorsMinimumCharge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if quote.EstimatedCredits != 2 {
+	if quote.EstimatedCredits != 2*MicrocreditsPerCredit {
 		t.Fatalf("不足最低价时按最低价计费，得到 %#v", quote)
+	}
+}
+
+func TestPricingQuotePreservesFractionalCreditsAndFractionalMinimum(t *testing.T) {
+	repo := newMemoryPricingRepository()
+	start := pricingTime("2026-10-01T00:00:00Z")
+	repo.rules[model.PricingKindModel] = []model.PricingRule{
+		{
+			ID: "fractional", Kind: model.PricingKindModel, LogicalModelID: "lm-image",
+			Capability: "image", BillingMode: "per_image", UnitPriceMicrocredits: 250000,
+			MinimumChargeCredits: 500000, Enabled: true, EffectiveFrom: start,
+		},
+	}
+	service := NewPricing(repo, Config{})
+
+	quote, err := service.Quote(QuoteRequest{
+		LogicalModelID: "lm-image", Capability: "image", BillingMode: "per_image",
+		Quantity: 1, At: start,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if quote.EstimatedCredits != 500000 {
+		t.Fatalf("0.5 积分最低扣费应保留为 500000 微积分，得到 %#v", quote)
+	}
+
+	repo.rules[model.PricingKindModel][0].MinimumChargeCredits = 0
+	quote, err = service.Quote(QuoteRequest{
+		LogicalModelID: "lm-image", Capability: "image", BillingMode: "per_image",
+		Quantity: 1, At: start,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if quote.EstimatedCredits != 250000 {
+		t.Fatalf("0.25 积分不应被向上取整成 1 积分，得到 %#v", quote)
 	}
 }
 
@@ -278,7 +377,7 @@ func TestPricingQuotePrefersSmallerSortOrderAtSameEffectiveTime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if quote.RuleID != "sku-first" || quote.EstimatedCredits != 1 {
+	if quote.RuleID != "sku-first" || quote.EstimatedCredits != MicrocreditsPerCredit {
 		t.Fatalf("同生效时间必须按 sortOrder 升序决胜，得到 %#v", quote)
 	}
 }
@@ -295,6 +394,9 @@ func TestPricingSaveCanResetMinimumChargeToZero(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if created.MinimumChargeCredits != 5*MicrocreditsPerCredit {
+		t.Fatalf("旧整数最低扣费应换算成微积分，得到 %#v", created)
 	}
 
 	zero := int64(0)

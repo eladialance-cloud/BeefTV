@@ -11,6 +11,7 @@ import DiagnosticsPanel from "./diagnostics-panel";
 import { StorageSettingsPane } from "./storage-settings-pane";
 import { ReferenceStoragePane } from "./reference-storage-pane";
 import { getDesktopAppBinding } from "@/services/desktop-runtime";
+import { isRemoteWorkspaceMode } from "@/services/workspace-mode";
 import { PageHeader } from "@/components/layout/workspace-page";
 
 type ConfigSectionKey = "channels" | "models" | "storage" | "diagnostics";
@@ -25,6 +26,7 @@ export default function SettingsPage() {
     const [searchParams, setSearchParams] = useSearchParams();
     const requestedSection = searchParams.get("section");
     const customChannelsEnabled = useUserStore((state) => state.features.customChannelsEnabled);
+    const remoteMode = isRemoteWorkspaceMode();
     const initialSection = isConfigSection(requestedSection) ? requestedSection : "channels";
     const [activeTab, setActiveTab] = useState<ConfigSectionKey>(initialSection === "models" ? "channels" : initialSection);
     const config = useConfigStore((state) => state.config);
@@ -39,8 +41,9 @@ export default function SettingsPage() {
     }, []);
 
     useEffect(() => {
-        setActiveTab(isConfigSection(requestedSection) && (requestedSection !== "storage" || nativeStorage) ? requestedSection : "channels");
-    }, [requestedSection, nativeStorage]);
+        const blocked = requestedSection === "storage" && (!nativeStorage || remoteMode);
+        setActiveTab(isConfigSection(requestedSection) && (requestedSection !== "storage" || nativeStorage) && !blocked ? requestedSection : "channels");
+    }, [requestedSection, nativeStorage, remoteMode]);
 
     const selectSection = (section: ConfigSectionKey) => {
         setActiveTab(section);
@@ -69,7 +72,7 @@ export default function SettingsPage() {
     const panes: Record<Exclude<ConfigSectionKey, "diagnostics">, ReactNode> = {
         channels: (
             <SettingsPane>
-                <ChannelSettingsPane onOpenDiagnostics={() => selectSection("diagnostics")} />
+                {remoteMode ? null : <ChannelSettingsPane onOpenDiagnostics={() => selectSection("diagnostics")} />}
                 <div className="settings-section model-default-section">
                     <div className="settings-pane-header">
                         <div className="min-w-0">

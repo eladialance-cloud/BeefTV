@@ -1,4 +1,4 @@
-// BeefTV 内置 pi 会话宿主（正式）：HTTP 适配器。
+// VisiDeep AI 内置 pi 会话宿主（正式）：HTTP 适配器。
 // 执行运行时只有 durable-session-owner.mjs 一套；旧 JSONL 会话只读历史在 session-owner.mjs。
 // 画布操作桥在 operation-bridge.mjs。
 import http from 'node:http';

@@ -149,7 +149,7 @@ type CallMeta struct {
 
 // DeliveryProgressPort carries in-generation result download progress (for
 // example a video fetched from a gateway before the task succeeds). The adapter
-// is bound to the executing BeefTV task and owns identity; provider task ids
+// is bound to the executing VisiDeep AI task and owns identity; provider task ids
 // must never be used as the key. nil means nothing is reported.
 type DeliveryProgressPort interface {
 	ReportDelivery(progress outbound.ResumableProgress)

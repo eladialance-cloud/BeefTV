@@ -3,17 +3,20 @@ import { CanvasGenerationDurableAckError, CanvasGenerationMaterializationError }
 export { CanvasGenerationDurableAckError, CanvasGenerationMaterializationError, CanvasGenerationTargetSaveError } from "./canvas-generation-errors";
 
 import { assertUserScope, captureUserScope, isUserScopeAbandonedError, UserScopeAbandonedError, userScopeMatches, type CapturedUserScope } from "@/lib/user-scope-guard";
-import { bindCanvasTaskOutput, type CanvasTaskBindReceipt } from "@/services/api/operations";
+import { reconcileRecoveredCanvasNode } from "@/lib/canvas/canvas-recovery-projection";
+import { bindCanvasTaskOutput, recoverCanvasTaskOutput, type CanvasTaskBindReceipt } from "@/services/api/operations";
 import { ApiError } from "@/services/api/request";
 import { queryGenerationTask, type GenerationTask, type GenerationTaskDeliveryProgress, type GenerationTaskOutput } from "@/services/api/task-center";
 import { CanvasBackendSubmitPausedError, CanvasStaleScopeError, isCanvasRevisionConflict } from "@/services/canvas-revision-conflict";
+import { runCanvasResultSerially } from "@/services/canvas-generation-result-serializer";
 import { generationEffectApplied } from "@/services/generation-consumer-dedupe";
-import { attachNodeEffectKey } from "@/services/generation-task-materializer";
-import { persistCanvasDocument } from "@/services/local-workspace-repository";
+import { attachNodeEffectKey, recoverNodeEffectKey } from "@/services/generation-task-materializer";
+import { persistCanvasDocument, syncLocalCanvasProjectToBackend } from "@/services/local-workspace-repository";
 import { hydrateBackendGeneratedOutputs, type ensureCanvasNodeAsset } from "@/services/project-asset-sync";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { publishGenerationDeliveryProgress } from "@/stores/use-generation-delivery-progress";
 import { useCanvasStore, type CanvasProject } from "@/stores/canvas/use-canvas-store";
+import { isRemoteWorkspaceMode } from "@/services/workspace-mode";
 import type { CanvasConnection, CanvasNodeData } from "@/types/canvas";
 
 function throwIfAborted(signal?: AbortSignal) {
@@ -76,7 +79,10 @@ export type BindBackendCanvasGenerationRuntime = {
     hydrateOutputs?: typeof hydrateBackendGeneratedOutputs;
     ensureNodeAsset?: typeof ensureCanvasNodeAsset;
     persistDocument?: PersistCanvasDocumentWithScope;
+    persistRemoteDocument?: typeof syncLocalCanvasProjectToBackend;
+    remoteMode?: () => boolean;
     bindOutput?: typeof bindCanvasTaskOutput;
+    recoverOutput?: typeof recoverCanvasTaskOutput;
     adoptConfirmedProjection?: AdoptServerConfirmedProjection;
     captureScope?: () => CapturedUserScope;
     liveScope?: () => CapturedUserScope;
@@ -144,6 +150,11 @@ function isOutputNotReadyError(error: unknown) {
     return reason === "output_not_ready" || reason === "resource_not_ready";
 }
 
+function isCanvasNodeRecoveryError(error: unknown) {
+    const reason = error instanceof ApiError ? error.reason : error && typeof error === "object" && "reason" in error ? (error as { reason?: unknown }).reason : undefined;
+    return reason === "node_deleted" || reason === "node_mismatch" || reason === "node_task_mismatch";
+}
+
 async function waitForMaterializedGenerationOutput(
     state: {
         task: GenerationTask;
@@ -207,7 +218,7 @@ function outputIndexFromState(state: { outputIndex: number }) {
     return state.outputIndex;
 }
 
-export async function bindBackendCanvasGenerationResult(input: {
+type BindBackendCanvasGenerationResultInput = {
     canvasId: string;
     nodeId: string;
     task: GenerationTask;
@@ -217,7 +228,13 @@ export async function bindBackendCanvasGenerationResult(input: {
     nodesRef: { current: CanvasNodeData[] };
     setNodes: Dispatch<SetStateAction<CanvasNodeData[]>>;
     runtime?: BindBackendCanvasGenerationRuntime;
-}) {
+};
+
+export async function bindBackendCanvasGenerationResult(input: BindBackendCanvasGenerationResultInput) {
+    return runCanvasResultSerially(input.canvasId, () => bindBackendCanvasGenerationResultUnlocked(input));
+}
+
+async function bindBackendCanvasGenerationResultUnlocked(input: BindBackendCanvasGenerationResultInput) {
     if (input.task.status !== "succeeded") throw new Error("只有成功的任务才能绑定到画布");
     const runtime = input.runtime ?? {};
     const liveScope = runtime.liveScope ?? captureUserScope;
@@ -230,7 +247,10 @@ export async function bindBackendCanvasGenerationResult(input: {
         assertUserScope(captured, liveScope());
         await (persistCanvasDocument as PersistCanvasDocumentWithScope)(id, patch, captured);
     });
+    const persistRemoteDocument = runtime.persistRemoteDocument ?? syncLocalCanvasProjectToBackend;
+    const remoteMode = runtime.remoteMode ?? isRemoteWorkspaceMode;
     const bindOutput = runtime.bindOutput ?? bindCanvasTaskOutput;
+    const recoverOutput = runtime.recoverOutput ?? recoverCanvasTaskOutput;
     const adoptConfirmedProjection = runtime.adoptConfirmedProjection ?? defaultAdoptConfirmedProjection;
     const refreshTask = runtime.refreshTask ?? ((taskId, options) => queryGenerationTask(taskId, options));
     const sleep = runtime.sleep ?? sleepWithSignal;
@@ -344,6 +364,18 @@ export async function bindBackendCanvasGenerationResult(input: {
             break;
         } catch (error) {
             const targetProject = useCanvasStore.getState().projects.find((project) => project.id === capturedCanvasId) ?? live;
+            if (isCanvasNodeRecoveryError(error)) {
+                assertBindDispatchScope(capturedScope, liveScope);
+                response = await recoverOutput({
+                    operationId: recoverNodeEffectKey(task.id, outputIndex),
+                    canvasId: capturedCanvasId,
+                    taskId: task.id,
+                    outputIndex,
+                    signal: input.signal,
+                    expectedScope: capturedScope,
+                });
+                break;
+            }
             if (!healedOnBind && targetProject && isCanvasMediaAssetGuardError(error)) {
                 healedOnBind = true;
                 assertBindDispatchScope(capturedScope, liveScope);
@@ -400,9 +432,43 @@ export async function bindBackendCanvasGenerationResult(input: {
     const canonical = canonicalCanvasFromReceipt(capturedCanvasId, receipt);
     const adopted = await adoptConfirmedProjection(canonical, capturedScope.userScope, capturedScope);
     assertBindDispatchScope(capturedScope, liveScope);
-    if (adopted && input.isCurrent()) {
-        input.nodesRef.current = adopted.nodes;
-        input.setNodes(adopted.nodes);
+    let finalProject = adopted;
+    if (adopted && receipt.nodeId && receipt.nodeId !== input.nodeId) {
+        const reconciled = reconcileRecoveredCanvasNode(adopted, input.nodeId, receipt.nodeId, {
+            prompt: task.prompt,
+            composerContent: task.prompt,
+            model: task.model,
+        });
+        if (reconciled !== adopted) {
+            finalProject = reconciled;
+            try {
+                await persistDocument(
+                    capturedCanvasId,
+                    {
+                        nodes: reconciled.nodes,
+                        connections: reconciled.connections,
+                        ...(reconciled.timeline ? { timeline: reconciled.timeline } : {}),
+                    },
+                    capturedScope,
+                );
+                if (remoteMode()) {
+                    assertBindDispatchScope(capturedScope, liveScope);
+                    await persistRemoteDocument(capturedCanvasId, capturedScope);
+                    assertBindDispatchScope(capturedScope, liveScope);
+                }
+                assertBindDispatchScope(capturedScope, liveScope);
+                const persisted = useCanvasStore.getState().openProject(capturedCanvasId);
+                finalProject = persisted?.nodes.some((node) => node.id === receipt.nodeId) ? persisted : reconciled;
+            } catch (error) {
+                if (error instanceof Error && error.name === "AbortError") throw error;
+                if (isUserScopeAbandonedError(error)) throw error;
+                throw error instanceof CanvasBindFlushError ? error : new CanvasBindFlushError(error);
+            }
+        }
+    }
+    if (finalProject && input.isCurrent()) {
+        input.nodesRef.current = finalProject.nodes;
+        input.setNodes(finalProject.nodes);
     }
 }
 

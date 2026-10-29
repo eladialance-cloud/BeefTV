@@ -7,7 +7,7 @@ import (
 )
 
 func TestTokenAndConnectionDecodeNumericIDsFromWire(t *testing.T) {
-	tokenRaw := []byte(`{"api_key":"ent-secret-key","base_url":"http://enterprise.localhost:35184/v1","market":"enterprise","group":"enterprise","key_name":"BeefTV","token_id":9001,"account":{"id":42,"username":"ender","display_name":"Ender","email":"e@example.com"}}`)
+	tokenRaw := []byte(`{"api_key":"ent-secret-key","base_url":"http://enterprise.localhost:35184/v1","market":"enterprise","group":"enterprise","key_name":"VisiDeep AI","token_id":9001,"account":{"id":42,"username":"ender","display_name":"Ender","email":"e@example.com"}}`)
 	var token tokenSuccess
 	if err := json.Unmarshal(tokenRaw, &token); err != nil {
 		t.Fatal(err)
@@ -20,7 +20,7 @@ func TestTokenAndConnectionDecodeNumericIDsFromWire(t *testing.T) {
 		t.Fatalf("normalized ids account=%q token=%q", accountID, tokenID)
 	}
 
-	connectionRaw := []byte(`{"market":"enterprise","token_id":9001,"key_name":"BeefTV","account":{"id":42,"username":"ender","display_name":"Ender"}}`)
+	connectionRaw := []byte(`{"market":"enterprise","token_id":9001,"key_name":"VisiDeep AI","account":{"id":42,"username":"ender","display_name":"Ender"}}`)
 	var view connectionView
 	if err := json.Unmarshal(connectionRaw, &view); err != nil {
 		t.Fatal(err)
@@ -42,7 +42,7 @@ func TestValidateTokenSuccessRejectsMissingMarketGroupAndNonPositiveIDs(t *testi
 	origin := "http://enterprise.localhost:35184"
 	valid := tokenSuccess{
 		APIKey: "ent-secret-key", BaseURL: origin + "/v1", Market: "enterprise", Group: "enterprise",
-		KeyName: "BeefTV", TokenID: "9001", Account: Account{ID: "42", Username: "ender"},
+		KeyName: "VisiDeep AI", TokenID: "9001", Account: Account{ID: "42", Username: "ender"},
 	}
 	if _, _, err := validateTokenSuccess(origin, valid); err != nil {
 		t.Fatal(err)

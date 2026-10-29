@@ -17,16 +17,17 @@ var (
 
 const (
 	helperFlag      = "--beeftv-update-helper"
-	appBundleName   = "BeefTV.app"
-	linuxBundleName = "BeefTV-linux"
-	windowsExeName  = "BeefTV.exe"
+	appBundleName   = "VisiDeepAI.app"
+	linuxBundleName = "VisiDeepAI-linux"
+	linuxExeName    = "VisiDeepAI"
+	windowsExeName  = "VisiDeepAI.exe"
 	pluginDirName   = "plugin-packages"
 	// 随包 CLI：外部 Agent 的接入入口，升级包里必须带上，否则升级一次就断了接入。
 	// 它必须待在自己的 cli 目录里：macOS 与 Windows 的文件名都不分大小写，
-	// beeftv 直接放在主程序旁边会和 BeefTV / BeefTV.exe 撞成同一个文件。
+	// visideep 直接放在主程序旁边会和 VisiDeep AI / VisiDeepAI.exe 撞成同一个文件。
 	cliDirName      = "cli"
-	darwinCLIName   = "beeftv"
-	windowsCLIName  = "beeftv.exe"
+	darwinCLIName   = "visideep"
+	windowsCLIName  = "visideep.exe"
 	pluginExtension = ".beeftv-plugin"
 	payloadSchema   = 1
 	maxFeedBytes    = 1 << 20

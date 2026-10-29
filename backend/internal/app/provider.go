@@ -430,7 +430,7 @@ func (s *Service) resolveProviderConfig(config providerConfig) (providerConfig, 
 		return providerConfig{}, err
 	}
 	config.Headers = headers
-	if s.IsLocalMode() && strings.TrimSpace(config.ChannelID) != "" {
+	if s.IsLocalMode() && !s.IsHostedProfile() && strings.TrimSpace(config.ChannelID) != "" {
 		// A stale hosted model selection must not reopen the system-channel
 		// catalog in a local workspace. Local users configure the provider
 		// endpoint directly; hosted channel IDs are intentionally unsupported.

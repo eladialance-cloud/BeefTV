@@ -76,6 +76,47 @@ func DefaultImageCapabilityConfig(protocol string, modelName string) *ImageCapab
 		OutputFormat:          ParameterSupport{Supported: true},
 		MaxOutputs:            15,
 	}
+	if protocol == "openai-image" && isDoubaoSeedream5Image(modelName) {
+		image.References.MaskSupported = false
+		image.Size = ImageSizeConfig{
+			Parameter: "size",
+			Values: []string{
+				"2048x2048", "2304x1728", "1728x2304", "2560x1440", "1440x2560",
+				"2496x1664", "1664x2496", "3024x1296",
+			},
+			Default:     "2048x2048",
+			AllowCustom: true,
+		}
+		image.Quality = ImageQualityConfig{Default: "auto"}
+		image.TransparentBackground = VideoBooleanConfig{Default: false}
+		image.ResponseFormat = ParameterSupport{Supported: false}
+		image.OutputFormat = ParameterSupport{Supported: false}
+		image.MaxOutputs = 1
+	}
+	if protocol == "toapis-image" {
+		image.References.MaskSupported = false
+		image.References.MaxImages = 14
+		image.References.MaxImageBytes = 10 * 1024 * 1024
+		image.Size = ImageSizeConfig{
+			Parameter: "aspect_ratio",
+			Values: []string{
+				"1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16",
+				"5:4", "4:5", "21:9", "1:4", "4:1", "1:8", "8:1",
+			},
+			Default:     "1:1",
+			AllowCustom: false,
+		}
+		image.Quality = ImageQualityConfig{Supported: true, Values: []string{"0.5k", "1k", "2k", "4k"}, Default: "1k"}
+		image.TransparentBackground = VideoBooleanConfig{Default: false}
+		image.ResponseFormat = ParameterSupport{Supported: false}
+		image.OutputFormat = ParameterSupport{Supported: false}
+		image.MaxOutputs = 4
+		if isDoubaoSeedream5Image(modelName) {
+			image.References.MaxImages = 10
+			image.Quality = ImageQualityConfig{Supported: true, Values: []string{"2k", "3k"}, Default: "2k"}
+			image.MaxOutputs = 15
+		}
+	}
 	switch model.ChannelInterfaceType(protocol) {
 	case model.ChannelInterfaceGrokImage:
 		image.References.MaxImages = 1
@@ -120,6 +161,11 @@ func DefaultImageCapabilityConfig(protocol string, modelName string) *ImageCapab
 		image.MaxOutputs = 1
 	}
 	return image
+}
+
+func isDoubaoSeedream5Image(modelName string) bool {
+	name := strings.ToLower(strings.TrimSpace(modelName))
+	return name == "doubao-seedream-5-0" || strings.HasPrefix(name, "doubao-seedream-5-0-")
 }
 
 func defaultImageSizeValues() []string {
@@ -216,6 +262,26 @@ func DefaultModelCapabilityConfigForModel(protocol string, modelName string) *Mo
 	if protocol == "video-generations-json" {
 		video.Duration.Default = 5
 		video.Resolutions = []string{"720p", "1080p"}
+		video.Watermark = VideoBooleanConfig{Supported: true, Default: false}
+		video.Operations = appendUniqueString(video.Operations, "reference_to_video")
+	}
+	if protocol == "toapis-video" {
+		video.References.MaxImages = 9
+		video.References.MaxImageBytes = 30 * 1024 * 1024
+		video.References.MaxVideos = 3
+		video.References.MaxVideoBytes = 50 * 1024 * 1024
+		video.References.MaxVideoDuration = 15
+		video.References.MinVideoDuration = 2
+		video.References.MaxAudios = 3
+		video.References.MaxAudioBytes = 15 * 1024 * 1024
+		video.References.MaxAudioDuration = 15
+		video.References.MinAudioDuration = 2
+		video.Duration = VideoDurationConfig{Selection: "range", Min: 4, Max: 15, Step: 1, Default: 5}
+		video.Ratios = []string{"adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"}
+		video.DefaultRatio = "16:9"
+		video.Resolutions = []string{"480p", "720p", "1080p", "4k"}
+		video.DefaultResolution = "720p"
+		video.GenerateAudio = VideoBooleanConfig{Supported: true, Default: true}
 		video.Watermark = VideoBooleanConfig{Supported: true, Default: false}
 		video.Operations = appendUniqueString(video.Operations, "reference_to_video")
 	}
@@ -318,6 +384,9 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 		}
 		return value, nil
 	}
+	if capability == "video" {
+		input = repairLegacyToAPISeedanceVideoCapability(protocol, modelName, input)
+	}
 	if input == nil || input.Video == nil {
 		return nil, kernel.BadAuthRequest("请配置视频模型能力参数")
 	}
@@ -326,6 +395,65 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 		return nil, err
 	}
 	return value, nil
+}
+
+// 旧版 ToAPI Seedance 配置由通用视频默认值生成，视频/音频参考数量被保存成 0。
+// 只迁移这一组明确的旧默认特征；管理员显式保存过的限制不会被扩大。
+func repairLegacyToAPISeedanceVideoCapability(protocol string, modelName string, input *ModelCapabilityConfig) *ModelCapabilityConfig {
+	if input == nil || input.Video == nil || strings.TrimSpace(protocol) != "toapis-video" {
+		return input
+	}
+	if !isSeedance2Family(protocol, modelName) {
+		return input
+	}
+	video := input.Video
+	refs := video.References
+	legacyDefaults := refs.MaxVideos == 0 &&
+		refs.MaxAudios == 0 &&
+		refs.MaxVideoBytes == 0 &&
+		refs.MaxAudioBytes == 0 &&
+		refs.MaxVideoDuration == 0 &&
+		refs.MaxAudioDuration == 0 &&
+		!video.GenerateAudio.Supported &&
+		!containsCapabilityString(video.Operations, "reference_to_video") &&
+		!containsCapabilityString(video.Operations, "audio_to_video")
+	if !legacyDefaults {
+		return input
+	}
+
+	official := overlayOfficialSeedance2References(refs, isSeedance25Model(modelName))
+	refs.MaxVideos = official.MaxVideos
+	refs.MaxVideoBytes = official.MaxVideoBytes
+	refs.MinVideoDuration = official.MinVideoDuration
+	refs.MaxVideoDuration = official.MaxVideoDuration
+	refs.MaxVideoTotalDuration = official.MaxVideoTotalDuration
+	refs.MinVideoWidth = official.MinVideoWidth
+	refs.MaxVideoWidth = official.MaxVideoWidth
+	refs.MinVideoHeight = official.MinVideoHeight
+	refs.MaxVideoHeight = official.MaxVideoHeight
+	refs.MinVideoAspect = official.MinVideoAspect
+	refs.MaxVideoAspect = official.MaxVideoAspect
+	refs.MinVideoPixels = official.MinVideoPixels
+	refs.MaxVideoPixels = official.MaxVideoPixels
+	refs.MaxAudios = official.MaxAudios
+	refs.MaxAudioBytes = official.MaxAudioBytes
+	refs.MinAudioDuration = official.MinAudioDuration
+	refs.MaxAudioDuration = official.MaxAudioDuration
+	refs.MaxAudioTotalDuration = official.MaxAudioTotalDuration
+
+	repairedVideo := *video
+	repairedVideo.References = refs
+	repairedVideo.GenerateAudio = VideoBooleanConfig{Supported: true, Default: true}
+	repairedVideo.Operations = appendUniqueString(repairedVideo.Operations, "reference_to_video")
+	if isSeedance25Model(modelName) {
+		repairedVideo.Operations = appendUniqueString(repairedVideo.Operations, "audio_to_video")
+		if repairedVideo.Duration.Selection == "range" && repairedVideo.Duration.Max < 30 {
+			repairedVideo.Duration.Max = 30
+		}
+	}
+	repaired := *input
+	repaired.Video = &repairedVideo
+	return &repaired
 }
 
 func applyModelSpecificVideoCapability(profile *VideoCapabilityConfig, protocol string, modelName string) *VideoCapabilityConfig {

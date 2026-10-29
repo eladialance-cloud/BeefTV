@@ -1,5 +1,7 @@
 import axios, { type AxiosRequestConfig, type AxiosResponse } from "axios";
 
+import { appHref, appPathname, appSearch } from "@/lib/app-routing";
+import { loginRedirectPath, shouldRedirectToLogin } from "@/lib/auth-routing";
 import { assertUserScope, isUserScopeAbandonedError, type CapturedUserScope } from "@/lib/user-scope-guard";
 
 export type ApiParams = Record<string, string | string[] | number | number[] | undefined>;
@@ -49,6 +51,7 @@ export let apiBaseURL = import.meta.env.VITE_CANVAS_BACKEND_URL || "/api";
 // 本地预览和桌面模式都必须在后端暂不可用时尽快降级到本地工作区；
 // 没有超时会让启动水合一直停留在 loading，Playwright 和用户都看不到页面。
 export const apiClient = axios.create({ baseURL: apiBaseURL, withCredentials: true, timeout: 4_000 });
+let sessionRedirectPending = false;
 
 export function configureApiRuntime(baseURL: string, launchToken: string, uiBootstrapToken?: string) {
     apiBaseURL = baseURL;
@@ -92,6 +95,7 @@ function unwrapTransportError(error: unknown): never {
     if (axios.isAxiosError<BackendEnvelope<unknown>>(error)) {
         const status = error.response?.status;
         const code = error.response?.data?.code;
+        redirectIfSessionReplaced(status);
         throw new ApiError(error.response?.data?.msg || transportFailureMessage(status, error.message), {
             status,
             code,
@@ -103,6 +107,12 @@ function unwrapTransportError(error: unknown): never {
         });
     }
     throw error;
+}
+
+function redirectIfSessionReplaced(status?: number) {
+    if (sessionRedirectPending || !shouldRedirectToLogin(status) || typeof window === "undefined") return;
+    sessionRedirectPending = true;
+    window.location.assign(appHref(loginRedirectPath(appPathname(), appSearch())));
 }
 
 function responseRequestId(headers: unknown): string | undefined {

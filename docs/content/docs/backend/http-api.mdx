@@ -52,7 +52,7 @@ Wails 和浏览器开发模式共用同一套 `127.0.0.1` HTTP 合同。路由�
 
 `POST /timeline/renders` 接收同一套时间线快照和输出选项（宽高、帧率、采样率、是否烧录字幕），创建本机 ffmpeg 成片任务。选项进入任务输入并在执行时编译进语义计划。
 
-`POST /timeline/transcriptions` 接收待转写素材编号和可选语言，创建字幕转写任务。只接受当前用户已上传完成的音视频。省略 `model` 使用本地 whisper.cpp；指定 `model` 使用已连接 BeefTV 账号的云端转写模型，必须由当前目录声明 `audio.transcriptions`。云端请求在服务端提取单声道 16 kHz WAV 后提交，最多 25 MiB；凭据不写入任务，排队期间连接改变会拒绝执行。云端识别按模型计费，结果以带时间的字幕返回。
+`POST /timeline/transcriptions` 接收待转写素材编号和可选语言，创建字幕转写任务。只接受当前用户已上传完成的音视频。省略 `model` 使用本地 whisper.cpp；指定 `model` 使用已连接 VisiDeep AI 账号的云端转写模型，必须由当前目录声明 `audio.transcriptions`。云端请求在服务端提取单声道 16 kHz WAV 后提交，最多 25 MiB；凭据不写入任务，排队期间连接改变会拒绝执行。云端识别按模型计费，结果以带时间的字幕返回。
 
 `POST /depth-captures` 接收待处理视频素材编号，创建本机深度动作捕捉任务。只接受当前用户已上传完成的视频。可选 `nodeId` 指定结果节点，此时必须提供 `projectId`；任务保存目标节点并在完成后使用既有画布任务绑定操作回填。节点必须仍引用该任务，已删除或已改用其他任务的节点不会被恢复或覆盖。
 
@@ -119,15 +119,15 @@ Wails 和浏览器开发模式共用同一套 `127.0.0.1` HTTP 合同。路由�
 
 ### 外部客户端连接
 
-桌面设置的「外部 Agent」提供 Codex、Claude Code、Claude Desktop、Cursor 及其他 MCP 客户端的接入配置。Claude Desktop 使用开发者设置中的 `mcpServers` JSON；Claude Code 使用终端命令，Windows 命令需在 PowerShell 运行。保留其他 MCP 服务配置，连接时保持 BeefTV 开启。
+桌面设置的「外部 Agent」提供 Codex、Claude Code、Claude Desktop、Cursor 及其他 MCP 客户端的接入配置。Claude Desktop 使用开发者设置中的 `mcpServers` JSON；Claude Code 使用终端命令，Windows 命令需在 PowerShell 运行。保留其他 MCP 服务配置，连接时保持 VisiDeep AI 开启。
 
-配置固定使用随包 CLI 的绝对路径和 `BEEFTV_DATA_DIR`，避免客户端继承的环境选错工作区。Windows CLI 为主程序旁的 `cli/beeftv.exe`，不要把桌面主程序 `BeefTV.exe` 用作 MCP 命令。安装文件不完整时，`POST /agent-clients` 返回 412 / `cli_unavailable`，不签发凭据；重新下载并完整解压后重试。
+配置固定使用随包 CLI 的绝对路径和 `BEEFTV_DATA_DIR`，避免客户端继承的环境选错工作区。Windows CLI 为主程序旁的 `cli/visideep.exe`，不要把桌面主程序 `VisiDeepAI.exe` 用作 MCP 命令。安装文件不完整时，`POST /agent-clients` 返回 412 / `cli_unavailable`，不签发凭据；重新下载并完整解压后重试。
 
 MCP 使用官方 Go SDK 的 stdio transport；stdout 只写协议消息，启动诊断写 stderr。未发现运行实例时返回 `runtime_not_found`，不猜测默认端口；读取操作清单的启动等待上限为 5 秒。
 
 使用运行时发现地址的 CLI/MCP 会在每次调用前重新读取当前实例，桌面重启换端口后，下一次调用连接新实例。显式设置 `BEEFTV_BASE_URL` 时保持固定地址。连接失败不会自动重发写操作，以免重复执行已送达的请求。
 
-Windows 的运行地址描述文件位于用户目录的 `.beeftv/runtime/`，按数据目录的规范化路径摘要分开保存，并校验工作区身份。该位置在 AppData 外，客户端不再读取 AppData 中旧的 `runtime.json`，避免 Microsoft Store/MSIX 客户端的私有副本遮住真实实例。数据库和素材仍留在原工作区。升级后保持 BeefTV 开启，并在「外部 Agent」重新生成连接配置。
+Windows 的运行地址描述文件位于用户目录的 `.beeftv/runtime/`，按数据目录的规范化路径摘要分开保存，并校验工作区身份。该位置在 AppData 外，客户端不再读取 AppData 中旧的 `runtime.json`，避免 Microsoft Store/MSIX 客户端的私有副本遮住真实实例。数据库和素材仍留在原工作区。升级后保持 VisiDeep AI 开启，并在「外部 Agent」重新生成连接配置。
 
 ### 只读边界
 
@@ -139,7 +139,7 @@ Windows 的运行地址描述文件位于用户目录的 `.beeftv/runtime/`，�
 因此历史只读凭据和客户端主动选择的只读过滤只收紧该连接的工具能力，不能限制本机其他程序。
 
 - 能力模式只由身份决定：已登记客户端的模式来自服务端登记，请求体与查询参数都不能提升或放宽它。
-- `beeftv --read-only`（`ops list` 与 `mcp serve`）在客户端本地再次收紧：即使服务端返回了写操作，也只暴露 `readOnly` 操作。
+- `visideep --read-only`（`ops list` 与 `mcp serve`）在客户端本地再次收紧：即使服务端返回了写操作，也只暴露 `readOnly` 操作。
 - 服务端对写操作始终按登记权限拒绝只读客户端（`read_only_client`），不依赖客户端自觉。
 
 内置 Pi 使用另一份按回合保存的权限：`POST /assistant/chat` 可带 `permissionMode: "read-only" | "canvas" | "full-access"`。缺省和旧记录为 `canvas`，不自动升权。只读能查看本用户工作区内容，不能修改、渲染或提交生成提议；当前画布模式保留当前画布写入范围；完全访问能读本用户工作区并修改所有画布。权限在 Go 开始回合时固定，补充输入不能改变，宿主恢复前重新读取；执行中的界面选择器显示该回合权限。技能仍只能读取本轮选定的固定版本，完全访问不开放宿主机 shell。
@@ -213,7 +213,7 @@ C 交付在 P5 锁定与生产链完成同一事务中写成不可变 `ManjuDeli
 
 任务提交前无法读取或解密本地算力凭据时，返回 HTTP 500、`reason=local_credential_failed`，不创建生成任务。安全摘要区分密钥文件缺失、读取权限不足、密钥长度异常和解密失败，不返回密钥、密文或本地路径。客户端将其显示为本地算力连接错误，禁止自动重试；复制排查信息保留响应的 `X-Request-ID`、HTTP 状态及凭据读取阶段，不归类为模型参数错误。
 
-本地生成结果写入遇到 Windows 磁盘空间不足、POSIX `ENOSPC` 或 SQLite 磁盘写满时，生成错误分类为 `local_disk_full`。提示清理 BeefTV 数据目录所在磁盘，并优先取回原任务结果，避免重复生成。上游返回的磁盘错误不据此推断为用户电脑磁盘不足。
+本地生成结果写入遇到 Windows 磁盘空间不足、POSIX `ENOSPC` 或 SQLite 磁盘写满时，生成错误分类为 `local_disk_full`。提示清理 VisiDeep AI 数据目录所在磁盘，并优先取回原任务结果，避免重复生成。上游返回的磁盘错误不据此推断为用户电脑磁盘不足。
 
 诊断包的 `client/events.jsonl` 保留业务错误 `reason`；`backend/tasks.jsonl` 导出经过脱敏的 `failureDiagnostics`，包括已采集的失败阶段、请求 ID、上游任务 ID、执行结果和错误摘要。历史记录缺失的信息不会补造。
 
@@ -229,7 +229,7 @@ C 交付在 P5 锁定与生产链完成同一事务中写成不可变 `ManjuDeli
 
 NewAPI Channel 2 与 BeefAPI 视频的暂时下载断连会保留原任务 ID 并继续后台取回，自动恢复最长到任务开始后 24 小时；超出窗口后可在失败任务详情手动取回。任务日志接口提供脱敏的 `summary`，不返回原始 `message` / `payload` 内容；摘要不写回数据库。
 
-任务列表与详情中的 `errorCode` 是 BeefTV 归类后的错误类别，不能当作上游原始代码。已识别的 SQLite 缺表/列、锁定、只读、I/O 和约束失败使用 `local_storage`，提示本地数据库无法读写、不自动重试；不能因为外层 HTTP 400 把它归为模型参数错误。判断只读取实际错误消息，不读取请求或提示词回显。新记录的失败任务可包含 `failureDiagnostics`：`source` 区分本地校验、上游 HTTP / 业务响应、本地结果处理及未知来源；`summary` 保存脱敏后的错误摘要，另带实际记录到的 `providerCode`、`httpStatus`、`param`、`requestId`、`providerTaskId`、`stage` 和 `capturedAt`。缺失信息不推断或补造。`createdAt` 是任务创建时间，`completedAt` 是结束时间，均不等于错误记录时间。
+任务列表与详情中的 `errorCode` 是 VisiDeep AI 归类后的错误类别，不能当作上游原始代码。已识别的 SQLite 缺表/列、锁定、只读、I/O 和约束失败使用 `local_storage`，提示本地数据库无法读写、不自动重试；不能因为外层 HTTP 400 把它归为模型参数错误。判断只读取实际错误消息，不读取请求或提示词回显。新记录的失败任务可包含 `failureDiagnostics`：`source` 区分本地校验、上游 HTTP / 业务响应、本地结果处理及未知来源；`summary` 保存脱敏后的错误摘要，另带实际记录到的 `providerCode`、`httpStatus`、`param`、`requestId`、`providerTaskId`、`stage` 和 `capturedAt`。缺失信息不推断或补造。`createdAt` 是任务创建时间，`completedAt` 是结束时间，均不等于错误记录时间。
 
 诊断字段在本地 schema v3 中以可空文本列保存，旧任务不补写原始错误，重试会清除上一轮诊断。任务列表、详情和画布的“复制排查信息”使用同一份诊断；复制内容不包含请求正文、提示词、凭据、素材 URL 或本地文件路径。`providerRequestId` 可能是供应商任务标识，在复制内容中标作“服务端关联 ID”，与 HTTP 请求 ID 分开。
 

@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RegisterCanvasAPI is kept as the standalone-development entrypoint. BeefTV
+// RegisterCanvasAPI is kept as the standalone-development entrypoint. VisiDeep AI
 // has one local-only HTTP surface, so development and Wails use the same route
 // graph instead of selecting between desktop and SaaS profiles at runtime.
 func RegisterCanvasAPI(api *gin.RouterGroup, svc *app.Service) {
@@ -42,7 +42,7 @@ func RegisterDesktopCanvasAPIWithDependencies(api *gin.RouterGroup, svc *app.Ser
 
 // registerDesktopCanvasAPI is deliberately a separate call graph. Keeping the
 // local composition root free of runtime profile branches lets the Go linker
-// discard hosted handlers and their SaaS-only service methods from BeefTV.
+// discard hosted handlers and their SaaS-only service methods from VisiDeep AI.
 func registerDesktopCanvasAPI(api *gin.RouterGroup, svc *app.Service, dependencies RuntimeDependencies) {
 	// A process supervisor needs an explicit Close owner. Only the composition
 	// root supplies it; standalone route registration must not create a child

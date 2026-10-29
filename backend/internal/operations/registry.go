@@ -226,6 +226,13 @@ func (r *Registry) Execute(req Request) (Result, error) {
 			return Result{}, InvalidArg("effect_identity_mismatch", "写操作 opId 必须是 attach-node:任务:节点:输出序号")
 		}
 	}
+	if op.ID == "canvas.task.recover" {
+		if key := recoverNodeEffectKey(params); key == "" {
+			return Result{}, InvalidArg("invalid_params", "canvasId、taskId 必填")
+		} else if opID != key {
+			return Result{}, InvalidArg("effect_identity_mismatch", "写操作 opId 必须是 recover-node-v2:任务:输出序号")
+		}
+	}
 	if op.ID == "conversation.message.attach" {
 		if key := messageEffectKey(params); key == "" {
 			return Result{}, InvalidArg("invalid_params", "conversationId、taskId、messageId 必填")
