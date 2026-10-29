@@ -722,7 +722,9 @@ func persistScriptSource(tx *repository.Repository, projectID, actorID string, r
 		return nil, err
 	}
 	manifest := map[string]any{
-		"schemaVersion": 1, "branch": run.Branch, "title": source.Title,
+		"schemaVersion": 1, "branch": run.Branch,
+		"inputKind": run.InputKind, "trendResolution": run.TrendResolution,
+		"title":              source.Title,
 		"authorizationScope": source.AuthorizationScope, "rangeLabel": source.RangeLabel,
 		"contentHash": source.ContentHash, "characterCount": source.CharacterCount,
 		"extractionStatus": source.ExtractionStatus, "registeredBy": actorID,

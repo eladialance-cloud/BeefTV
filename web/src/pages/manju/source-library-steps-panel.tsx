@@ -3,6 +3,7 @@ import { App, Button, Checkbox, Input, Select, Tag } from "antd";
 import { BookOpenText, Check, FileUp, ListChecks, Play, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { buildManjuScriptRunInput } from "@/lib/canvas/manju-script-routing";
 import {
     createManjuScriptRun,
     createManjuSourceDocument,
@@ -102,15 +103,17 @@ export function SourceLibraryStepsPanel({ projectId, canEdit, inputKind, complet
     });
 
     const createUnitMutation = useMutation({
-        mutationFn: () => createManjuScriptRun(projectId, {
+        mutationFn: () => createManjuScriptRun(projectId, buildManjuScriptRunInput({
             mode,
+            source: "adaptation",
             inputKind,
+            trendResolution: "",
             title: unitTitle.trim() || selectedDocument?.chapters.find((chapter) => chapter.id === confirmedChapterIds[0])?.title,
             sourceDocumentId: selectedDocumentId,
             chapterIds: confirmedChapterIds,
             baseRunId: reuseGlobalStages ? completedRuns[0]?.id : undefined,
             reuseGlobalStages: reuseGlobalStages && completedRuns.length > 0,
-        }),
+        })),
         onSuccess: ({ item }) => {
             message.success("已创建剧本任务版，并继承当前 P0");
             setChapterIds([]);

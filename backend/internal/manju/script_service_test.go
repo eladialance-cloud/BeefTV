@@ -1,6 +1,7 @@
 package manju_test
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -74,6 +75,7 @@ func TestFinishedScriptPolishingRequiresAdaptationInput(t *testing.T) {
 	if stored.InputKind != manju.ScriptInputFinished {
 		t.Fatalf("stored input kind = %q, want %q", stored.InputKind, manju.ScriptInputFinished)
 	}
+	assertSourceManifestRouting(t, f, run.Run.ID, manju.ScriptInputFinished, "")
 }
 
 func TestTrendSourceRequiresExplicitResolvedRoute(t *testing.T) {
@@ -125,7 +127,46 @@ func TestTrendSourceUsesExplicitResolvedRoute(t *testing.T) {
 			if run.Run.TrendResolution != testCase.resolution {
 				t.Fatalf("trend resolution did not persist: %+v", run.Run)
 			}
+			if testCase.expectedBranch == manju.ScriptBranchOriginal {
+				if _, err := f.service.RegisterScriptSource(f.ownerID, f.projectID, run.Run.ID, manju.ScriptSourceInput{
+					Title: "热点方向", Content: "复仇女主在雨夜发现真相。",
+				}); err != nil {
+					t.Fatal(err)
+				}
+				assertSourceManifestRouting(t, f, run.Run.ID, manju.ScriptInputOutline, testCase.resolution)
+			}
 		})
+	}
+}
+
+func assertSourceManifestRouting(t *testing.T, f fixture, runID, inputKind, trendResolution string) {
+	t.Helper()
+	var artifact model.ManjuScriptArtifact
+	if err := f.db.Order("version desc").First(
+		&artifact,
+		"run_id = ? AND kind = ?",
+		runID,
+		model.ManjuScriptArtifactSourceManifest,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		InputKind           *string  `json:"inputKind"`
+		TrendResolution     *string  `json:"trendResolution"`
+		DownstreamConsumers []string `json:"downstreamConsumers"`
+	}
+	if err := json.Unmarshal([]byte(artifact.Content), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.InputKind == nil || *manifest.InputKind != inputKind {
+		t.Fatalf("SOURCE_MANIFEST inputKind = %v, want %q", manifest.InputKind, inputKind)
+	}
+	if manifest.TrendResolution == nil || *manifest.TrendResolution != trendResolution {
+		t.Fatalf("SOURCE_MANIFEST trendResolution = %v, want %q", manifest.TrendResolution, trendResolution)
+	}
+	expectedConsumers := "ip_development,series_bible,episode_planning,script_draft"
+	if got := strings.Join(manifest.DownstreamConsumers, ","); got != expectedConsumers {
+		t.Fatalf("SOURCE_MANIFEST downstreamConsumers = %q, want %q", got, expectedConsumers)
 	}
 }
 

@@ -37,6 +37,7 @@ import {
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
 import { getModelCatalog } from "@/services/api/model-catalog";
+import { buildManjuScriptRunInput, canCreateManjuScriptRun } from "@/lib/canvas/manju-script-routing";
 import {
     createManjuProject,
     deleteManjuProject,
@@ -1587,7 +1588,7 @@ function PipelineWorkspace({ detail, activeStage, onStageChange, onChanged }: { 
     );
 }
 
-function ScriptPipeline({ detail, onChanged }: { detail: ManjuProjectDetail; onChanged: () => void }) {
+export function ScriptPipeline({ detail, onChanged }: { detail: ManjuProjectDetail; onChanged: () => void }) {
     const queryClient = useQueryClient();
     const [mode, setMode] = useState<ManjuScriptMode>("STEPWISE");
     const [inputKind, setInputKind] = useState<ManjuScriptInputKind>("novel");
@@ -1622,11 +1623,12 @@ function ScriptPipeline({ detail, onChanged }: { detail: ManjuProjectDetail; onC
         onChanged();
     };
     const createMutation = useMutation({
-        mutationFn: () => createManjuScriptRun(detail.project.id, {
+        mutationFn: () => createManjuScriptRun(detail.project.id, buildManjuScriptRunInput({
             mode,
-            inputKind: source === "adaptation" ? inputKind : undefined,
-            trendResolution: source === "trend" ? trendResolution : undefined,
-        }),
+            source,
+            inputKind,
+            trendResolution,
+        })),
         onSuccess: ({ item }) => {
             applyRun(item);
             setSelectedRunId(item.run.id);
@@ -1766,7 +1768,7 @@ function ScriptPipeline({ detail, onChanged }: { detail: ManjuProjectDetail; onC
                                     ]}
                                 />
                             </label>
-                            <Button type="primary" icon={<Play />} disabled={!canEdit || selectedRun?.status === "ACTIVE" || (source === "trend" && !trendResolution)} loading={createMutation.isPending} onClick={() => createMutation.mutate()}>
+                            <Button type="primary" icon={<Play />} disabled={!canEdit || selectedRun?.status === "ACTIVE" || !canCreateManjuScriptRun(source, trendResolution)} loading={createMutation.isPending} onClick={() => createMutation.mutate()}>
                                 {selectedRun?.status === "ACTIVE" ? "当前任务版进行中" : selectedRun ? "创建新任务版" : "开始 P1"}
                             </Button>
                         </>
