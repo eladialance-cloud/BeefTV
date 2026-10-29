@@ -131,7 +131,10 @@ test("changing style family clears the style card confirmation", async () => {
 test("historical P0 values are not treated as explicit confirmation proof", async () => {
     const page = await renderP0Harness("?legacy");
     try {
-        expect(await page.getByRole("combobox", { name: "赛道", exact: true }).inputValue()).not.toBe("");
+        const trackSelect = page
+            .locator(".ant-select")
+            .filter({ has: page.getByRole("combobox", { name: "赛道", exact: true }) });
+        expect(await trackSelect.locator(".ant-select-selection-item").innerText()).toBe("国内剧");
         expect(await page.getByRole("button", { name: "锁定 P0", exact: true }).isDisabled()).toBe(true);
     } finally {
         await page.close();
