@@ -1,0 +1,276 @@
+{
+  "schemaVersion": "beef.tv/manju/p3-storyboard-contract/v1",
+  "rulesVersion": "V7.4.26",
+  "sources": [
+    {
+      "role": "storyboard-engine",
+      "path": "sd-storyboard-engine/SKILL.md",
+      "sha256": "9c94001309f0771c1b13394285923dff8b96ebbf7aa218ecf0618055ae651a8b"
+    },
+    {
+      "role": "storyboard-template",
+      "path": "sd-storyboard-engine/references/storyboard-sheet-template.md",
+      "sha256": "7c975d04c573acec62ddf752ff81298f4689145c81c49dc868ba5b02346b486a"
+    },
+    {
+      "role": "prompt-feeding-checklist",
+      "path": "short-drama-director/references/prompt-feeding-checklist.md",
+      "sha256": "edbe306b4bc000d62f3dd2e5a61dbf3c4205cef1af89a952fcad83948b7707ec"
+    },
+    {
+      "role": "feed-compiler",
+      "path": "short-drama-director/scripts/compile_feed.py",
+      "sha256": "322979c2321cd4d7e883f14b3328f277a6a902c8454d1961d7dfd16d8abb0338"
+    },
+    {
+      "role": "prompt-validator",
+      "path": "short-drama-director/scripts/validate_prompt.py",
+      "sha256": "2d8776e1116ff9ac84416ffb363ede8c017f87282e91d26611bf10c269cee53d"
+    },
+    {
+      "role": "contract-auditor",
+      "path": "short-drama-director/scripts/audit_contract.py",
+      "sha256": "02e4ff48114798f392730e564421788bf08242e622e37e2996714ad760d46739"
+    }
+  ],
+  "requiredSections": [
+    "## 角色表演档案",
+    "## 逐场节拍表",
+    "## 导演稿",
+    "## 分镜总表",
+    "## 故事板表",
+    "## 台词精简建议清单",
+    "## P3 交付清单"
+  ],
+  "requiredSectionMessages": {
+    "## 角色表演档案": "P3 成果缺少《角色表演档案》",
+    "## 逐场节拍表": "P3 成果缺少《逐场节拍表》",
+    "## 导演稿": "P3 成果缺少《导演稿》",
+    "## 分镜总表": "P3 成果缺少《分镜总表》",
+    "## 故事板表": "P3 成果缺少《故事板表》，故事板必须逐段列出动作相位",
+    "## P3 交付清单": "P3 成果缺少《P3 交付清单》",
+    "## 台词精简建议清单": "P3 成果缺少《台词精简建议清单》"
+  },
+  "storyboard": {
+    "headingTemplate": "### 第N段｜段落标题",
+    "tableHeaders": [
+      "段号",
+      "面板ID",
+      "动作相位",
+      "镜头信息",
+      "站位与视线",
+      "资产引用",
+      "面板边界备注"
+    ],
+    "assetReferenceRule": "资产引用优先写 P2《素材接线单》中的 `图N`",
+    "phases": [
+      "起始",
+      "过程",
+      "接触",
+      "顶点",
+      "结果",
+      "反应",
+      "出口"
+    ],
+    "minimumLayouts": {
+      "dialogue": "4格/2×2",
+      "action": "6格/2×3",
+      "complexBattle": "8~9格/2×4或3×3"
+    },
+    "panelBoundaryIsNotCut": true,
+    "deliveryChecklistFields": [
+      "段",
+      "剧情分镜格/覆盖",
+      "故事板图格数",
+      "具体说明/豁免理由"
+    ]
+  },
+  "timeline": {
+    "shotSpec": "景别 · 焦段 · 机位角度 · 运镜（用途标签）",
+    "requiredShotFields": [
+      "no",
+      "start",
+      "end",
+      "spec",
+      "action",
+      "sound",
+      "dialogue"
+    ],
+    "integerSeconds": true,
+    "continuous": true,
+    "resetEachSegmentToZero": true,
+    "dialogueEmptyValue": "无",
+    "dialogueRule": "只填写画内真实逐字台词，不得写入流程状态、交接备注或制作说明"
+  },
+  "assetNamespaces": {
+    "scene": "@//scn/",
+    "character": "@//chr/",
+    "prop": "@//prp/"
+  },
+  "assetRefs": {
+    "required": true,
+    "namespaces": [
+      "scenes",
+      "characters",
+      "props"
+    ],
+    "limitByModel": {
+      "2.5": 30,
+      "2.0": 9,
+      "h3": 9
+    },
+    "instruction": "asset_refs 只填写本段实际出现或直接影响画面生成的场景、人物和道具；不得填写项目全量资产。预算公式：1 个场景 + 去重人物数 + 去重道具数 ≤ 当前模型单段上限；2.0/H3 上限 9，2.5 上限 30。不得为了保险同时列入群像与其所属成员、同一资产的多个文字别名或非本段必需的衍生版本。超过上限时，必须回到 P3 按镜头边界拆分或减少非必要参考，不得交给 P4 自动删除。asset_refs.character_states 只列出本段真正适用的角色状态键；未列出的状态不得注入。"
+  },
+  "safety": {
+    "source": "short-drama-director/scripts/validate_prompt.py GORE_WORDS",
+    "highRiskWords": [
+      "鲜血",
+      "血喷",
+      "血迹",
+      "血溅",
+      "血肉模糊",
+      "鲜血淋漓",
+      "喷血",
+      "流血",
+      "断肢",
+      "截肢",
+      "断臂",
+      "断头",
+      "碎尸",
+      "四分五裂",
+      "尸体",
+      "死尸",
+      "惨死",
+      "内脏",
+      "肠子",
+      "脑浆",
+      "开膛破肚",
+      "割喉",
+      "绞杀",
+      "虐杀",
+      "凌迟",
+      "透体",
+      "捅穿",
+      "刺穿",
+      "砍断",
+      "撕裂",
+      "伤口",
+      "骨裂",
+      "骨骼断裂",
+      "切开",
+      "劈成两段",
+      "斩为两段",
+      "切成两半",
+      "劈成两半",
+      "深可见骨",
+      "可见骨",
+      "血污",
+      "血淋淋",
+      "断指",
+      "开膛",
+      "破腹",
+      "掏心",
+      "剥皮",
+      "裸体",
+      "裸露",
+      "走光",
+      "露点",
+      "床戏",
+      "自杀",
+      "自残",
+      "割腕",
+      "上吊",
+      "吸毒",
+      "嗑药",
+      "吸毒贩毒"
+    ],
+    "instruction": "P3 正文、分镜动作、台词、音效和 asset_refs 均不得出现上述 C9 高危词。必须在成句时直接改写为可见、非血腥、非违法或非裸露的物理行为；禁止用否定式、引号、拼音或谐音保留高危词。"
+  },
+  "c23f": {
+    "fullBodyCharacterLimit": 1,
+    "actionIntentLimit": 2,
+    "splitAtShotBoundary": true
+  },
+  "styleConstraint": {
+    "source": "P0 style lock",
+    "lensField": "shots[].spec",
+    "rangeOwner": "STYLE block",
+    "instructionTemplate": "所有 shot.spec 的焦段必须落在该区间；P0B 核心机位组合与本硬锁冲突时，以本硬锁为准，保留景别、机位角度和运镜语义，重新选择区间内焦段；越界时必须回 P3 修正，不得由 P4 或视频生成阶段静默改焦段。"
+  },
+  "budget": {
+    "softByModel": {
+      "2.5": 2600,
+      "2.0": 1900,
+      "h3": 1900
+    },
+    "hardByModel": {
+      "2.5": 3000,
+      "2.0": 2000,
+      "h3": 2000
+    },
+    "instruction": "P4 字数处理链：每段可投喂正文预算 Seedance 2.5 ≤2600 字符（硬上限 3000），Seedance 2.0 / H3 ≤1900 字符（硬上限 2000）。默认 C 导演轨纯净版；先执行 7 步压缩，只删除管理话术、低收益后缀、重复限制和空泛表达，素材用途、人物锚定、场景位置关系、景深焦点锁、摄影机行为锁、台词语气、可执行光影、段末状态必须保留。仍超限才按镜头边界拆段；禁止在单个镜头内部硬拆，拆分点必须落在镜头之间。任意单个 shot 经 P4 展开后仍超预算时，回 P3 按 prompt-feeding-checklist 逐镜精修：特写与表演幅度绑定、长台词拆镜、相邻机位不得重复、台词按 6 字/秒校验。不得删除动作、台词、音效或资产内容。"
+  },
+  "prompt": {
+    "heading": "任务：输出 P3《分镜与故事板表》。",
+    "requiredItems": [
+      "必须按 V7.4.26 顺序包含 `## 角色表演档案`、`## 逐场节拍表`、`## 导演稿`、`## 分镜总表`、`## 故事板表`、`## 台词精简建议清单`、`## P3 交付清单`，缺少任一节不得锁定 P3。",
+      "《角色表演档案》必须逐角色给出可执行的声线、习惯、步态、面具与情绪触发；《逐场节拍表》必须逐场写清目标、障碍、战术与转折；《导演稿》必须写出文字平面图、权力关系和镜头策略。",
+      "必须包含 `## 分镜总表`，逐段逐镜列出镜号、整数秒时长，并按 V7.4.26 五要素写镜行：`景别 · 焦段 · 机位角度 · 运镜（用途标签）`，同时填写画面内容、台词、音效和资产引用。",
+      "必须包含 `## 故事板表`，每段先用唯一的 `### 第N段｜段落标题` 标记，紧接 Markdown 表格，表头固定为 `段号 | 面板ID | 动作相位 | 镜头信息 | 站位与视线 | 资产引用 | 面板边界备注`，逐段逐格填写；段号必须与 project_state.segments 一一对应，不得重复或新增未知段。",
+      "资产引用优先写 P2《素材接线单》中的 `图N`，并兼容 `@//scn/`、`@//chr/`、`@//prp/` 三族命名空间。",
+      "`MANJU_PROJECT_STATE_PATCH_JSON` 的每个 segment 必须声明 `asset_refs`，且只填写本段实际引用的人物、场景和道具；不得填写项目全量资产。预算必须满足：1 个场景 + 人物数 + 道具数 ≤ 当前模型单段上限。",
+      "`asset_refs.character_states` 必须按人物列出本段适用的状态键；不得把角色的全部 char_states 重复写入每段。",
+      "必须包含 `## P3 交付清单`，使用 Markdown 表格逐段列出 `段`、`剧情分镜格/覆盖`、`故事板图格数` 和 `具体说明/豁免理由`。每个非豁免段必须映射到一张 READY 故事板图；未完成图片的段只能在清单中用 `⛔豁免（单镜过场段）` 并提供理由，普通“图片可选/无需图片”不得绕过。",
+      "故事板图提示词必须是逐段唯一的 `CLEAN_GRID` 干净版，并与段号一一映射；重复段号或未知段号直接失败。",
+      "必须包含 `## 台词精简建议清单`，默认全量承接上游台词；要精简只能给建议并等待用户决定。",
+      "每段镜头的 start/end 必须从 0 秒重新起算，只表示本投喂单元的段内时长，禁止沿用全剧累计时间码。",
+      "不得计算不存在的时长，不得把面板边界当成剪辑点，不得声称图片已经生成。",
+      "逐镜执行 C23f：同一镜只建立 1 个全身人物；第二个人物入画或交接必须拆到下一条 shot，单镜动作意图不超过 2 项。禁止“侍卫与护卫入画，全身站位并立”这类单镜双全身引入，必须拆为两条 shot，每条只写一个“画面主体”。",
+      "`shots[].dialogue` 只填写画内真实逐字台词；没有逐字台词时固定填写 `无`，不得写入流程状态、交接备注或制作说明。"
+    ]
+  },
+  "projectState": {
+    "stageKey": "production:director_storyboard",
+    "instruction": "必须按 sd-storyboard-engine 的导演稿与故事板规则，在 Markdown 末尾追加 MANJU_PROJECT_STATE_PATCH_JSON 回写块。segments 必须覆盖全部投喂段；shots 必须整秒、连续、可由 compile_feed.py 直接编译，不得写入 locks 或 receipt。每段镜头的 start/end 必须从 0 秒重新起算，只表示本投喂单元的段内时长，禁止沿用全剧累计时间码；每段末镜 end 不得超当前模型单段上限。镜行必须按 V7.4.26 五要素写清：景别 · 焦段 · 机位角度 · 运镜（用途标签）。逐镜执行 C23f：同一镜只建立 1 个全身人物，第二个人物入画或交接必须拆到下一镜，单镜动作意图不超过 2 项。shots[].dialogue 只填写画内真实逐字台词；没有逐字台词时固定填写“无”，不得写入流程状态、交接备注或制作说明。每个 segment 必须声明 asset_refs，只填写本段实际出现或直接影响画面生成的场景、人物和道具；不得填写项目全量资产。预算公式：1 个场景 + 去重人物数+ 去重道具数 ≤ 当前模型单段上限；2.0/H3 为 9，2.5 为 30。不得为了保险同时列入群像与其成员、文字别名或非本段必需的衍生版本。超过上限时必须回 P3 按镜头边界拆段或减少非必要参考。",
+    "example": {
+      "segments": [
+        {
+          "seg_id": "段1",
+          "scene": "场景名",
+          "asset_refs": {
+            "scenes": [
+              "场景名"
+            ],
+            "characters": [
+              "角色名"
+            ],
+            "props": [],
+            "character_states": {
+              "角色名": [
+                "状态键"
+              ]
+            }
+          },
+          "segment_type": "",
+          "emotion_anchor_id": "",
+          "camera_combo_80": "",
+          "forbidden_zone_unlock": "",
+          "standing": [],
+          "storyboard_panels": [],
+          "shots": [
+            {
+              "no": 1,
+              "start": 0,
+              "end": 4,
+              "spec": "景别 · 焦段 · 机位角度 · 运镜（用途标签）",
+              "action": "",
+              "sound": "",
+              "dialogue": "无"
+            }
+          ],
+          "sfx_summary": ""
+        }
+      ]
+    }
+  }
+}

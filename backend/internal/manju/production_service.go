@@ -1773,6 +1773,40 @@ func (s *Service) ConfirmProductionStage(actorID, projectID, runID, stageKey str
 				return fmt.Errorf("%w: %v", ErrProductionStageNotReady, err)
 			}
 		}
+		if stageKey == ProductionStageStoryboard {
+			images, err := tx.ManjuProductionImages(runID)
+			if err != nil {
+				return err
+			}
+			candidateStateJSON, err := previewManjuProjectStatePatch(
+				tx,
+				projectID,
+				access.Project.Name,
+				run.LockRevision,
+				"production:director_storyboard",
+				content,
+				actorID,
+			)
+			if err != nil {
+				return fmt.Errorf(
+					"P3_REGENERATION_REQUIRED: 当前 P3 工件无法建立 V7.4.26 项目状态台账，请只重新生成 P3；历史工件和媒体已保留: %w",
+					err,
+				)
+			}
+			var state map[string]any
+			if err := json.Unmarshal([]byte(candidateStateJSON), &state); err != nil {
+				return fmt.Errorf(
+					"P3_REGENERATION_REQUIRED: 当前 P3 项目状态无法读取，请只重新生成 P3；历史工件和媒体已保留: %w",
+					err,
+				)
+			}
+			if err := validateP3Delivery(content, state, images); err != nil {
+				return fmt.Errorf(
+					"P3_REGENERATION_REQUIRED: 当前 P3 未满足完整表演、导演、故事板交付契约；请只重新生成 P3 并补齐逐段图片或合法单镜过场豁免，历史工件和媒体已保留: %w",
+					err,
+				)
+			}
+		}
 		// P4 is compiled and machine-checked by the official V7.4.26
 		// compile_feed.py + validate_prompt.py + gate_check.py chain.
 		// Its output intentionally follows the official seven-section format

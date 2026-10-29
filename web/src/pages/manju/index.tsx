@@ -3265,7 +3265,6 @@ function ProductionStageCard({
     const previsReady = previs?.status === "READY" && Boolean(previs.artifactId) && Boolean(previsArtifact);
     const previsLive = previs?.status === "QUEUED" || previs?.status === "RUNNING";
     const readyStoryboardImageCount = (detail.images || []).filter((image) => image.status === "READY" && Boolean(image.resourceId)).length;
-    const storyboardTextOnly = stage.key === "director_storyboard" && readyStoryboardImageCount === 0;
     const isOfficialCompiler = stage.key === "feed_package";
     const machineCheckSkipped = stage.machineCheckStatus === "SKIPPED_BY_USER";
     const officialAuditLabel = isOfficialCompiler
@@ -3415,8 +3414,9 @@ function ProductionStageCard({
                     <strong>故事板表合同</strong>
                     <span>分镜总表：镜号 / 整数秒 / 景别 / 焦段 / 机位 / 运镜 / 画面 / 台词 / 音效 / 资产引用</span>
                     <span>故事板表：段 / 格 / 动作相位 / 站位+视线 / 资产引用</span>
-                    <span>P3 交付清单：逐段故事板图格数或豁免理由；逐场剧情分镜格或豁免理由。</span>
-                    <span>{storyboardTextOnly ? "当前未生成故事板图：文字故事板完整即可进入 P4；图片仅作为可选视觉参考。" : `故事板图已就绪 ${readyStoryboardImageCount} 张，可挂载为 P4 参考图或首尾帧。`}</span>
+                    <span>P3 交付清单：逐段标明故事板已就绪状态或合法豁免理由；逐场剧情分镜格或豁免理由。</span>
+                    <span>P3 必须逐段完成故事板交付。未完成图片任务的段落只有在《P3 交付清单》中按 V7.4.26 写明合法豁免时才可锁定。</span>
+                    <span>普通“无需图片”不能绕过。当前已就绪 {readyStoryboardImageCount} 张故事板图。</span>
                 </div>
             ) : null}
             {stage.key === "feed_package" ? (
@@ -3557,7 +3557,7 @@ function ProductionStageCard({
                             : stage.key === "decision_anchor"
                               ? "核对六列情绪锚点表、3-5 个节拍、E01-E15/EXnn 情境 ID，以及 A/B 构图雷区判定。锁定后才会开放 P3。"
                               : stage.key === "director_storyboard"
-                              ? "核对分镜总表、故事板表和动作相位。故事板图片是可选的视觉参考，不影响文字投喂稿生成，没有图片也可以确认进入 P4。"
+                              ? "P3 必须逐段完成故事板交付。未完成图片任务的段落只有在《P3 交付清单》中按 V7.4.26 写明合法豁免时才可锁定，普通“无需图片”不能绕过。"
                               : stage.key === "feed_package"
                                 ? "P4 投喂稿、真实视频和已通过 check_p45.py 的 P4.5 预演故事板会一起锁定，再开放 P5。"
                                 : "请人工核对本阶段输出；确认后工件锁定，下一阶段才能读取。"}

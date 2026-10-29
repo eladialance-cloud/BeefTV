@@ -1390,12 +1390,24 @@ func validStoryboardArtifact() string {
 	return `# P3 分镜与故事板
 P3_STORYBOARD_LOCKED_FACT
 
+## 角色表演档案
+角色表演档案 · 林澈。克制的青年，肩背常紧。声音偏低，紧张时更轻。
+
+## 逐场节拍表
+| 场 | 目标 | 障碍 | 战术 | 转折 |
+| --- | --- | --- | --- | --- |
+| 场1 | 进门 | 门锁 | 推门 | 门开 |
+
+## 导演稿
+文字平面图：门在画面右侧，林澈从左侧入画，轴线保持左林澈右门。
+
 ## 分镜总表
 | 段号 | 镜号 | 时长 | 景别 | 机位 | 运镜 | 画面内容 | 台词 | 音效 | 资产引用 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 段1 | 01 | 5s | 中景 | 侧45度 | 固定 | 林澈推开旧宅门 | 无 | 木门吱呀 | CHR-林澈 |
 
 ## 故事板表
+### 第1段｜旧宅门
 | 段 | 格 | 动作相位 | 镜头信息 | 站位+视线 | 资产引用 |
 | --- | --- | --- | --- | --- | --- |
 | 段1 | 1 | 起始 | 中景侧45度 | 林澈在左前景看门 | CHR-林澈 |
@@ -1409,10 +1421,39 @@ P3_STORYBOARD_LOCKED_FACT
 ## P3 交付清单
 | 段 | 剧情分镜格/覆盖 | 故事板图格数 | 具体说明/豁免理由 |
 | --- | --- | --- | --- |
-| 段1 | 场1 ✅ 四宫格 | 4格(2×2 四宫格) | 无豁免 |
+| 段1 | 覆盖：场1 ✅ 四宫格 | ⛔豁免（单镜过场段） | 理由：单镜过场，动作相位已在分镜总表完整列出。 |
 
-故事板图：段1 ✅ 4格(2×2 四宫格)
-剧情分镜格：场1 ✅ 四宫格`
+<!-- MANJU_PROJECT_STATE_PATCH_JSON
+{
+  "segments": [{
+    "seg_id": "段1",
+    "scene": "旧宅",
+    "asset_refs": {
+      "scenes": ["旧宅"],
+      "characters": ["林澈"],
+      "props": []
+    },
+    "shots": [{
+      "no": 1,
+      "start": 0,
+      "end": 5,
+      "spec": "中景 · 35mm · 侧45度 · 固定",
+      "action": "林澈推门",
+      "sound": "木门吱呀",
+      "dialogue": "无"
+    }]
+  }]
+}
+-->`
+}
+
+func validStoryboardArtifactRequiringImage() string {
+	return strings.Replace(
+		validStoryboardArtifact(),
+		"| 段1 | 覆盖：场1 ✅ 四宫格 | ⛔豁免（单镜过场段） | 理由：单镜过场，动作相位已在分镜总表完整列出。 |",
+		"| 段1 | 覆盖：场1 ✅ 四宫格 | 4格(2×2 四宫格) | 无豁免；等待已就绪故事板图。 |",
+		1,
+	)
 }
 
 func validFeedArtifact() string {
@@ -1463,7 +1504,7 @@ FAIL 0 / WARN 1 / PASS 0
 ## 最终裁决
 WARN：文本层可交付，成片与逐帧一致性仍需生成后复核。`, "VIDEO_RESOURCE_ID", videoResourceID)
 }
-func TestStoryboardImageBatchIsOptionalForP3Lock(t *testing.T) {
+func TestP3CannotLockWhileStoryboardImageBatchIsRunning(t *testing.T) {
 	f := newFixture(t)
 	assetRunID := prepareCompletedProductionAsset(t, f, "M1")
 	run, err := f.service.CreateProductionRun(f.ownerID, f.projectID, manju.ProductionRunInput{AssetRunID: assetRunID})
@@ -1481,7 +1522,7 @@ func TestStoryboardImageBatchIsOptionalForP3Lock(t *testing.T) {
 	if _, err := f.service.RunProductionStage(f.ownerID, f.projectID, run.Run.ID, manju.ProductionStageStoryboard, manju.ProductionStageRunInput{}); err != nil {
 		t.Fatal(err)
 	}
-	succeedManjuTask(t, f, p3Task.ID, validStoryboardArtifact())
+	succeedManjuTask(t, f, p3Task.ID, validStoryboardArtifactRequiringImage())
 
 	started, err := f.service.StartProductionStoryboardImages(f.ownerID, f.projectID, run.Run.ID)
 	if err != nil {
@@ -1502,15 +1543,20 @@ func TestStoryboardImageBatchIsOptionalForP3Lock(t *testing.T) {
 		t.Fatalf("故事板图片任务必须携带生产链和图片批次追踪元数据: %+v", metadata)
 	}
 
+	_, err = f.service.ConfirmProductionStage(f.ownerID, f.projectID, run.Run.ID, manju.ProductionStageStoryboard, manju.ProductionConfirmInput{})
+	if !errors.Is(err, manju.ErrStoryboardImagesNotReady) {
+		t.Fatalf("P3 must fail closed while its storyboard image batch is partial, got %v", err)
+	}
+
+	succeedStoryboardImageTask(t, f, imageTask.ID, "res-storyboard-seg-1")
 	confirmed, err := f.service.ConfirmProductionStage(f.ownerID, f.projectID, run.Run.ID, manju.ProductionStageStoryboard, manju.ProductionConfirmInput{})
 	if err != nil {
-		t.Fatalf("文字故事板完整时，即使图片尚未完成也应允许锁定 P3: %v", err)
+		t.Fatalf("P3 must lock after every storyboard image is ready: %v", err)
 	}
 	if findProductionStage(t, confirmed, manju.ProductionStageStoryboard).Status != model.ManjuProductionStageStatusLocked {
 		t.Fatalf("P3 未按预期锁定: %+v", confirmed.Stages)
 	}
 
-	succeedStoryboardImageTask(t, f, imageTask.ID, "res-storyboard-seg-1")
 	detail, err := f.service.ProductionRunDetail(f.ownerID, f.projectID, run.Run.ID)
 	if err != nil {
 		t.Fatal(err)

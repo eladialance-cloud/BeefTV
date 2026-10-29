@@ -67,10 +67,11 @@ test("switching asset mode creates a new run instead of being blocked by the cur
     expect(page).toContain('assetRun.run.status === "SUPERSEDED"');
 });
 
-test("P3 text storyboard can continue without generated storyboard images", () => {
-    expect(page).toContain("故事板图片是可选的视觉参考，不影响文字投喂稿生成");
-    expect(page).toContain("当前为文字故事板模式");
-    expect(page).toContain("storyboardTextOnly");
+test("P3 cannot bypass storyboard image delivery with an optional-image message", () => {
+    expect(page).toContain("P3 必须逐段完成故事板交付。");
+    expect(page).toContain("普通“无需图片”不能绕过。");
+    expect(page).not.toContain("故事板图片是可选的视觉参考");
+    expect(page).not.toContain("没有图片也可以确认进入 P4");
 });
 
 test("P1 never shows an empty state while the active run is still loading", () => {
