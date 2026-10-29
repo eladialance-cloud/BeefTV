@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - ci/validate-v7426
   workflow_dispatch:
 
 concurrency:
