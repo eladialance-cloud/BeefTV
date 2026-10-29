@@ -128,6 +128,36 @@ bun run typecheck  passed
 bun run test       3694 pass, 43 skip, 0 fail
 ```
 
+Follow-up commits:
+
+- `a1bf8a9 fix(task): 独立任务 - 先解析私有创建提示词`
+- `820c1ab refactor(credits): 桌面依赖 - 下沉微积分比例常量`
+
+The task follow-up makes `CreateLocalTask` resolve a private creation prompt
+before task-type validation. The credits follow-up removes the hosted credits
+package from the desktop dependency graph while keeping existing
+`credits.MicrocreditsPerCredit` callers source-compatible.
+
+Latest HEAD backend compile gate:
+
+```text
+go test ./... -run '^$' -count=1  passed for every package
+```
+
+Targeted backend tests passed:
+
+```text
+internal/app       private prompt resolution and hosted model selection
+internal/bootstrap desktop dependency boundary and hosted SQLite schema
+internal/database  hosted microcredits migration
+```
+
+The latest HEAD frontend-to-backend SQLite archive integration also passes:
+
+```text
+test/canvas-archive-sqlite-restore.test.ts  3 pass, 0 fail
+```
+
 The full Go suite was also rerun. `internal/hostedapi`, `internal/manju`, and
 `cmd/server` pass. The repository-wide run is not green on this Windows host:
 379 tests fail, predominantly because SQLite files remain locked during
