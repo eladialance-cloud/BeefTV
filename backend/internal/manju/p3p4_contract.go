@@ -500,20 +500,26 @@ var p0bBHazards = []string{
 
 type p0bAWhitelistRule struct {
 	ID               string
-	Options          [][]string
+	PositiveOptions  []string
 	ConstraintGroups [][]string
 }
 
 var p0bAWhitelistRules = []p0bAWhitelistRule{
 	{
 		ID: "A1",
-		Options: [][]string{
-			{"①", "异化时刻", "库布里克"},
-			{"②", "仪式感", "婚礼", "葬礼", "加冕", "审判"},
-			{"③", "对峙瞬间", "审讯", "法庭", "决斗"},
-			{"④", "强迫观众参与", "第四面墙"},
-			{"⑤", "风格化作者印记", "韦斯·安德森", "强对称美学"},
-			{"⑥", "权力凝固", "君主", "反派"},
+		PositiveOptions: []string{
+			"异化时刻",
+			"异化时刻（库布里克式 / 表现精神失序）",
+			"仪式感",
+			"仪式感（婚礼 / 葬礼 / 加冕 / 审判）",
+			"对峙瞬间",
+			"对峙瞬间（审讯 / 法庭 / 决斗的凝固一刻）",
+			"强迫观众参与",
+			"强迫观众参与（直视镜头 / 第四面墙击穿）",
+			"风格化作者印记",
+			"风格化作者印记（韦斯·安德森式强对称美学）",
+			"权力凝固",
+			`权力凝固（君主 / 反派的"被供奉"瞬间）`,
 		},
 		ConstraintGroups: [][]string{
 			{"对称布景", "强对称构图", "对称"},
@@ -523,10 +529,15 @@ var p0bAWhitelistRules = []p0bAWhitelistRule{
 	},
 	{
 		ID: "A2",
-		Options: [][]string{
-			{"①", "天花板压住", "牢笼感"},
-			{"②", "阶级压迫", "环境吞噬"},
-			{"③", "监视感"},
+		PositiveOptions: []string{
+			"表现“被天花板压住”",
+			"牢笼感",
+			"表现“被天花板压住” / 牢笼感",
+			"阶级压迫",
+			"角色被环境吞噬",
+			"阶级压迫 / 角色被环境吞噬",
+			"监视感",
+			"监视感（顶部空间被填满 = 被注视）",
 		},
 		ConstraintGroups: [][]string{
 			{"广角"},
@@ -535,10 +546,16 @@ var p0bAWhitelistRules = []p0bAWhitelistRule{
 	},
 	{
 		ID: "A3",
-		Options: [][]string{
-			{"①", "异化", "程式化", "库布里克", "艾舍尔"},
-			{"②", "童话仪式感", "韦斯·安德森"},
-			{"③", "强对称美学"},
+		PositiveOptions: []string{
+			"异化",
+			"程式化",
+			"库布里克",
+			"艾舍尔式镜像",
+			"异化 / 程式化（库布里克 / 艾舍尔式镜像）",
+			"童话仪式感",
+			"童话仪式感（韦斯·安德森式）",
+			"强对称美学",
+			"强对称美学的明确意图",
 		},
 		ConstraintGroups: [][]string{
 			{"对称"},
@@ -547,22 +564,35 @@ var p0bAWhitelistRules = []p0bAWhitelistRule{
 	},
 	{
 		ID: "A4",
-		Options: [][]string{
-			{"①", "凝视虚空", "失控", "心理失序"},
-			{"②", "看不见的力量"},
-			{"③", "主观恐惧"},
+		PositiveOptions: []string{
+			"凝视虚空",
+			"失控",
+			"心理失序",
+			"凝视虚空 / 失控 / 心理失序",
+			"看不见的力量",
+			`表现角色被"看不见的力量"包围`,
+			"主观恐惧",
+			"看不到的威胁源",
+			"主观恐惧（看不到的威胁源）",
 		},
 		ConstraintGroups: [][]string{
-			{"长焦", "虚化背景"},
+			{"长焦/虚化背景", "长焦虚化背景", "长焦", "虚化背景"},
 			{"凝视虚空", "心理失序"},
 		},
 	},
 	{
 		ID: "A5",
-		Options: [][]string{
-			{"①", "强调局部", "微距", "特写"},
-			{"②", "暴力美学", "昆汀", "北野武"},
-			{"③", "抽离感", "局部蒙太奇"},
+		PositiveOptions: []string{
+			"强调局部",
+			"强调局部（手 / 脚 / 嘴）",
+			"微距",
+			"特写",
+			"暴力美学",
+			"暴力美学（昆汀式 / 北野武式）",
+			"抽离感叙事",
+			"抽离感叙事（局部代替整体 / 局部蒙太奇）",
+			"局部代替整体",
+			"局部蒙太奇",
 		},
 		ConstraintGroups: [][]string{
 			{"微距", "特写"},
@@ -571,10 +601,18 @@ var p0bAWhitelistRules = []p0bAWhitelistRule{
 	},
 	{
 		ID: "A6",
-		Options: [][]string{
-			{"①", "神性显现", "顿悟", "死亡"},
-			{"②", "逆光剪影"},
-			{"③", "回忆", "梦境", "过曝"},
+		PositiveOptions: []string{
+			"神性显现",
+			"顿悟瞬间",
+			"死亡",
+			"神性显现 / 顿悟瞬间 / 死亡",
+			"逆光剪影",
+			"逆光剪影（角色身份被有意模糊）",
+			"回忆",
+			"梦境",
+			"过曝",
+			"过曝质感",
+			`回忆 / 梦境的"过曝"质感`,
 		},
 		ConstraintGroups: [][]string{
 			{"逆光剪影", "过曝梦境感"},
@@ -583,14 +621,25 @@ var p0bAWhitelistRules = []p0bAWhitelistRule{
 	},
 	{
 		ID: "A7",
-		Options: [][]string{
-			{"①", "全家福", "法庭", "仪式", "集体宣誓", "教科书"},
-			{"②", "强迫观众参与", "第四面墙"},
-			{"③", "仪式威严", "多人朝贺"},
+		PositiveOptions: []string{
+			"全家福",
+			"法庭",
+			"仪式",
+			"集体宣誓",
+			"教科书风格",
+			"全家福 / 法庭 / 仪式 / 集体宣誓 / 教科书风格",
+			"强迫观众参与",
+			"强迫观众参与（破第四面墙）",
+			"破第四面墙",
+			"第四面墙",
+			"仪式威严",
+			"仪式威严（多人朝贺）",
+			"多人朝贺",
 		},
 		ConstraintGroups: [][]string{
 			{"对称布景", "对称"},
-			{"仪式感", "集体凝视"},
+			{"仪式感"},
+			{"集体凝视"},
 		},
 	},
 }
@@ -606,16 +655,24 @@ func validateP0BForbiddenZoneDecision(section []string) error {
 	if !strings.Contains(text, "B类") && !strings.Contains(text, "B 类") {
 		issues = append(issues, "构图雷区白名单缺少 B 类判定")
 	}
-	for _, hazard := range p0bBHazards {
-		explicitlyNever := false
-		for _, line := range section {
-			if strings.Contains(line, hazard) &&
-				(strings.Contains(line, "永不解锁") || strings.Contains(line, "不可解锁")) {
-				explicitlyNever = true
-				break
+	explicitlyNeverHazards := make(map[string]bool, len(p0bBHazards))
+	for _, line := range section {
+		if !p0bLineContainsBHazard(line) {
+			continue
+		}
+		if strings.Contains(line, "永不解锁") {
+			for _, hazard := range p0bBHazards {
+				if strings.Contains(line, hazard) {
+					explicitlyNeverHazards[hazard] = true
+				}
 			}
 		}
-		if !explicitlyNever {
+		if strings.Contains(line, "白名单理由") || strings.Contains(line, "配套") {
+			issues = append(issues, "B 类技术雷区不得使用 A 类白名单解锁："+strings.TrimSpace(line))
+		}
+	}
+	for _, hazard := range p0bBHazards {
+		if !explicitlyNeverHazards[hazard] {
 			issues = append(issues, "B 类技术雷区 "+hazard+" 必须显式列为永不解锁")
 		}
 	}
@@ -631,42 +688,27 @@ func validateP0BForbiddenZoneDecision(section []string) error {
 		if !p0bLineUnlocks(trimmed) {
 			continue
 		}
-		if !p0bHasWhitelistReason(trimmed) {
+		clauses, ok := p0bAUnlockClauses(trimmed)
+		if !ok {
 			issues = append(issues, "A 类解锁必须写明白名单理由："+trimmed)
 			continue
 		}
-		reason, _ := p0bWhitelistReason(trimmed)
 		for _, hazardID := range p0bUniqueIDs(hazardIDs) {
 			rule, ok := p0bAWhitelistRuleByID(hazardID)
 			if !ok {
 				continue
 			}
-			if p0bAUnlockClauseHasNegation(trimmed) {
+			if !p0bOfficialWhitelistOption(clauses.Reason, rule.PositiveOptions) {
 				issues = append(issues, fmt.Sprintf(
-					"%s 解锁白名单理由或配套约束包含否定标记：%s",
+					"%s 解锁必须引用官方白名单选项，理由必须精确匹配官方正向选项，额外文本或否定标记视为否定或矛盾：%s",
 					hazardID,
 					trimmed,
 				))
 			}
-			reasonState := p0bTokenStateForMarkers(reason, rule.Options)
-			if reasonState.Negative {
-				issues = append(issues, fmt.Sprintf(
-					"%s 解锁白名单理由包含否定或矛盾白名单选项：%s",
-					hazardID,
-					trimmed,
-				))
-			}
-			if !reasonState.Positive {
-				issues = append(issues, fmt.Sprintf(
-					"%s 解锁必须引用官方白名单选项：%s",
-					hazardID,
-					trimmed,
-				))
-			}
-			missing, contradictory := p0bConstraintStates(trimmed, rule.ConstraintGroups)
+			missing, contradictory := p0bConstraintStates(clauses.Constraints, rule.ConstraintGroups)
 			if len(contradictory) > 0 {
 				issues = append(issues, fmt.Sprintf(
-					"%s 解锁配对约束包含否定或矛盾状态：%s；%s",
+					"%s 解锁配对约束包含否定标记或矛盾状态：%s；%s",
 					hazardID,
 					strings.Join(contradictory, "、"),
 					trimmed,
@@ -705,39 +747,63 @@ func p0bLineUnlocks(value string) bool {
 	return true
 }
 
-func p0bHasWhitelistReason(value string) bool {
-	_, ok := p0bWhitelistReason(value)
-	return ok
-}
-
-func p0bWhitelistReason(value string) (string, bool) {
-	const marker = "白名单理由"
-	index := strings.Index(value, marker)
-	if index < 0 {
-		return "", false
-	}
-	reason := strings.TrimSpace(value[index+len(marker):])
-	reason = strings.TrimLeft(reason, "：:，,；;。 ")
-	for _, separator := range []string{"；配套", ";配套", "；约束", ";约束", "\n"} {
-		if separatorIndex := strings.Index(reason, separator); separatorIndex >= 0 {
-			reason = strings.TrimSpace(reason[:separatorIndex])
+func p0bLineContainsBHazard(value string) bool {
+	for _, hazard := range p0bBHazards {
+		if strings.Contains(value, hazard) {
+			return true
 		}
 	}
-	return reason, reason != ""
+	return false
 }
 
-func p0bAUnlockClauseHasNegation(value string) bool {
-	const marker = "白名单理由"
-	index := strings.Index(value, marker)
+type p0bAUnlockClause struct {
+	Reason      string
+	Constraints string
+}
+
+func p0bAUnlockClauses(value string) (p0bAUnlockClause, bool) {
+	const reasonMarker = "白名单理由"
+	index := strings.Index(value, reasonMarker)
 	if index < 0 {
-		return false
+		return p0bAUnlockClause{}, false
 	}
-	clause := value[index:]
-	for _, allowed := range []string{"永不解锁", "无解锁", "未解锁", "—"} {
-		clause = strings.ReplaceAll(clause, allowed, "")
+	tail := strings.TrimSpace(value[index+len(reasonMarker):])
+	tail = strings.TrimLeft(tail, "：:，,= ")
+	tail = strings.TrimPrefix(tail, "为")
+	tail = strings.TrimLeft(tail, "：:，,= ")
+
+	constraintIndex := -1
+	for _, marker := range []string{"配套", "约束"} {
+		if candidate := strings.Index(tail, marker); candidate >= 0 &&
+			(constraintIndex < 0 || candidate < constraintIndex) {
+			constraintIndex = candidate
+		}
 	}
-	for _, negation := range []string{"非", "不", "未", "无", "禁"} {
-		if strings.Contains(clause, negation) {
+	reason := tail
+	constraints := ""
+	if constraintIndex >= 0 {
+		reason = tail[:constraintIndex]
+		constraintTail := strings.TrimSpace(tail[constraintIndex:])
+		for _, marker := range []string{"配套", "约束"} {
+			if strings.HasPrefix(constraintTail, marker) {
+				constraintTail = strings.TrimSpace(constraintTail[len(marker):])
+				break
+			}
+		}
+		constraintTail = strings.TrimLeft(constraintTail, "：:，,= ")
+		constraintTail = strings.TrimPrefix(constraintTail, "为")
+		constraints = strings.TrimSpace(strings.TrimRight(constraintTail, "。；;"))
+	}
+	reason = strings.TrimSpace(strings.TrimRight(reason, "。；;"))
+	if reason == "" {
+		return p0bAUnlockClause{}, false
+	}
+	return p0bAUnlockClause{Reason: reason, Constraints: constraints}, true
+}
+
+func p0bOfficialWhitelistOption(reason string, options []string) bool {
+	for _, option := range options {
+		if reason == option {
 			return true
 		}
 	}
@@ -747,16 +813,6 @@ func p0bAUnlockClauseHasNegation(value string) bool {
 type p0bTokenState struct {
 	Positive bool
 	Negative bool
-}
-
-func p0bTokenStateForMarkers(value string, markerGroups [][]string) p0bTokenState {
-	state := p0bTokenState{}
-	for _, markers := range markerGroups {
-		groupState := p0bTokenStateForMarkerList(value, markers)
-		state.Positive = state.Positive || groupState.Positive
-		state.Negative = state.Negative || groupState.Negative
-	}
-	return state
 }
 
 func p0bTokenStateForMarkerList(value string, markers []string) p0bTokenState {
@@ -804,12 +860,18 @@ func p0bTokenOccurrenceNegated(value string, start, end int) bool {
 			return true
 		}
 	}
-	suffixEnd := end + 8
+	suffixEnd := end + 48
 	if suffixEnd > len(value) {
 		suffixEnd = len(value)
 	}
 	suffix := strings.TrimSpace(value[end:suffixEnd])
-	for _, marker := range []string{"不适用", "不允许", "不可用", "无效", "禁止", "（否）", "(否)"} {
+	suffix = strings.TrimLeft(suffix, "，,；;。、与和及 ")
+	for _, marker := range []string{
+		"均不采用", "均不使用", "均未采用", "均未使用", "一律不采用", "全部不采用",
+		"不适用", "不允许", "不可用", "无效", "禁止", "避免",
+		"但不采用", "但不使用", "但未采用", "但未使用", "但予以否定", "予以否定", "否定",
+		"（否）", "(否)",
+	} {
 		if strings.HasPrefix(suffix, marker) {
 			return true
 		}

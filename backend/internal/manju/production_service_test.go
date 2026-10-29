@@ -265,6 +265,15 @@ func TestP0BRejectsMalformedAndAuthorityViolations(t *testing.T) {
 			expected: "必须引用官方白名单选项",
 		},
 		{
+			name: "official whitelist reason followed by negation",
+			content: strings.Replace(validP0BArtifact(),
+				"白名单理由为仪式感；配套强对称构图、静态运镜与长焦压缩。",
+				"白名单理由为仪式感但予以否定；配套强对称构图、静态运镜与长焦压缩。",
+				1,
+			),
+			expected: "必须引用官方白名单选项",
+		},
+		{
 			name: "negated A class whitelist reason and constraint",
 			content: strings.Replace(validP0BArtifact(),
 				"白名单理由为仪式感；配套强对称构图、静态运镜与长焦压缩。",
@@ -361,6 +370,60 @@ func TestP0BRejectsMalformedAndAuthorityViolations(t *testing.T) {
 				stage.ArtifactID != "" ||
 				!strings.Contains(stage.Error, testCase.expected) {
 				t.Fatalf("invalid P0B must block before persistence: %+v", stage)
+			}
+		})
+	}
+}
+
+func TestP0BAcceptsOfficialA4WhitelistReasons(t *testing.T) {
+	testCases := []struct {
+		name   string
+		reason string
+	}{
+		{
+			name:   "invisible force",
+			reason: "看不见的力量",
+		},
+		{
+			name:   "unseen threat source",
+			reason: "看不到的威胁源",
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			f := newFixture(t)
+			assetRunID := prepareCompletedProductionAsset(t, f, "M1")
+			run, err := f.service.CreateProductionRun(f.ownerID, f.projectID, manju.ProductionRunInput{AssetRunID: assetRunID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			task := &model.Task{
+				ID: "task-p0b-a4-" + strings.ReplaceAll(testCase.name, " ", "-"), UserID: f.ownerID,
+				ProjectID: f.projectID, Type: "canvas_text", Status: model.TaskStatusQueued,
+			}
+			if err := f.db.Create(task).Error; err != nil {
+				t.Fatal(err)
+			}
+			f.service.SetScriptTaskCreator((&sequentialScriptTaskCreator{tasks: []*model.Task{task}}).create)
+			if _, err := f.service.RunProductionStage(
+				f.ownerID, f.projectID, run.Run.ID,
+				manju.ProductionStageDecisionAnchor,
+				manju.ProductionStageRunInput{},
+			); err != nil {
+				t.Fatal(err)
+			}
+			content := strings.NewReplacer(
+				"- A1 正面居中：A类；解锁；白名单理由为仪式感；配套强对称构图、静态运镜与长焦压缩。",
+				"- A4 眼神无空间：A类；解锁；白名单理由为"+testCase.reason+"；配套长焦/虚化背景、凝视虚空、心理失序。",
+			).Replace(validP0BArtifact())
+			succeedManjuTask(t, f, task.ID, content)
+			detail, err := f.service.ProductionRunDetail(f.ownerID, f.projectID, run.Run.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stage := findProductionStage(t, detail, manju.ProductionStageDecisionAnchor)
+			if stage.Status != model.ManjuProductionStageStatusAwaitingConfirmation || stage.ArtifactID == "" {
+				t.Fatalf("official A4 whitelist reason must pass validation: %+v", stage)
 			}
 		})
 	}
