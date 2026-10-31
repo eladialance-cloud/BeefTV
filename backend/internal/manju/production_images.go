@@ -64,6 +64,7 @@ type storyboardImagePlan struct {
 type storyboardImageSegment struct {
 	Code   string
 	Title  string
+	Prompt string
 	Shots  []string
 	Phases []string
 	Camera []string
@@ -385,6 +386,13 @@ func (s *Service) StartProductionStoryboardImages(actorID, projectID, runID stri
 }
 
 func buildStoryboardImagePrompt(segment storyboardImageSegment, assetMode, aspect, styleBase, styleParameters string, strongStylePrompt ...string) string {
+	if prompt := strings.TrimSpace(segment.Prompt); prompt != "" {
+		stylePrompt := ""
+		if len(strongStylePrompt) > 0 {
+			stylePrompt = strongStylePrompt[0]
+		}
+		return prependStylePrompt(stylePrompt, prompt)
+	}
 	panels := segment.Panels
 	if len(panels) == 0 {
 		count := len(segment.Phases)
@@ -467,6 +475,11 @@ func storyboardSheetLayout(count int) string {
 }
 
 func parseStoryboardImageSegments(content string) ([]storyboardImageSegment, error) {
+	if segments, err := parseOfficialCLEANGridSegments(content); err != nil {
+		return nil, err
+	} else if len(segments) > 0 {
+		return segments, nil
+	}
 	section, found := p3MarkdownSection(content, "## 故事板表")
 	if !found {
 		return nil, ErrStoryboardImageInvalid

@@ -1757,8 +1757,13 @@ func TestManjuProductionRoutesCreateRunAndAdvanceStoryboardStage(t *testing.T) {
 	if len(videoPayload.Data.Item.Videos) != 1 || videoPayload.Data.Item.Videos[0].TaskID == "" {
 		t.Fatalf("必须按 P4 投喂段创建真实视频任务: %+v", videoPayload.Data.Item.Videos)
 	}
-	if len(captured) != 3 || captured[2].Type != "canvas_video" || captured[2].Operation != "manju_production_video" {
-		t.Fatalf("P4 视频必须使用 canvas_video 任务: %+v", captured)
+	if len(captured) != 3 || captured[2].Type != "canvas_video" || captured[2].Operation != "reference_to_video" {
+		t.Fatalf("P4 视频必须使用模型能力支持的 canvas_video 操作: %+v", captured)
+	}
+	videoMetadata, _ := captured[2].Input["metadata"].(map[string]any)
+	if videoMetadata["videoEditOperation"] != "reference_to_video" ||
+		videoMetadata["manjuProductionOperation"] != "manju_production_video" {
+		t.Fatalf("P4 视频必须区分模型操作与漫剧内部任务归属: %+v", videoMetadata)
 	}
 	videoTaskID := videoPayload.Data.Item.Videos[0].TaskID
 	videoResourceID := "res-http-video-1"

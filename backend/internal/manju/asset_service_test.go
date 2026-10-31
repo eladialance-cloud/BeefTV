@@ -219,10 +219,33 @@ func TestAssetManifestMustBeConfirmedBeforeCompile(t *testing.T) {
 	if len(creator.requests) < 3 || strings.Contains(creator.requests[2].Prompt, "MANJU_CANVAS_TASKS_JSON") {
 		t.Fatalf("P2 编译任务不得要求模型额外生成画布任务块: %+v", creator.requests)
 	}
-	if !strings.Contains(creator.requests[2].Prompt, "MANJU_PROJECT_STATE_PATCH_JSON") {
-		t.Fatalf("P2 编译任务必须要求 V7.4.26 project_state 回写块: %+v", creator.requests[2].Prompt)
+	if strings.Contains(creator.requests[2].Prompt, "MANJU_PROJECT_STATE_PATCH_JSON") {
+		t.Fatalf("P2 编译任务必须由平台解析官方资产块，不得要求平台专用 JSON: %+v", creator.requests[2].Prompt)
 	}
-	validM1 := "> 素材形态：M1（编号占位）\n\n# 资产编号册\n图1 = 林澈\n\n## 素材接线单\n| 图号 | 用途 | 只控制什么 | 不控制什么 |\n| 图1 | 角色 | 脸型与服装 | 姿态与场景 |"
+	if strings.Contains(creator.requests[2].Prompt, "【VisiDeep AI 项目状态传输块】") {
+		t.Fatalf("P2 不得要求模型了解平台内部 project_state 结构: %+v", creator.requests[2].Prompt)
+	}
+	validM1 := strings.Join([]string{
+		"> 素材形态：M1（编号占位）",
+		"",
+		"#### 图1 · 林澈（角色四格）",
+		"16:9 角色四格资产板。",
+		"年龄段：24~28 岁",
+		"身高/体型：178cm·清瘦",
+		"身份外观三件套：青衫、布鞋、旧木箱",
+		"Voice Description：clear young voice",
+		"",
+		"#### 图2 · 旧宅（场景母版）",
+		"16:9 无人空镜。",
+		"坐标系：门在右侧。",
+		"SET_STATE：清晨薄尘。",
+		"空气介质：薄尘。",
+		"光照：清晨冷光。",
+		"",
+		"## 素材接线单",
+		"| 图号 | 用途 | 只控制什么 | 不控制什么 |",
+		"| 图1 | 角色 | 脸型与服装 | 姿态与场景 |",
+	}, "\n")
 	validM1 += canvasTaskBlockFixture()
 	succeedManjuTask(t, f, tasks[2].ID, validM1)
 	detail, err = f.service.AssetRunDetail(f.ownerID, f.projectID, run.Run.ID)

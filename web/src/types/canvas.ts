@@ -191,6 +191,7 @@ export type CanvasManjuAssetKind = "character" | "scene" | "prop";
 export type CanvasManjuAssetRowMeta = {
     taskId: string;
     code: string;
+    taskCode?: string;
     kind: CanvasManjuAssetKind;
     name: string;
 };

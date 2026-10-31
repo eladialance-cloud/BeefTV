@@ -797,17 +797,27 @@ func TestProductionChainUsesLockedUpstreamArtifactsAndHumanConfirmation(t *testi
 	if !strings.Contains(p3Prompt, "LOCKED_ASSET_FACT") {
 		t.Fatalf("P3 必须读取锁定 P2 工件: %s", p3Prompt)
 	}
-	if !strings.Contains(p3Prompt, "MANJU_PROJECT_STATE_PATCH_JSON") {
-		t.Fatalf("P3 必须要求 V7.4.26 project_state segments 回写块: %s", p3Prompt)
+	if !strings.Contains(p3Prompt, "V7.4.26 官方总控原文") ||
+		!strings.Contains(p3Prompt, "官方总控强制读取原文") {
+		t.Fatalf("P3 必须直接加载 V7.4.26 官方规则原文: %s", p3Prompt)
 	}
-	for _, required := range []string{
+	if strings.Contains(p3Prompt, "### 段N") || strings.Contains(p3Prompt, "#### 镜头 K") {
+		t.Fatalf("P3 不得再追加平台自建标题格式: %s", p3Prompt)
+	}
+	if strings.Contains(p3Prompt, "MANJU_PROJECT_STATE_PATCH_JSON") {
+		t.Fatalf("P3 不得再要求模型二次抄写 project_state JSON: %s", p3Prompt)
+	}
+	if strings.Contains(p3Prompt, "【VisiDeep AI 项目状态传输块】") {
+		t.Fatalf("P3 不得要求模型了解平台内部 project_state 结构: %s", p3Prompt)
+	}
+	for _, forbidden := range []string{
 		"【asset_refs 精确键目录】",
 		"`林澈`",
 		"`旧宅`",
 		"必须逐字复制",
 	} {
-		if !strings.Contains(p3Prompt, required) {
-			t.Fatalf("P3 提示词缺少精确资产键 %q: %s", required, p3Prompt)
+		if strings.Contains(p3Prompt, forbidden) {
+			t.Fatalf("P3 不得把平台内部资产键写成模型要求 %q: %s", forbidden, p3Prompt)
 		}
 	}
 	if strings.Contains(p3Prompt, "RAW_NOVEL_SECRET_MUST_NOT_REACH_P3") {
@@ -913,10 +923,15 @@ func TestProductionChainUsesLockedUpstreamArtifactsAndHumanConfirmation(t *testi
 	if len(startedVideos.Videos) != 1 || startedVideos.Videos[0].TaskID != tasks[3].ID {
 		t.Fatalf("P4 必须为每个投喂段创建真实视频任务: %+v", startedVideos.Videos)
 	}
-	if len(creator.requests) != 4 || creator.requests[3].Type != "canvas_video" || creator.requests[3].Operation != "manju_production_video" {
-		t.Fatalf("P4 文本之后必须创建 canvas_video 任务: %+v", creator.requests)
+	if len(creator.requests) != 4 || creator.requests[3].Type != "canvas_video" || creator.requests[3].Operation != "reference_to_video" {
+		t.Fatalf("P4 文本之后必须创建模型能力支持的 canvas_video 任务: %+v", creator.requests)
 	}
 	videoRequest := creator.requests[3]
+	videoMetadata, _ := videoRequest.Input["metadata"].(map[string]any)
+	if videoMetadata["videoEditOperation"] != "reference_to_video" ||
+		videoMetadata["manjuProductionOperation"] != "manju_production_video" {
+		t.Fatalf("P4 视频任务必须区分模型操作与漫剧内部归属: %+v", videoMetadata)
+	}
 	config, _ := videoRequest.Input["config"].(map[string]any)
 	if videoRequest.Model != "video-pro" || config["size"] != "9:16" || config["videoSeconds"] != "5" {
 		t.Fatalf("P4 视频任务必须使用项目视频模型与 P0 画幅/段时长: %+v", videoRequest)

@@ -1325,9 +1325,6 @@ func buildAssetStagePrompt(projectName string, run model.ManjuAssetRun, stage mo
 	appendManjuSkillContext(&out, skillContext)
 	out.WriteString("\n\n【VisiDeep AI 运行接口】\n")
 	out.WriteString(assetStageInstruction(run.AssetMode, stage.Key))
-	if stage.Key == AssetStageCompile {
-		out.WriteString(projectStatePatchInstruction("P2"))
-	}
 	return out.String()
 }
 

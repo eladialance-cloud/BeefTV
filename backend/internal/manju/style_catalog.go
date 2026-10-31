@@ -221,11 +221,10 @@ func (card StyleCard) SupportsStyleBase(styleBase string) bool {
 func StyleCatalog() StyleCatalogView {
 	bases := append([]StyleBaseDefinition(nil), styleBaseDefinitions...)
 	families := append([]StyleFamilyDefinition(nil), styleFamilyDefinitions...)
-	cards := make([]StyleCard, 0, len(styleCards))
-	for _, card := range styleCards {
-		card.CompatibleStyleBase = append([]string(nil), card.CompatibleStyleBase...)
-		cards = append(cards, card)
-	}
+	// Items are sourced from the active store so online edits (admin portal)
+	// take effect without recompiling. The default store returns the baked-in
+	// catalog, so behavior is unchanged unless MANJU_STYLE_CARDS_FILE is set.
+	cards := StyleCardStoreImpl.ListStyleCards()
 	return StyleCatalogView{
 		Version:  StyleCatalogVersion,
 		Bases:    bases,

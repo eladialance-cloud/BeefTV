@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VisiDeep AI · 用户端</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" id="brandMark">🎬</span>
+      <div>
+        <div class="brand-name" id="brandName">VisiDeep AI</div>
+        <div class="brand-sub">输入创意 → 逐阶段确认 → 全部产物可保存可查看</div>
+      </div>
+    </div>
+    <button class="ghost-btn" id="openConfig">⚙ 连接设置</button>
+  </header>
+
+  <!-- 连接设置面板 -->
+  <div class="config-panel hidden" id="configPanel">
+    <div class="config-row">
+      <label>运行模式</label>
+      <select id="cfgMode">
+        <option value="mock">模拟模式（无需后端，立即预览示例）</option>
+        <option value="demo">仿真演示（内置模拟后端 · 全流程可交互测试）</option>
+        <option value="real">真实后端（对接 BeefTV /manju API）</option>
+      </select>
+    </div>
+    <div class="config-row">
+      <label>后端地址</label>
+      <input id="cfgOrigin" placeholder="留空 = 同源（服务器部署）；本地直连填 http://127.0.0.1:8790" />
+    </div>
+    <div class="config-row">
+      <label>访问令牌</label>
+      <input id="cfgToken" placeholder="Bearer 后的 token（真实模式必填）" />
+    </div>
+    <p class="config-hint">模拟模式会按你填写的立项锁，生成示例三件套，方便先看产品形态；真实模式会调用 BeefTV 后端逐阶段运行，每个确认点都会停下来等你决定。</p>
+  </div>
+
+  <main class="container">
+    <!-- 恢复横幅 -->
+    <div class="resume-bar hidden" id="resumeBar">
+      <span id="resumeText"></span>
+      <div>
+        <button class="mini-btn primary" id="resumeGo">继续上次运行</button>
+        <button class="mini-btn" id="resumeDrop">放弃</button>
+      </div>
+    </div>
+
+    <!-- 步骤一：立项配置 -->
+    <section class="card" id="stepLocks">
+      <div class="card-title"><span class="step-no">1</span> 立项配置 · 六道锁</div>
+      <p class="card-desc">填清楚下面每一项，系统才能确定调用哪套规则、产出适配的提示词。<span class="warn">未填全会被拦截，不会替你默认。</span></p>
+
+      <div class="form-grid">
+        <div class="field">
+          <label>赛道（做什么类型）<span class="req">*</span></label>
+          <select id="lockTrack">
+            <option value="">请选择</option>
+            <option>①国内剧</option>
+            <option>②海外剧</option>
+            <option>③解说叙事类</option>
+            <option>④其他</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>素材来源<span class="req">*</span></label>
+          <select id="lockSource">
+            <option value="">请选择</option>
+            <option>①原创</option>
+            <option>②改编有原著</option>
+            <option>③对标爆款</option>
+            <option>④热点速成</option>
+          </select>
+        </div>
+        <div class="field hidden" id="trendResWrap">
+          <label>热点速成 · 执行口径<span class="req">*</span></label>
+          <select id="lockTrendResolution">
+            <option value="">请选择</option>
+            <option value="original">按原创执行</option>
+            <option value="benchmark">按对标执行</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>A · 模型版本<span class="req">*</span></label>
+          <select id="lockModel">
+            <option value="">请选择</option>
+            <option>Seedance 2.5</option>
+            <option>Seedance 2.0</option>
+            <option>MiniMax H3</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>B · 画幅<span class="req">*</span></label>
+          <select id="lockAspect">
+            <option value="">请选择</option>
+            <option>16:9 横屏</option>
+            <option>9:16 竖屏</option>
+            <option>21:9 宽幕</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>目标时长（秒）<span class="req">*</span></label>
+          <input id="lockDuration" type="number" min="5" max="600" step="5" value="60" />
+          <div class="field-hint">超过单段上限（2.5=30s / 2.0、H3=15s）会自动分段，需选段缝衔接。</div>
+        </div>
+        <div class="field">
+          <label>C · 交付形态<span class="req">*</span></label>
+          <select id="lockDelivery">
+            <option value="">请选择</option>
+            <option>①只要看板</option>
+            <option>②只要 md</option>
+            <option>③都要</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>D · 段缝衔接<span class="req">*</span></label>
+          <select id="lockSeam">
+            <option value="">请选择</option>
+            <option>①末帧定格</option>
+            <option>②换机位硬切</option>
+            <option>③空镜</option>
+            <option>④技巧转场</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>I · 画风基底<span class="req">*</span></label>
+          <select id="lockStyleBase">
+            <option value="">请选择</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>I · 风格卡<span class="req">*</span></label>
+          <select id="lockStyleCard">
+            <option value="">请选择风格卡（加载中…）</option>
+          </select>
+          <div class="field-hint" id="styleCardHint"></div>
+        </div>
+        <div class="field">
+          <label>M · 素材形态<span class="req">*</span></label>
+          <select id="lockMaterial">
+            <option value="">请选择</option>
+            <option>M0 纯提示词</option>
+            <option>M1 编号占位(默认)</option>
+            <option>M2 已入库</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field full">
+        <label>创意简述 / 剧本梗概<span class="req">*</span></label>
+        <textarea id="brief" rows="4" placeholder="例如：一集重生复仇竖屏短剧，女主前世被闺蜜害死，重生后步步为营反击……（可直接粘贴，或点击下方按钮上传 .txt / .md 梗概文件）"></textarea>
+        <div class="brief-tools">
+          <input type="file" id="briefFile" accept=".txt,.md,.markdown,.text,text/plain,text/markdown" hidden />
+          <button type="button" class="ghost-btn mini" id="briefUploadBtn">📎 上传梗概文件</button>
+          <button type="button" class="ghost-btn mini hidden" id="briefClearBtn">✕ 清除</button>
+          <span class="brief-file-info" id="briefFileInfo"></span>
+        </div>
+      </div>
+
+      <div class="field full" id="styleCustomWrap" style="display:none">
+        <label>自定义画风描述（I · 风格卡选「自定义」时必填）</label>
+        <input id="styleCustom" placeholder="例如：高对比暗调、胶片颗粒、角色面部特写居多" />
+      </div>
+
+      <div class="actions">
+        <button class="primary-btn" id="runBtn">▶ 开始生成</button>
+        <span class="hint" id="lockHint"></span>
+      </div>
+    </section>
+
+    <!-- 步骤二：运行工作台 -->
+    <section class="card hidden" id="stepRun">
+      <div class="card-title"><span class="step-no">2</span> 运行工作台</div>
+      <p class="card-desc">
+        逐阶段运行：每阶段生成完成后会<b>停下来等你确认</b>；圆桌审核、资产清单、分镜与投喂锁定均为人工决策点。
+        <label class="auto-run"><input type="checkbox" id="autoRun" /> 自动连续执行（跳过人工确认，慎用）</label>
+        <button class="mini-btn hidden" id="stopEngine">■ 停止轮询</button>
+      </p>
+      <ol class="pipeline" id="pipeline">
+        <li data-stage="lock"><span class="dot"></span>立项锁</li>
+        <li data-stage="script"><span class="dot"></span>P1 剧本</li>
+        <li data-stage="asset"><span class="dot"></span>P2 资产</li>
+        <li data-stage="story"><span class="dot"></span>P3 分镜</li>
+        <li data-stage="feed"><span class="dot"></span>P4 投喂</li>
+        <li data-stage="deliver"><span class="dot"></span>P5 交付</li>
+      </ol>
+
+      <div class="phase-panel" id="phaseScript">
+        <div class="phase-head"><h3>P1 · 剧本任务</h3><span class="phase-status" id="phaseScriptStatus"></span></div>
+        <div class="stage-list" id="scriptStages"></div>
+      </div>
+      <div class="phase-panel hidden" id="phaseAsset">
+        <div class="phase-head"><h3>P2 · 数字资产</h3><span class="phase-status" id="phaseAssetStatus"></span></div>
+        <div class="stage-list" id="assetStages"></div>
+      </div>
+      <div class="phase-panel hidden" id="phaseProduction">
+        <div class="phase-head"><h3>P3-P5 · 生产链</h3><span class="phase-status" id="phaseProductionStatus"></span></div>
+        <div class="stage-list" id="productionStages"></div>
+      </div>
+
+      <div class="run-log" id="runLog"></div>
+
+      <div class="error-banner hidden" id="errBanner">
+        <div class="eb-title" id="errTitle">⚠ 后端返回错误</div>
+        <div class="eb-msg" id="errMsg"></div>
+        <div class="eb-fix" id="errFix"></div>
+      </div>
+    </section>
+
+    <!-- 步骤三：文件中心 -->
+    <section class="card hidden" id="stepFiles">
+      <div class="card-title"><span class="step-no">3</span> 文件中心 · 阶段产物与交付</div>
+      <p class="card-desc">每个阶段生成的文件都会自动保存（本机 + 后端数据库），可随时查看、复制、下载。运行过程中产物会实时出现在这里。</p>
+      <div class="actions">
+        <button class="ghost-btn mini" id="refreshFiles">⟳ 刷新列表</button>
+        <button class="ghost-btn mini" id="downloadAll">⬇ 打包下载（合并 .md）</button>
+        <span class="hint" id="filesHint"></span>
+      </div>
+      <div id="fileList"></div>
+    </section>
+  </main>
+
+  <!-- 文件查看器 -->
+  <div class="modal-mask hidden" id="fileViewer">
+    <div class="modal">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title" id="fvName"></div>
+          <div class="modal-meta" id="fvMeta"></div>
+        </div>
+        <button class="mini-btn" id="fvClose">✕ 关闭</button>
+      </div>
+      <div class="modal-body" id="fvBody"></div>
+      <div class="modal-foot">
+        <button class="mini-btn" id="fvCopy">复制</button>
+        <button class="mini-btn" id="fvDownload">下载</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="foot">本门户为独立前端，对接 BeefTV 的 /manju 管线；规则来源 manju-laoli-skill（MIT）。</footer>
+
+  <script src="./app.js"></script>
+  <button class="fab hidden" id="fabFiles" title="跳转到文件中心">📄 文件中心 <span id="fabCount">0</span></button>
+</body>
+</html>

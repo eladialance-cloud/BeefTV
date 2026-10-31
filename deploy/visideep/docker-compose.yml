@@ -73,6 +73,17 @@ services:
     networks:
       - internal
 
+  portal:
+    image: visideep-portal:${VISIDEEP_IMAGE_TAG:-local}
+    build:
+      context: ../..
+      dockerfile: deploy/visideep/portal.Dockerfile
+    ports:
+      - "127.0.0.1:${VISIDEEP_PORTAL_PORT:-3102}:80"
+    restart: unless-stopped
+    networks:
+      - internal
+
 networks:
   internal:
     name: visideep_internal

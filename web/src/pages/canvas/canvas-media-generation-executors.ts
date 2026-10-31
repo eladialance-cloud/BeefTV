@@ -7,6 +7,7 @@ import { nextCanvasVersionLabel } from "@/lib/canvas/canvas-layout";
 import { buildAudioGenerationMetadata, buildVideoGenerationMetadata, clearInPlaceMediaOutputMetadata, generationReferenceUrls, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
 import { canvasGenerationPromptMetadata } from "@/lib/canvas/canvas-generation-submission";
 import { creationTemplateGenerationMetadata } from "@/lib/canvas/creation-template-workflow";
+import { manjuGenerationTaskMetadata } from "@/lib/canvas/canvas-manju";
 import { mediaResultMetadata } from "@/lib/canvas/canvas-node-semantics";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
@@ -51,6 +52,7 @@ export async function executeVideoGeneration({
     const versionRootId = isExistingVideoNode && sourceNode ? sourceNode.metadata?.versionOfNodeId || sourceNode.id : undefined;
     const parent = sourceNode?.position || { x: 0, y: 0 };
     const videoGenerationMetadata = buildVideoGenerationMetadata(sourceNode, generationContext, generationConfig);
+    const managedTableMetadata = manjuGenerationTaskMetadata(sourceNode?.metadata);
     const videoNode: CanvasNodeData = {
         id: videoId,
         type: CanvasNodeType.Video,
@@ -75,6 +77,7 @@ export async function executeVideoGeneration({
             watermark: generationConfig.videoWatermark,
             references: generationReferenceUrls(generationContext),
             ...videoGenerationMetadata,
+            ...managedTableMetadata,
             ...styleMetadata,
             ...skillMetadata,
             generatedFromNodeId: nodeId,
@@ -146,6 +149,7 @@ export async function executeVideoGeneration({
                     promptTemplateOperation: sourceNode?.metadata?.promptTemplateOperation,
                     promptTemplateVariables: sourceNode?.metadata?.promptTemplateVariables,
                     ...videoGenerationMetadata,
+                    ...managedTableMetadata,
                     ...styleMetadata,
                     ...skillMetadata,
                 },

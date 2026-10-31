@@ -313,19 +313,15 @@ function mergeManjuAssetTable(existing: CanvasNodeData | undefined, incoming: Ca
         if (code) absorbedByCode.set(manjuReferenceCodeKey(code), node);
     });
     const incomingRows = incoming.metadata?.batchTable?.rows || [];
-    const incomingCodeKeys = new Set(incomingRows.map((row) => manjuReferenceCodeKey(row.manjuAsset?.code || "")).filter(Boolean));
+    const incomingIdentities = new Set(incomingRows.map(manjuAssetRowIdentity).filter(Boolean));
     const existingRows = dedupeManjuAssetRows((existing?.metadata?.batchTable?.rows || []).filter((row) => {
-        const code = row.manjuAsset?.code || "";
-        return Boolean(row.manjuAsset?.taskId.startsWith("manual:asset:") || (code && incomingCodeKeys.has(manjuReferenceCodeKey(code))));
+        return Boolean(row.manjuAsset?.taskId.startsWith("manual:asset:") || incomingIdentities.has(manjuAssetRowIdentity(row)));
     }));
     const findPrevious = (row: CanvasBatchRow) => {
-        const code = row.manjuAsset?.code || "";
-        const codeKey = code ? manjuReferenceCodeKey(code) : "";
         return existingRows.find((item) => {
-            const previousCode = item.manjuAsset?.code || "";
             return Boolean(
-                (codeKey && previousCode && manjuReferenceCodeKey(previousCode) === codeKey)
-                || (row.manjuAsset?.taskId && item.manjuAsset?.taskId === row.manjuAsset.taskId),
+                (row.manjuAsset?.taskId && item.manjuAsset?.taskId === row.manjuAsset.taskId)
+                || manjuAssetRowIdentity(item) === manjuAssetRowIdentity(row),
             );
         });
     };
@@ -407,19 +403,20 @@ function dedupeManjuAssetRows(rows: CanvasBatchRow[]) {
         + (row.inputNodeIds.length ? 2 : 0)
         + (row.manjuAsset?.name && row.manjuAsset.name !== row.manjuAsset.code ? 1 : 0);
     rows.forEach((row) => {
-        const code = manjuReferenceCodeKey(row.manjuAsset?.code || "");
-        if (!code) {
+        const identity = manjuAssetRowIdentity(row);
+        if (!identity) {
             if (row.manjuAsset?.taskId.startsWith("manual:asset:")) manualRowsWithoutCode.push(row);
             return;
         }
-        const previous = byCode.get(code);
+        const previous = byCode.get(identity);
         if (!previous) {
-            byCode.set(code, row);
+            byCode.set(identity, row);
             return;
         }
         const preferred = score(row) > score(previous) ? row : previous;
         const fallback = preferred === row ? previous : row;
-        byCode.set(code, {
+        const code = preferred.manjuAsset?.code || fallback.manjuAsset?.code || "";
+        byCode.set(identity, {
             ...fallback,
             ...preferred,
             inputNodeIds: unique([...(preferred.inputNodeIds || []), ...(fallback.inputNodeIds || [])]),
@@ -437,6 +434,13 @@ function dedupeManjuAssetRows(rows: CanvasBatchRow[]) {
         });
     });
     return [...byCode.values(), ...manualRowsWithoutCode];
+}
+
+function manjuAssetRowIdentity(row: CanvasBatchRow) {
+    const code = manjuReferenceCodeKey(row.manjuAsset?.code || "");
+    if (!code) return "";
+    const taskCode = row.manjuAsset?.taskCode?.trim() || "";
+    return taskCode ? `${code}\u0000${taskCode}` : code;
 }
 
 function mergeManjuStoryboardTable(existing: CanvasNodeData | undefined, incoming: CanvasNodeData, absorbedNodes: Map<string, CanvasNodeData>) {
@@ -1009,6 +1013,7 @@ function createManjuAssetTable(pkg: ManjuCanvasPackage, references: ManjuCanvasR
         string,
         {
             code: string;
+            taskCode?: string;
             title: string;
             kind: "character" | "scene" | "prop";
             taskId: string;
@@ -1020,8 +1025,10 @@ function createManjuAssetTable(pkg: ManjuCanvasPackage, references: ManjuCanvasR
         pkg.tasks.forEach((task) => {
             const code = manjuReferenceCodeKey((task.assetCode || task.code).trim());
             if (!/^(CHR|SCN|PRP)-/.test(code)) return;
-            candidates.set(code, {
+            const taskCode = task.code.trim();
+            candidates.set(`task:${task.id || taskCode}`, {
                 code,
+                taskCode,
                 title: task.title,
                 kind: manjuAssetKindForCategory(task.category || task.group),
                 taskId: task.id,
@@ -1034,7 +1041,7 @@ function createManjuAssetTable(pkg: ManjuCanvasPackage, references: ManjuCanvasR
             .filter((code) => /^(?:CHR|SCN|PRP)-/.test(code))
             .forEach((code) => {
                 const reference = referenceByCode.get(code);
-                candidates.set(code, {
+                candidates.set(`asset:${code}`, {
                     code,
                     title: reference?.title || code,
                     kind: code.startsWith("CHR-") ? "character" : code.startsWith("SCN-") ? "scene" : "prop",
@@ -1051,7 +1058,8 @@ function createManjuAssetTable(pkg: ManjuCanvasPackage, references: ManjuCanvasR
     const rows: CanvasBatchRow[] = [];
     [...candidates.values()].forEach((candidate) => {
         const rowId = `manju-asset-row-${nanoid()}`;
-        rowByCode.set(candidate.code, rowId);
+        if (!rowByCode.has(candidate.code)) rowByCode.set(candidate.code, rowId);
+        if (candidate.taskCode && !rowByCode.has(candidate.taskCode)) rowByCode.set(candidate.taskCode, rowId);
         let backing: CanvasNodeData | undefined;
         if (candidate.reference && (candidate.reference.content || candidate.reference.storageKey)) {
             backing = createReferenceNode(candidate.reference, { x: table.position.x, y: table.position.y }, pkg);
@@ -1074,6 +1082,7 @@ function createManjuAssetTable(pkg: ManjuCanvasPackage, references: ManjuCanvasR
             manjuAsset: {
                 taskId: candidate.taskId,
                 code: candidate.code,
+                taskCode: candidate.taskCode,
                 kind: candidate.kind,
                 name: candidate.title,
             },

@@ -68,6 +68,47 @@ test("image submission waits for the target node save and shares one submission 
     expect(events).toEqual(["save", "saved", "submit", "consume"]);
 });
 
+test("video submission saves the target node before creating the paid task", async () => {
+    const videoNode = {
+        ...project.nodes[0],
+        id: "new-video",
+        type: CanvasNodeType.Video,
+        metadata: { status: "idle" as const },
+    };
+    useCanvasStore.setState({ projects: [{ ...structuredClone(project), nodes: [videoNode] }] });
+    const events: string[] = [];
+    const videoTask: GenerationTask = {
+        ...task,
+        id: "task-video",
+        type: "canvas_video",
+        prompt: "视频提示词",
+    };
+    await runCanvasGenerationTaskToConsumer(
+        {
+            projectId: project.id,
+            nodeId: videoNode.id,
+            mode: "video",
+            prompt: videoTask.prompt,
+            config: {} as never,
+            clientOperationId: "test-video-save",
+        },
+        {
+            prepareTarget: async (options) => persistCanvasGenerationTarget(options, async (_id, patch) => {
+                expect(patch.nodes?.map((node) => node.id)).toEqual([videoNode.id]);
+                events.push("save");
+            }),
+            bindTask: () => undefined,
+            consumeTask: async () => { events.push("consume"); },
+            runTask: async (options) => {
+                events.push("submit");
+                options.onTaskCreated?.(videoTask);
+                return { video: { dataUrl: "/api/resources/video/file" } };
+            },
+        },
+    );
+    expect(events).toEqual(["save", "submit", "consume"]);
+});
+
 test("hosted target save reaches the remote canvas before submission", async () => {
     const events: string[] = [];
     await persistCanvasGenerationTarget(

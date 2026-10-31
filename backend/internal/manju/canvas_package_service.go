@@ -760,28 +760,27 @@ func parseP2CanvasTasks(content, assetMode, aspect string, stylePrompt ...string
 		return nil, err
 	}
 	figureAssets := parseCanvasFigureAssetMap(content)
-	codes := make([]string, 0, len(assetBlocks))
-	for code := range assetBlocks {
-		codes = append(codes, code)
-	}
-	sort.Slice(codes, func(i, j int) bool {
-		return canvasFigureNumberValue(codes[i]) < canvasFigureNumberValue(codes[j])
+	sort.SliceStable(assetBlocks, func(i, j int) bool {
+		left := canvasFigureNumberValue(assetBlocks[i].Code)
+		right := canvasFigureNumberValue(assetBlocks[j].Code)
+		if left == right {
+			return assetBlocks[i].Code < assetBlocks[j].Code
+		}
+		return left < right
 	})
-	tasks := make([]CanvasPackageTask, 0, len(codes))
+	tasks := make([]CanvasPackageTask, 0, len(assetBlocks))
 	stylePrefix := ""
 	if len(stylePrompt) > 0 {
 		stylePrefix = stylePrompt[0]
 	}
-	for _, code := range codes {
+	for _, assetBlock := range assetBlocks {
+		code := assetBlock.Code
 		if code == "" {
 			return nil, fmt.Errorf("%w: P2 画布任务缺少有效图N编号", ErrCanvasPackageUnready)
 		}
-		prompt, ok := assetBlocks[code]
-		if !ok {
-			return nil, fmt.Errorf("%w: P2 任务 %s 缺少对应的 V7.4.26 图N资产块", ErrCanvasPackageUnready, code)
-		}
+		prompt := assetBlock.Prompt
 		title := p2CanvasAssetBlockTitle(prompt, code)
-		assetCode := normalizeCanvasImportReferenceCode(strings.TrimSpace(figureAssets[code]))
+		assetCode := normalizeCanvasImportReferenceCode(strings.TrimSpace(figureAssets[assetBlock.SourceCode]))
 		category := p2CanvasCategoryFromBlock(title)
 		if assetCode == "" {
 			assetCode = p2CanvasAssetCodeFromBlock(prompt, title, category, code)
@@ -864,7 +863,13 @@ func canvasFigureNumberValue(code string) int {
 	return value
 }
 
-func p2CanvasAssetBlocks(content string) (map[string]string, error) {
+type p2CanvasAssetBlock struct {
+	Code       string
+	SourceCode string
+	Prompt     string
+}
+
+func p2CanvasAssetBlocks(content string) ([]p2CanvasAssetBlock, error) {
 	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
 	type assetHeading struct {
 		line  int
@@ -886,7 +891,9 @@ func p2CanvasAssetBlocks(content string) (map[string]string, error) {
 	if len(headings) == 0 {
 		return nil, fmt.Errorf("%w: 未找到 V7.4.26 图N资产块", ErrCanvasPackageUnready)
 	}
-	blocks := make(map[string]string, len(headings))
+	blocks := make([]p2CanvasAssetBlock, 0, len(headings))
+	occurrences := make(map[string]int, len(headings))
+	seenPrompts := make(map[string]string, len(headings))
 	for _, heading := range headings {
 		end := len(lines)
 		for next := heading.line + 1; next < len(lines); next++ {
@@ -897,10 +904,20 @@ func p2CanvasAssetBlocks(content string) (map[string]string, error) {
 			}
 		}
 		block := strings.TrimSpace(strings.Join(lines[heading.line:end], "\n"))
-		if existing, exists := blocks[heading.code]; exists && existing != block {
-			return nil, fmt.Errorf("%w: V7.4.26 资产块 %s 重复", ErrCanvasPackageUnready, heading.code)
+		if existing, exists := seenPrompts[heading.code]; exists && existing == block {
+			continue
 		}
-		blocks[heading.code] = block
+		occurrences[heading.code]++
+		taskCode := heading.code
+		if occurrences[heading.code] > 1 {
+			taskCode = fmt.Sprintf("%s-%d", heading.code, occurrences[heading.code])
+		}
+		seenPrompts[heading.code] = block
+		blocks = append(blocks, p2CanvasAssetBlock{
+			Code:       taskCode,
+			SourceCode: heading.code,
+			Prompt:     block,
+		})
 	}
 	return blocks, nil
 }
@@ -1154,6 +1171,18 @@ func parseCanvasFigureAssetMap(content string) map[string]string {
 		}
 		add(figure, code)
 	}
+	if patch, found, err := extractManjuProjectStatePatch(content); err == nil && found {
+		for _, namespace := range []string{"characters", "scenes", "props"} {
+			for _, raw := range anyMap(patch[namespace]) {
+				info := anyMap(raw)
+				figure := anyString(info["fig_no"])
+				if figure != "" {
+					figure = "图" + figure
+				}
+				add(figure, anyString(info["id"]))
+			}
+		}
+	}
 	return result
 }
 
@@ -1396,6 +1425,7 @@ func canvasImportReferences(payload, stage string) []CanvasImportReferenceView {
 func mergeCanvasImportReferencesWithP2Tasks(references []CanvasImportReferenceView, tasks []CanvasPackageTask) []CanvasImportReferenceView {
 	result := append([]CanvasImportReferenceView(nil), references...)
 	indexByCode := make(map[string]int, len(result)+len(tasks))
+	appliedTask := make(map[string]bool, len(result)+len(tasks))
 	for index, reference := range result {
 		indexByCode[normalizeCanvasImportReferenceCode(reference.Code)] = index
 	}
@@ -1416,25 +1446,28 @@ func mergeCanvasImportReferencesWithP2Tasks(references []CanvasImportReferenceVi
 				Code: code, AssetCode: code, TaskID: task.ID, Title: fallbackValue(task.Title, code),
 				Prompt: task.Prompt, Category: task.Category, Kind: "image",
 			})
+			appliedTask[key] = true
 			continue
 		}
 		current := &result[index]
 		if current.AssetCode == "" {
 			current.AssetCode = code
 		}
-		if task.ID != "" {
+		firstTask := !appliedTask[key]
+		if task.ID != "" && (firstTask || current.TaskID == "") {
 			current.TaskID = task.ID
 		}
-		if task.Title != "" {
+		if task.Title != "" && (firstTask || current.Title == "") {
 			current.Title = task.Title
 		}
-		if strings.TrimSpace(task.Prompt) != "" {
+		if strings.TrimSpace(task.Prompt) != "" && (firstTask || current.Prompt == "") {
 			current.Prompt = strings.TrimSpace(task.Prompt)
 		}
-		if task.Category != "" {
+		if task.Category != "" && (firstTask || current.Category == "") {
 			current.Category = task.Category
 		}
 		current.Kind = "image"
+		appliedTask[key] = true
 	}
 	sort.SliceStable(result, func(left, right int) bool {
 		return result[left].Code < result[right].Code

@@ -29,7 +29,11 @@ var (
 )
 
 func manjuProjectStateFailure(stageLabel string, err error) string {
-	return fmt.Sprintf("V7.4.26 %s 项目状态台账回写失败：%v。请检查模型是否按合同输出 MANJU_PROJECT_STATE_PATCH_JSON。", stageLabel, err)
+	return fmt.Sprintf(
+		"V7.4.26 %s 项目状态台账回写失败：%v。请按 V7.4.26 官方规则重新生成当前阶段工件。",
+		stageLabel,
+		err,
+	)
 }
 
 func initializeManjuProjectState(tx *repository.Repository, projectName string, receipt *model.ManjuLockReceipt, createdBy string) error {
@@ -209,7 +213,11 @@ func ensureManjuProjectState(tx *repository.Repository, projectID, projectName s
 }
 
 func commitManjuProjectStatePatchLegacy(tx *repository.Repository, projectID string, lockRevision int64, stageKey, artifactID, content, createdBy string, required bool) error {
-	patch, found, err := extractManjuProjectStatePatch(content)
+	state, err := ensureManjuProjectStateLegacy(tx, projectID, lockRevision, createdBy)
+	if err != nil {
+		return err
+	}
+	patch, found, err := resolveManjuProjectStatePatch(stageKey, content, state)
 	if err != nil {
 		return err
 	}
@@ -218,13 +226,6 @@ func commitManjuProjectStatePatchLegacy(tx *repository.Repository, projectID str
 			return fmt.Errorf("%w: %s 未输出 %s 回写块", ErrInvalidProjectState, stageKey, manjuProjectStatePatchStart)
 		}
 		return nil
-	}
-	if err := validateManjuProjectStatePatch(stageKey, patch); err != nil {
-		return err
-	}
-	state, err := ensureManjuProjectStateLegacy(tx, projectID, lockRevision, createdBy)
-	if err != nil {
-		return err
 	}
 	mergeManjuProjectState(state, patch, stageKey)
 	if err := validateCommittedManjuProjectState(stageKey, state); err != nil {
@@ -249,15 +250,12 @@ func previewManjuProjectStatePatch(
 	if snapshot == nil {
 		return "", ErrProjectStateUnavailable
 	}
-	patch, found, err := extractManjuProjectStatePatch(content)
+	patch, found, err := resolveManjuProjectStatePatch(stageKey, content, state)
 	if err != nil {
 		return "", err
 	}
 	if !found {
 		return "", fmt.Errorf("%w: %s 未输出 %s 回写块", ErrInvalidProjectState, stageKey, manjuProjectStatePatchStart)
-	}
-	if err := validateManjuProjectStatePatch(stageKey, patch); err != nil {
-		return "", err
 	}
 	mergeManjuProjectState(state, patch, stageKey)
 	if err := validateCommittedManjuProjectState(stageKey, state); err != nil {
@@ -303,13 +301,55 @@ func extractManjuProjectStatePatch(content string) (map[string]any, bool, error)
 	return patch, true, nil
 }
 
-func validateRequiredManjuProjectStatePatch(stageKey, content string) error {
+func resolveManjuProjectStatePatch(stageKey, content string, state map[string]any) (map[string]any, bool, error) {
 	patch, found, err := extractManjuProjectStatePatch(content)
+	if err != nil {
+		return nil, false, err
+	}
+	if !found && stageKey == "production:director_storyboard" && p3OfficialSegmentHeading.MatchString(content) {
+		patch, err = compileP3OfficialStoryboardState(content, state)
+		if err != nil {
+			return nil, false, err
+		}
+		found = len(anySlice(patch["segments"])) > 0
+	}
+	if !found && strings.HasPrefix(stageKey, "script:") {
+		patch, found, err = compileP1OfficialAnchorState(content, state)
+		if err != nil {
+			return nil, false, err
+		}
+	}
+	if !found && stageKey == "asset:asset_compile" {
+		patch, found, err = compileP2OfficialAssetState(content, state)
+		if err != nil {
+			return nil, false, err
+		}
+	}
+	if !found {
+		return nil, false, nil
+	}
+	if err := validateManjuProjectStatePatch(stageKey, patch); err != nil {
+		return nil, false, err
+	}
+	return patch, true, nil
+}
+
+func validateRequiredManjuProjectStatePatch(stageKey, content string) error {
+	patch, found, err := resolveManjuProjectStatePatch(stageKey, content, nil)
 	if err != nil {
 		return err
 	}
 	if !found {
-		return fmt.Errorf("%w: %s 未输出 %s 回写块", ErrInvalidProjectState, stageKey, manjuProjectStatePatchStart)
+		if stageKey == "production:director_storyboard" {
+			return fmt.Errorf(
+				"%w: 未识别到可编译的官方分镜结构；请按 V7.4.26 官方分镜与故事板规则重新生成当前 P3 工件",
+				ErrP3StoryboardContract,
+			)
+		}
+		return fmt.Errorf(
+			"%w: 未识别到可编译的 V7.4.26 官方阶段结构；请按官方规则重新生成当前阶段工件",
+			ErrInvalidProjectState,
+		)
 	}
 	if err := validateManjuProjectStatePatch(stageKey, patch); err != nil {
 		return err
@@ -346,6 +386,15 @@ func validateManjuProjectStatePatch(stageKey string, patch map[string]any) error
 		}
 		if !allowed[field] {
 			return fmt.Errorf("%w: %s 不允许回写字段 %s", ErrInvalidProjectState, stageKey, field)
+		}
+	}
+	if allowed["characters"] {
+		label := "P1"
+		if stageKey == "asset:asset_compile" {
+			label = "P2"
+		}
+		if err := validateManjuCharacterStates(label, anyMap(patch["characters"])); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -420,12 +469,8 @@ func validateCommittedManjuProjectState(stageKey string, state map[string]any) e
 		if len(anyMap(state["scenes"])) == 0 {
 			return fmt.Errorf("%w: P2 资产台账 scenes 不能为空", ErrInvalidProjectState)
 		}
-		for name, raw := range anyMap(state["characters"]) {
-			for stateKey, stateValue := range anyMap(anyMap(raw)["char_states"]) {
-				if _, ok := stateValue.(map[string]any); !ok {
-					return fmt.Errorf("%w: P2 角色 %s 的 char_states.%s 必须是对象", ErrInvalidProjectState, name, stateKey)
-				}
-			}
+		if err := validateManjuCharacterStates("P2", anyMap(state["characters"])); err != nil {
+			return err
 		}
 	case "production:director_storyboard":
 		segments := anySlice(state["segments"])
@@ -436,6 +481,34 @@ func validateCommittedManjuProjectState(stageKey string, state map[string]any) e
 			segment := anyMap(item)
 			if len(anySlice(segment["shots"])) == 0 {
 				return fmt.Errorf("%w: P3 台账第 %d 段缺少 shots", ErrInvalidProjectState, index+1)
+			}
+		}
+	}
+	return nil
+}
+
+func validateManjuCharacterStates(label string, characters map[string]any) error {
+	names := make([]string, 0, len(characters))
+	for name := range characters {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		states := anyMap(anyMap(characters[name])["char_states"])
+		stateKeys := make([]string, 0, len(states))
+		for stateKey := range states {
+			stateKeys = append(stateKeys, stateKey)
+		}
+		sort.Strings(stateKeys)
+		for _, stateKey := range stateKeys {
+			if _, ok := states[stateKey].(map[string]any); !ok {
+				return fmt.Errorf(
+					"%w: %s 角色 %s 的 char_states.%s 必须是对象（item/action/consequence），不得写成字符串摘要",
+					ErrInvalidProjectState,
+					label,
+					name,
+					stateKey,
+				)
 			}
 		}
 	}
@@ -454,73 +527,6 @@ func anySlice(value any) []any {
 		return result
 	}
 	return nil
-}
-
-func manjuAssetRefKeyCatalog(state map[string]any) string {
-	var out strings.Builder
-	out.WriteString("【asset_refs 精确键目录】\n")
-	out.WriteString("以下名称来自当前 project_state，asset_refs 必须逐字复制反引号内的键；不得改用 P2 工件标题、简称、别名或 `图N`。\n")
-	writeManjuAssetRefKeyGroup(&out, "characters", anyMap(state["characters"]))
-	writeManjuAssetRefKeyGroup(&out, "scenes", anyMap(state["scenes"]))
-	writeManjuAssetRefKeyGroup(&out, "props", anyMap(state["props"]))
-	return out.String()
-}
-
-func manjuAssetRefKeyCatalogFromAssetArtifacts(artifacts []model.ManjuAssetArtifact) string {
-	state := map[string]any{
-		"characters": map[string]any{},
-		"scenes":     map[string]any{},
-		"props":      map[string]any{},
-	}
-	for _, artifact := range artifacts {
-		patch, found, err := extractManjuProjectStatePatch(artifact.Content)
-		if err != nil || !found {
-			continue
-		}
-		for _, namespace := range []string{"characters", "scenes", "props"} {
-			source := anyMap(patch[namespace])
-			target := anyMap(state[namespace])
-			for key, value := range source {
-				target[key] = value
-			}
-			state[namespace] = target
-		}
-	}
-	if len(anyMap(state["characters"])) == 0 &&
-		len(anyMap(state["scenes"])) == 0 &&
-		len(anyMap(state["props"])) == 0 {
-		return ""
-	}
-	return manjuAssetRefKeyCatalog(state)
-}
-
-func writeManjuAssetRefKeyGroup(out *strings.Builder, namespace string, values map[string]any) {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		if strings.TrimSpace(key) != "" {
-			keys = append(keys, key)
-		}
-	}
-	sort.Strings(keys)
-	fmt.Fprintf(out, "- %s:", namespace)
-	if len(keys) == 0 {
-		out.WriteString(" 无\n")
-		return
-	}
-	out.WriteString("\n")
-	for _, key := range keys {
-		info := anyMap(values[key])
-		fmt.Fprintf(out, "  - `%s`（id=%s，fig_no=%s", key,
-			fallbackValue(anyString(info["id"]), "未标注"),
-			fallbackValue(anyString(info["fig_no"]), "未标注"))
-		if namespace == "characters" {
-			stateKeys := sortedAssetRefKeys(anyMap(info["char_states"]))
-			if len(stateKeys) > 0 {
-				fmt.Fprintf(out, "，char_states=%s", strings.Join(stateKeys, "、"))
-			}
-		}
-		out.WriteString("）\n")
-	}
 }
 
 func scriptProjectStateStageKey(stageKey string) string {
@@ -564,20 +570,12 @@ func projectStatePatchInstruction(stage string) string {
 		return `
 
 【VisiDeep AI 项目状态传输块】
-若当前官方阶段产物包含世界锚或角色锚，仅在 Markdown 末尾追加一个：
-<!-- MANJU_PROJECT_STATE_PATCH_JSON
-{"world_anchor":{"era_anchor":"","region":"","tech_level":"","forbidden_elements":[],"required_elements":[]},"characters":{"角色名":{"id":"CHR-01","fig_no":1,"age_anchor":"","body_anchor":"","look_3piece":"","voice_lock":"","business":"","break_trigger":"","address_map":{},"char_states":{}}}}
--->
-不得写入 locks 或 receipt；字段值必须来自当前官方阶段产物，不得另行发明。`
+平台会从当前阶段官方《世界锚卡》和《人物锚卡》原文自动提取内部台账。不要为本平台新增 JSON 块、额外字段或改标题。`
 	case "P2":
 		return `
 
 【VisiDeep AI 项目状态传输块】
-仅在 Markdown 末尾追加：
-<!-- MANJU_PROJECT_STATE_PATCH_JSON
-{"world_anchor":{"era_anchor":"","region":"","tech_level":"","forbidden_elements":[],"required_elements":[]},"characters":{"角色名":{"id":"CHR-01","fig_no":1,"age_anchor":"","body_anchor":"","look_3piece":"","voice_lock":"","business":"","break_trigger":"","address_map":{},"char_states":{}}},"scenes":{"场景名":{"id":"SCN-01","fig_no":2,"coords":"","set_states":{"default":""},"media_layer":"","lighting":""}},"props":{"道具名":{"id":"PRP-01","fig_no":3,"material_desc":""}}}
--->
-字段值必须逐项取自当前官方 P2 产物；props 无则给空对象，char_states 使用对象映射。不得写入 locks、receipt 或 segments。`
+平台会从当前阶段官方“图N”资产块自动提取内部台账。不要为本平台新增 JSON 块、额外资产编码或改标题。`
 	case "P3":
 		return p3ProjectStateInstruction()
 	default:

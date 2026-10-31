@@ -318,16 +318,31 @@ func TestP3RuntimePromptDoesNotDuplicateSharedBusinessContract(t *testing.T) {
 	stateInstruction := projectStatePatchInstruction("P3")
 	for _, required := range []string{
 		contract.ProjectState.StageKey,
-		"\"segments\"",
-		"\"shots\"",
-		"\"storyboard_panels\"",
+		"确定性编译",
+		"九个镜头字段",
+		"不得写入 locks 或 receipt",
 	} {
 		if !strings.Contains(stateInstruction, required) {
 			t.Fatalf("P3 state patch is missing contract value %q:\n%s", required, stateInstruction)
 		}
 	}
+	if strings.Contains(stateInstruction, "MANJU_PROJECT_STATE_PATCH_JSON") {
+		t.Fatalf("P3 state transport must not require a second model-authored JSON copy:\n%s", stateInstruction)
+	}
 	if strings.Contains(stateInstruction, contract.ProjectState.Instruction) {
 		t.Fatalf("P3 state transport block repeated business guidance:\n%s", stateInstruction)
+	}
+	for _, forbidden := range []string{
+		"### 段N",
+		"#### 镜头 K",
+		"平台不按段长÷镜数",
+		"逐镜倒推整数秒",
+		"单镜超过 6 秒",
+		"内容不足时总时长可以诚实变短",
+	} {
+		if strings.Contains(stateInstruction, forbidden) {
+			t.Fatalf("P3 transport block redefined official timing rule %q:\n%s", forbidden, stateInstruction)
+		}
 	}
 	if strings.Contains(instruction, "700 字符") || strings.Contains(instruction, "1200 字符") {
 		t.Fatalf("P3 contract must not invent fixed per-shot thresholds:\n%s", instruction)
@@ -355,7 +370,7 @@ func TestP3ContractRequiresSegmentAssetRefs(t *testing.T) {
 		"asset_refs",
 		"本段实际引用",
 		"不得填写项目全量资产",
-		"1 个场景",
+		"去重场景数",
 		"人物数",
 		"道具数",
 		"≤",
@@ -405,42 +420,6 @@ func TestPreviewCompiledFeedSegmentsReportsActualGateBody(t *testing.T) {
 	}
 	if segments[0].Characters == 0 || segments[0].SceneProps == 0 || segments[0].Shots == 0 {
 		t.Fatalf("breakdown must classify compiled fields: %+v", segments[0])
-	}
-}
-
-func TestManjuAssetRefKeyCatalogUsesExactProjectStateKeys(t *testing.T) {
-	state := map[string]any{
-		"characters": map[string]any{
-			"守城兵":    map[string]any{"id": "CHR-01", "fig_no": 8},
-			"城门守兵群像": map[string]any{"id": "CHR-02", "fig_no": 9},
-		},
-		"scenes": map[string]any{
-			"太原城门": map[string]any{"id": "SCN-01", "fig_no": 10},
-		},
-		"props": map[string]any{
-			"城门门闩": map[string]any{"id": "PRP-01", "fig_no": 11},
-		},
-	}
-	catalog := manjuAssetRefKeyCatalog(state)
-	for _, required := range []string{
-		"【asset_refs 精确键目录】",
-		"`守城兵`",
-		"`城门守兵群像`",
-		"`太原城门`",
-		"`城门门闩`",
-		"必须逐字复制",
-	} {
-		if !strings.Contains(catalog, required) {
-			t.Fatalf("精确键目录缺少 %q:\n%s", required, catalog)
-		}
-	}
-	artifactCatalog := manjuAssetRefKeyCatalogFromAssetArtifacts([]model.ManjuAssetArtifact{{
-		Content: "<!-- MANJU_PROJECT_STATE_PATCH_JSON\n" +
-			`{"characters":{"守城兵":{"id":"CHR-01","fig_no":8}},"scenes":{"太原城门":{"id":"SCN-01","fig_no":10}},"props":{}}` +
-			"\n-->",
-	}})
-	if !strings.Contains(artifactCatalog, "`守城兵`") || !strings.Contains(artifactCatalog, "`太原城门`") {
-		t.Fatalf("缺失 state 时必须从 P2 工件恢复精确键目录:\n%s", artifactCatalog)
 	}
 }
 

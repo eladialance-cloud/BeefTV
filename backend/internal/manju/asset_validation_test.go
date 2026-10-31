@@ -33,6 +33,24 @@ func TestAssetDeliveryRequiresModeDeclaration(t *testing.T) {
 	}
 }
 
+func TestAssetDeliveryAllowsOfficialSharedSceneFigure(t *testing.T) {
+	content := `> 素材形态：M1（编号占位）
+
+#### 图11 · 旧宅（场景母版）
+16:9 无人空镜。
+
+#### 图11 · 旧宅（场景九宫格）
+全图共 9 格。
+
+## 素材接线单
+| 图号 | 用途 | 只控制什么 | 不控制什么 |
+| 图11 | 场景母版 | 空间结构 | 人物动作 |
+| 图11-2 | 场景九宫格 | 机位与子区域 | 场景主体设计 |`
+	if err := validateAssetDelivery(AssetModeM1, content, nil); err != nil {
+		t.Fatalf("official shared scene figure must be grouped by the platform: %v", err)
+	}
+}
+
 func TestM2DeliveryRequiresAllRegisteredCodes(t *testing.T) {
 	err := validateAssetDelivery(
 		AssetModeM2,

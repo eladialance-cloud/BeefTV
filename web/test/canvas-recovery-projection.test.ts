@@ -103,6 +103,44 @@ describe("reconcileRecoveredCanvasNode", () => {
         });
     });
 
+    test("uses the local original node when the server recovery response omitted it", () => {
+        const original = node("original", {
+            title: "漫剧生成框",
+            position: { x: 720, y: 360 },
+            width: 420,
+            height: 747,
+            metadata: {
+                taskId: "task-1",
+                status: "loading",
+                manjuStage: "p4_videos",
+                manjuTaskId: "p4-segment-1",
+                manjuTaskCode: "段1",
+            },
+        });
+        const recovered = node("recovered", {
+            title: "视频恢复",
+            position: { x: 120, y: 120 },
+            width: 640,
+            height: 360,
+            metadata: { taskId: "task-1", status: "success", content: "/api/resources/generated/file" },
+        });
+
+        const reconciled = reconcileRecoveredCanvasNode(project([recovered]), "original", "recovered", undefined, original);
+
+        expect(reconciled.nodes[0]).toMatchObject({
+            id: "recovered",
+            title: "漫剧生成框",
+            position: { x: 720, y: 360 },
+            width: 420,
+            height: 747,
+            metadata: {
+                manjuStage: "p4_videos",
+                manjuTaskId: "p4-segment-1",
+                manjuTaskCode: "段1",
+            },
+        });
+    });
+
     test("remaps asset-table rows and generation batches to the recovered node", () => {
         const stale = node("stale", { metadata: { taskId: "task-1", status: "error" } });
         const recovered = node("recovered", { metadata: { taskId: "task-1", status: "success", content: "/api/resources/generated/file" } });

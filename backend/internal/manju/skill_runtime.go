@@ -78,6 +78,15 @@ var defaultManjuSkillRuntime = &ManjuSkillRuntime{}
 
 func (r *ManjuSkillRuntime) ensureRoot() (string, error) {
 	r.once.Do(func() {
+		// Override layer: an external directory wins over the embedded skill so
+		// operators can edit rule files online (the admin portal writes here)
+		// without recompiling. Default behavior is unchanged when the env is unset.
+		if dir := os.Getenv("MANJU_SKILL_OVERRIDE"); dir != "" {
+			if info, statErr := os.Stat(dir); statErr == nil && info.IsDir() {
+				r.root = dir
+				return
+			}
+		}
 		source, err := fs.Sub(embeddedManjuSkill, "skilldata/v7.4.26")
 		if err != nil {
 			r.err = err
@@ -123,6 +132,148 @@ func (r *ManjuSkillRuntime) ensureRoot() (string, error) {
 		return "", r.err
 	}
 	return r.root, nil
+}
+
+// SeedOverrideDir copies the embedded skill tree into dir so operators can edit
+// rule files there. Pair it with MANJU_SKILL_OVERRIDE=dir to activate the
+// override layer. Existing files are skipped to avoid clobbering local edits.
+func SeedOverrideDir(dir string) error {
+	if strings.TrimSpace(dir) == "" {
+		return errors.New("override dir is empty")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	source, err := fs.Sub(embeddedManjuSkill, "skilldata/v7.4.26")
+	if err != nil {
+		return err
+	}
+	return fs.WalkDir(source, ".", func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == "." {
+			return nil
+		}
+		target := filepath.Join(dir, filepath.FromSlash(path))
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		if _, statErr := os.Stat(target); statErr == nil {
+			return nil // keep existing local edit
+		}
+		data, readErr := fs.ReadFile(source, path)
+		if readErr != nil {
+			return readErr
+		}
+		if mkdirErr := os.MkdirAll(filepath.Dir(target), 0o755); mkdirErr != nil {
+			return mkdirErr
+		}
+		mode := fs.FileMode(0o644)
+		if strings.HasSuffix(strings.ToLower(path), ".py") || strings.HasSuffix(strings.ToLower(path), ".sh") {
+			mode = 0o755
+		}
+		return os.WriteFile(target, data, mode)
+	})
+}
+
+// DefaultSkillRuntime returns the process-wide skill runtime.
+func DefaultSkillRuntime() *ManjuSkillRuntime { return defaultManjuSkillRuntime }
+
+// SkillOverrideDir returns the configured rule override directory, or "" when
+// the embedded skill is active (read-only mode).
+func SkillOverrideDir() string { return os.Getenv("MANJU_SKILL_OVERRIDE") }
+
+// sanitizeSkillRelPath rejects absolute paths and traversal outside the skill
+// root, returning the cleaned slash-normalized relative path.
+func sanitizeSkillRelPath(relPath string) (string, error) {
+	clean := filepath.Clean(filepath.FromSlash(strings.TrimSpace(relPath)))
+	if clean == "." || clean == string(filepath.Separator) {
+		return "", errors.New("skill file path is empty")
+	}
+	if filepath.IsAbs(clean) || strings.HasPrefix(clean, "..") {
+		return "", errors.New("skill file path escapes the skill root")
+	}
+	return filepath.ToSlash(clean), nil
+}
+
+// ReadSkillFile returns the bytes of a skill file at relPath (slash-separated,
+// relative to the skill root). It resolves through the active root, so the
+// override directory wins when MANJU_SKILL_OVERRIDE is configured.
+func (r *ManjuSkillRuntime) ReadSkillFile(relPath string) ([]byte, error) {
+	rel, err := sanitizeSkillRelPath(relPath)
+	if err != nil {
+		return nil, err
+	}
+	root, err := r.ensureRoot()
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+}
+
+// ActiveSkillFiles lists the rule files actually served at runtime: the
+// override directory tree when configured, otherwise the embedded manifest.
+func (r *ManjuSkillRuntime) ActiveSkillFiles() ([]string, error) {
+	if dir := SkillOverrideDir(); dir != "" {
+		if info, statErr := os.Stat(dir); statErr == nil && info.IsDir() {
+			var files []string
+			walkErr := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if d.IsDir() {
+					return nil
+				}
+				rel, relErr := filepath.Rel(dir, p)
+				if relErr != nil {
+					return relErr
+				}
+				files = append(files, filepath.ToSlash(rel))
+				return nil
+			})
+			if walkErr != nil {
+				return nil, walkErr
+			}
+			sort.Strings(files)
+			return files, nil
+		}
+	}
+	return r.EmbeddedFiles()
+}
+
+// SkillFileOverridden reports whether relPath has been overridden in the
+// override directory.
+func SkillFileOverridden(relPath string) bool {
+	dir := SkillOverrideDir()
+	if dir == "" {
+		return false
+	}
+	rel, err := sanitizeSkillRelPath(relPath)
+	if err != nil {
+		return false
+	}
+	_, statErr := os.Stat(filepath.Join(dir, filepath.FromSlash(rel)))
+	return statErr == nil
+}
+
+// WriteSkillOverride writes content to the override directory so the change is
+// served on the next runtime read. It errors when MANJU_SKILL_OVERRIDE is not
+// configured (embedded read-only mode).
+func WriteSkillOverride(relPath string, content []byte) error {
+	dir := SkillOverrideDir()
+	if strings.TrimSpace(dir) == "" {
+		return errors.New("MANJU_SKILL_OVERRIDE 未配置，规则文件处于只读模式；请先配置覆盖目录并执行 SeedOverrideDir")
+	}
+	rel, err := sanitizeSkillRelPath(relPath)
+	if err != nil {
+		return err
+	}
+	target := filepath.Join(dir, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(target, content, 0o644)
 }
 
 func (r *ManjuSkillRuntime) EmbeddedFiles() ([]string, error) {
@@ -311,17 +462,8 @@ func validP4GateOutput(output string) bool {
 }
 
 func (r *ManjuSkillRuntime) ValidateAssetBlocks(content string) (ManjuSkillValidationResult, error) {
-	contract, err := loadAssetBlockContract()
-	if err != nil {
+	if _, err := loadAssetBlockContract(); err != nil {
 		return ManjuSkillValidationResult{}, err
-	}
-	if err := contract.validateHeadingStructure(content); err != nil {
-		message := err.Error()
-		return ManjuSkillValidationResult{
-			ExitCode: 1,
-			Output:   message,
-			Issues:   []string{message},
-		}, nil
 	}
 	tempFile, cleanup, err := writeManjuSkillTemp("p2-assets-*.md", content)
 	if err != nil {
@@ -462,38 +604,54 @@ func (r *ManjuSkillRuntime) runDialogueDiff(scriptPath, feedPath, upstreamScript
 func dialogueNamesFromScript(script string) []string {
 	seen := map[string]bool{}
 	names := make([]string, 0, 4)
+	dialogueLines := make([]string, 0)
 	for _, rawLine := range strings.Split(script, "\n") {
 		line := strings.TrimSpace(rawLine)
-		hadDialoguePrefix := strings.HasPrefix(line, "台词：")
-		line = strings.TrimPrefix(line, "台词：")
-		for {
-			index := strings.IndexAny(line, "：:")
-			if index <= 0 {
-				break
+		if strings.HasPrefix(line, "台词：") {
+			dialogueLines = append(dialogueLines, strings.TrimPrefix(line, "台词："))
+		}
+	}
+	if len(dialogueLines) > 0 {
+		for _, payload := range dialogueLines {
+			for _, part := range strings.Split(payload, " / ") {
+				addDialogueName(part, seen, &names)
 			}
-			name := strings.TrimSpace(line[:index])
-			if pause := strings.IndexAny(name, "（("); pause >= 0 {
-				name = strings.TrimSpace(name[:pause])
-			}
-			if hadDialoguePrefix && name == "无" {
-				if strings.HasPrefix(line[index:], "：") {
-					line = strings.TrimSpace(line[index+len("："):])
-				} else {
-					line = strings.TrimSpace(line[index+1:])
-				}
-				continue
-			}
-			if name != "" && name != "无" && !dialogueScriptFieldLabel(name) {
-				if !seen[name] {
-					seen[name] = true
-					names = append(names, name)
-				}
-			}
-			break
+		}
+	} else {
+		for _, rawLine := range strings.Split(script, "\n") {
+			addDialogueName(strings.TrimSpace(rawLine), seen, &names)
 		}
 	}
 	sort.Strings(names)
 	return names
+}
+
+func addDialogueName(value string, seen map[string]bool, names *[]string) {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "无" {
+		return
+	}
+	index := strings.IndexAny(value, "：:")
+	if index <= 0 {
+		return
+	}
+	name := strings.TrimSpace(value[:index])
+	if pause := strings.IndexAny(name, "（("); pause >= 0 {
+		name = strings.TrimSpace(name[:pause])
+	}
+	if name == "无" {
+		remainder := index + 1
+		if strings.HasPrefix(value[index:], "：") {
+			remainder = index + len("：")
+		}
+		addDialogueName(strings.TrimSpace(value[remainder:]), seen, names)
+		return
+	}
+	if name == "" || dialogueScriptFieldLabel(name) || seen[name] {
+		return
+	}
+	seen[name] = true
+	*names = append(*names, name)
 }
 
 func dialogueScriptFieldLabel(name string) bool {
@@ -855,6 +1013,9 @@ func (r *ManjuSkillRuntime) SelfTest() error {
 }
 
 func (r *ManjuSkillRuntime) runPython(relativeScript string, args []string, timeout time.Duration) (string, int, error) {
+	if err := gateManjuSkillPath(relativeScript); err != nil {
+		return "", -1, err
+	}
 	root, err := r.ensureRoot()
 	if err != nil {
 		return "", -1, err

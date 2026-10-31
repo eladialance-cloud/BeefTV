@@ -69,6 +69,29 @@ func TestMergeCanvasImportReferencesWithP2TasksRestoresPromptsAndMissingRows(t *
 	}
 }
 
+func TestMergeCanvasImportReferencesWithP2TasksKeepsMasterForSharedAssetCode(t *testing.T) {
+	tasks := []CanvasPackageTask{
+		{
+			ID: "p2-scene-master", Code: "图1", AssetCode: "SCN-旧宅",
+			Title: "旧宅场景母版", Prompt: "母版完整提示词", Category: "environment",
+		},
+		{
+			ID: "p2-scene-grid", Code: "图1-2", AssetCode: "SCN-旧宅",
+			Title: "旧宅场景九宫格", Prompt: "九宫格完整提示词", Category: "environment",
+		},
+	}
+
+	merged := mergeCanvasImportReferencesWithP2Tasks(nil, tasks)
+	if len(merged) != 1 {
+		t.Fatalf("merged references = %#v", merged)
+	}
+	if merged[0].TaskID != "p2-scene-master" ||
+		merged[0].Title != "旧宅场景母版" ||
+		merged[0].Prompt != "母版完整提示词" {
+		t.Fatalf("the first canonical variant must remain the P3 scene reference: %#v", merged[0])
+	}
+}
+
 func TestCanvasImportReferencesKeepsAssetIDForBoundMedia(t *testing.T) {
 	payload := `{
 		"nodes": [{

@@ -119,3 +119,44 @@ func TestManualP3CorrectionCreatesAwaitingArtifactAndAudit(t *testing.T) {
 		t.Fatalf("人工修正必须保存审计记录: %+v", corrections)
 	}
 }
+
+func TestManualP0BCorrectionCreatesAwaitingArtifact(t *testing.T) {
+	f := newFixture(t)
+	assetRunID := prepareCompletedProductionAsset(t, f, "M1")
+	run, err := f.service.CreateProductionRun(f.ownerID, f.projectID, manju.ProductionRunInput{AssetRunID: assetRunID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision := findProductionStage(t, run, manju.ProductionStageDecisionAnchor)
+	initialVersion := decision.Version
+	if err := f.db.Model(&model.ManjuProductionStage{}).
+		Where("id = ?", decision.ID).
+		Updates(map[string]any{
+			"status":      model.ManjuProductionStageStatusBlocked,
+			"artifact_id": "",
+			"error":       "P0B 表格契约失败",
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	detail, err := f.service.ManualCorrectProductionArtifact(
+		f.ownerID,
+		f.projectID,
+		run.Run.ID,
+		manju.ProductionStageDecisionAnchor,
+		manju.ManualArtifactCorrectionInput{
+			Content: validP0BArtifact(),
+			Note:    "人工修正 P0B 表格",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage := findProductionStage(t, detail, manju.ProductionStageDecisionAnchor)
+	if stage.Status != model.ManjuProductionStageStatusAwaitingConfirmation ||
+		stage.ArtifactID == "" ||
+		stage.Error != "" ||
+		stage.Version != initialVersion+1 {
+		t.Fatalf("P0B manual correction must create an awaiting artifact: %+v", stage)
+	}
+}

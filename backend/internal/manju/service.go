@@ -707,7 +707,7 @@ func normalizeLock(input LockInput) (LockSnapshot, error) {
 		snapshot.StyleGrade = "C"
 		snapshot.StyleCatalogVersion = StyleCatalogVersion
 	} else {
-		card, ok := styleCardByID[snapshot.StyleCardID]
+		card, ok := getStyleCardByID(snapshot.StyleCardID)
 		if !ok || !card.SupportsStyleBase(snapshot.StyleBase) {
 			return LockSnapshot{}, ErrInvalidLock
 		}

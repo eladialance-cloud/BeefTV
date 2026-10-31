@@ -1012,19 +1012,40 @@ func TestRuntimeStageInstructionsDoNotDuplicateOfficialBusinessRules(t *testing.
 	}
 	stateInstruction := projectStatePatchInstruction("P3")
 	for _, required := range []string{
-		"MANJU_PROJECT_STATE_PATCH_JSON",
-		`"segments"`,
-		`"start"`,
-		`"end"`,
+		"九个镜头字段",
+		"确定性编译",
 		"不得写入 locks 或 receipt",
 	} {
 		if !strings.Contains(stateInstruction, required) {
 			t.Fatalf("P3 状态回写合同缺少 %q:\n%s", required, stateInstruction)
 		}
 	}
+	if strings.Contains(stateInstruction, "MANJU_PROJECT_STATE_PATCH_JSON") {
+		t.Fatalf("P3 transport must not require a second model-authored JSON copy:\n%s", stateInstruction)
+	}
+	for _, forbidden := range []string{"### 段N", "#### 镜头 K"} {
+		if strings.Contains(stateInstruction, forbidden) {
+			t.Fatalf("P3 transport must not require platform-only heading %q:\n%s", forbidden, stateInstruction)
+		}
+	}
 	for _, forbidden := range []string{"默认 C 导演轨纯净版", "先执行 7 步压缩", "Seedance 2.5 ≤2600 字符"} {
 		if strings.Contains(stateInstruction, forbidden) {
 			t.Fatalf("project_state transport contract must not repeat business rule %q:\n%s", forbidden, stateInstruction)
+		}
+	}
+}
+
+func TestDecisionAnchorStageInstructionDoesNotInjectPlatformContractSummary(t *testing.T) {
+	instruction := productionStageInstruction(ProductionStageDecisionAnchor, AssetModeM1Value)
+	for _, forbidden := range []string{
+		"## 情绪锚点表",
+		"## 构图雷区白名单",
+		"【大分镜 #B01 · 情绪锚点表】",
+		"A 类必须固定输出 A1-A7",
+		"B 类必须固定输出",
+	} {
+		if strings.Contains(instruction, forbidden) {
+			t.Fatalf("P0B runtime instruction must rely on official StageContext, found platform summary %q:\n%s", forbidden, instruction)
 		}
 	}
 }
@@ -1077,7 +1098,8 @@ func TestV7426ProjectStatePatchContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	message := manjuProjectStateFailure("P2 资产交付", ErrInvalidProjectState)
-	if !strings.Contains(message, "项目状态台账回写失败") || !strings.Contains(message, "MANJU_PROJECT_STATE_PATCH_JSON") {
+	if !strings.Contains(message, "项目状态台账回写失败") ||
+		!strings.Contains(message, "按 V7.4.26 官方规则重新生成") {
 		t.Fatalf("状态台账失败信息不明确: %s", message)
 	}
 	if _, _, err := extractManjuProjectStatePatch("<!-- MANJU_PROJECT_STATE_PATCH_JSON\n{}"); err == nil {

@@ -943,6 +943,24 @@ func (s *Service) runOfficialProductionFeedCompiler(actorID, projectID, runID st
 				upstreamArtifactID,
 			)
 		}
+		if p3OfficialSegmentHeading.MatchString(upstreamScript) {
+			derived, err := compileP3OfficialStoryboardState(upstreamScript, state)
+			if err != nil {
+				return err
+			}
+			oldSegments, _ := json.Marshal(state["segments"])
+			newSegments, _ := json.Marshal(derived["segments"])
+			if string(oldSegments) != string(newSegments) {
+				state["segments"] = derived["segments"]
+				if err := persistManjuProjectState(
+					tx, projectID, run.LockRevision,
+					"production:director_storyboard", upstreamArtifactID,
+					state, actorID,
+				); err != nil {
+					return err
+				}
+			}
+		}
 		view, err := receiptView(*receipt)
 		if err != nil {
 			return err
@@ -1049,9 +1067,13 @@ func (s *Service) runOfficialProductionFeedCompiler(actorID, projectID, runID st
 		stage.Status = model.ManjuProductionStageStatusAwaitingConfirmation
 		stage.TaskID = ""
 		stage.Error = ""
+		allWarnings := productionMachineCheckWarnings(validation)
 		machineCheckNote := "V7.4.26 compile_feed.py、validate_prompt.py、gate_check.py 与 script_feed_diff.py 已通过。"
-		if len(validation.DialogueWarnings) > 0 {
-			machineCheckNote = "V7.4.26 P4 硬门已通过；台词完整性存在需人工核对的部分覆盖警告。"
+		if len(allWarnings) > 0 {
+			machineCheckNote = fmt.Sprintf(
+				"V7.4.26 P4 硬门已通过，但仍有 %d 条官方规则或台词完整性警告；必须人工核对后才可视为严格合规。",
+				len(allWarnings),
+			)
 		}
 		proof := &ManjuProductionMachineCheckProof{
 			Version:                    ManjuProductionMachineCheckProofVersion,
@@ -1062,7 +1084,7 @@ func (s *Service) runOfficialProductionFeedCompiler(actorID, projectID, runID st
 			DialogueDiff:               ManjuProductionMachineCheckDialogueDiff,
 			DialogueBaselineArtifactID: upstreamArtifactID,
 			Status:                     model.ManjuProductionMachineCheckStatusPass,
-			Warnings:                   append([]string{}, validation.DialogueWarnings...),
+			Warnings:                   allWarnings,
 		}
 		runtimeMeta, err := json.Marshal(productionStageRuntimeMetadata{
 			MachineCheckProof: proof,
@@ -1082,6 +1104,20 @@ func (s *Service) runOfficialProductionFeedCompiler(actorID, projectID, runID st
 		return nil, err
 	}
 	return s.ProductionRunDetail(actorID, projectID, runID)
+}
+
+func productionMachineCheckWarnings(validation ManjuSkillValidationResult) []string {
+	result := make([]string, 0, len(validation.Warnings)+len(validation.DialogueWarnings))
+	seen := make(map[string]bool, cap(result))
+	for _, warning := range append(append([]string{}, validation.Warnings...), validation.DialogueWarnings...) {
+		warning = strings.TrimSpace(warning)
+		if warning == "" || seen[warning] {
+			continue
+		}
+		seen[warning] = true
+		result = append(result, warning)
+	}
+	return result
 }
 
 func (s *Service) GenerateProductionPrevis(actorID, projectID, runID string) (*ProductionRunDetail, error) {
@@ -1666,19 +1702,7 @@ func (s *Service) RunProductionStage(actorID, projectID, runID, stageKey string,
 			return err
 		}
 		skillContext := ruleBundle.Content
-		assetRefKeyCatalog := ""
-		if stage.Key == ProductionStageStoryboard {
-			state, snapshot, err := latestManjuProjectStateMap(tx, projectID, run.LockRevision)
-			if err != nil {
-				return err
-			}
-			if snapshot != nil {
-				assetRefKeyCatalog = manjuAssetRefKeyCatalog(state)
-			} else {
-				assetRefKeyCatalog = manjuAssetRefKeyCatalogFromAssetArtifacts(assetArtifacts)
-			}
-		}
-		prompt := buildProductionStagePrompt(access.Project.Name, *run, *stage, *assetRun, receipt, scriptArtifacts, assetArtifacts, productionArtifacts, productionImages, productionVideos, assetRefKeyCatalog, input.Instruction, skillContext)
+		prompt := buildProductionStagePrompt(access.Project.Name, *run, *stage, *assetRun, receipt, scriptArtifacts, assetArtifacts, productionArtifacts, productionImages, productionVideos, input.Instruction, skillContext)
 		operationKey = fmt.Sprintf("manju:production:%s:%s:v%d", run.ID, stage.Key, stage.Version+1)
 		ruleSnapshot, err := s.ensureManjuRuleSnapshot(tx, projectID, run.LockRevision, actorID)
 		if err != nil {
@@ -2460,7 +2484,7 @@ func productionArtifactContent(tx *repository.Repository, runID, artifactID stri
 	return "", ErrProductionStageNotReady
 }
 
-func buildProductionStagePrompt(projectName string, run model.ManjuProductionRun, stage model.ManjuProductionStage, assetRun model.ManjuAssetRun, receipt *model.ManjuLockReceipt, scriptArtifacts []model.ManjuScriptArtifact, assetArtifacts []model.ManjuAssetArtifact, productionArtifacts []model.ManjuProductionArtifact, productionImages []model.ManjuProductionImage, productionVideos []model.ManjuProductionVideo, assetRefKeyCatalog, instruction, skillContext string) string {
+func buildProductionStagePrompt(projectName string, run model.ManjuProductionRun, stage model.ManjuProductionStage, assetRun model.ManjuAssetRun, receipt *model.ManjuLockReceipt, scriptArtifacts []model.ManjuScriptArtifact, assetArtifacts []model.ManjuAssetArtifact, productionArtifacts []model.ManjuProductionArtifact, productionImages []model.ManjuProductionImage, productionVideos []model.ManjuProductionVideo, instruction, skillContext string) string {
 	var out strings.Builder
 	out.WriteString("你是 VisiDeep AI 漫剧工作室的 P0B-P5 生产执行器，严格遵循漫剧老李 AIGC 全流程 V7.4.26。\n")
 	out.WriteString("只输出本阶段 Markdown 成果，不输出思考过程。不得伪造人工确认、PASS、成片、图片或视频生成结果。\n")
@@ -2528,16 +2552,9 @@ func buildProductionStagePrompt(projectName string, run model.ManjuProductionRun
 	if instruction != "" {
 		fmt.Fprintf(&out, "【本次用户补充】\n%s\n\n", instruction)
 	}
-	if stage.Key == ProductionStageStoryboard && strings.TrimSpace(assetRefKeyCatalog) != "" {
-		out.WriteString(assetRefKeyCatalog)
-		out.WriteString("\n")
-	}
 	appendManjuSkillContext(&out, skillContext)
 	out.WriteString("\n\n【VisiDeep AI 运行接口】\n")
 	out.WriteString(productionStageInstruction(stage.Key, assetRun.AssetMode))
-	if stage.Key == ProductionStageStoryboard {
-		out.WriteString(projectStatePatchInstruction("P3"))
-	}
 	return out.String()
 }
 
@@ -2546,10 +2563,7 @@ func productionStageInstruction(stageKey, assetMode string) string {
 }
 
 func productionStageInstructionWithLensRange(stageKey, assetMode string, lensRange *styleLensRange) string {
-	if stageKey == ProductionStageDecisionAnchor {
-		return p0bDecisionPrompt()
-	}
-	_, _ = assetMode, lensRange
+	_, _, _ = stageKey, assetMode, lensRange
 	return "运行接口：严格按上方官方总控和强制读取原文执行当前阶段。只输出当前阶段官方规定的 Markdown 工件；不要输出规则复述、思考过程、流程回执或机检说明。"
 }
 

@@ -121,7 +121,6 @@ func TestBuildProductionStagePromptDoesNotTruncateLockedArtifacts(t *testing.T) 
 		nil,
 		"",
 		"",
-		"",
 	)
 	for _, marker := range []string{assetTail, productionTail} {
 		if !strings.Contains(prompt, marker) {

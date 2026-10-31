@@ -111,6 +111,9 @@ func (r *ManjuSkillRuntime) ReadOfficialRuleFile(rel string) (*OfficialRuleFile,
 	if !allowed {
 		return nil, fmt.Errorf("官方规则文件不在只读清单中: %s", rel)
 	}
+	if err := gateManjuSkillPath(clean); err != nil {
+		return nil, err
+	}
 	root, err := r.ensureRoot()
 	if err != nil {
 		return nil, err
@@ -380,6 +383,9 @@ func mergeOfficialRulePaths(existing, additions []string) []string {
 func (r *ManjuSkillRuntime) officialRuleFiles(root string, paths []string) ([]OfficialRuleFile, error) {
 	files := make([]OfficialRuleFile, 0, len(paths))
 	for _, rel := range paths {
+		if err := gateManjuSkillPath(rel); err != nil {
+			return nil, err
+		}
 		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
 		if err != nil {
 			return nil, fmt.Errorf("读取官方总控指定规则 %s 失败: %w", rel, err)

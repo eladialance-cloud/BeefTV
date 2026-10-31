@@ -1179,9 +1179,6 @@ func buildScriptStagePrompt(projectName string, run model.ManjuScriptRun, stage 
 	appendManjuSkillContext(&out, skillContext)
 	out.WriteString("\n\n【VisiDeep AI 运行接口】\n")
 	out.WriteString(scriptStageInstruction(stage.Key))
-	if scriptProjectStateStageKey(stage.Key) != "" {
-		out.WriteString(projectStatePatchInstruction("P1"))
-	}
 	return out.String()
 }
 
@@ -1289,11 +1286,36 @@ func (s *Service) reconcileScriptStageTasks(actorID, projectID, runID string) (a
 				}
 			case model.TaskStatusSucceeded:
 				if strings.TrimSpace(stage.ArtifactID) != "" {
-					artifactTaskID, err := scriptArtifactTaskID(tx, runID, stage.ArtifactID)
+					artifact, err := scriptArtifactByID(tx, runID, stage.ArtifactID)
 					if err != nil {
 						return err
 					}
-					if artifactTaskID == task.ID {
+					if artifact != nil && artifact.TaskID == task.ID {
+						if stage.Key == ScriptStageRoundtableReview {
+							if stage.StartedAt != nil && artifact.CreatedAt.Before(*stage.StartedAt) {
+								stage.Status = model.ManjuScriptStageStatusInProgress
+								stage.TaskID = ""
+								stage.ArtifactID = ""
+								stage.Error = "旧审核工件属于上一版剧本，请重新执行五席圆桌审核"
+								stage.ConfirmedBy = ""
+								stage.ConfirmedAt = nil
+								stage.CompletedAt = nil
+								if err := tx.SaveManjuScriptStage(stage); err != nil {
+									return err
+								}
+								continue
+							}
+							completedAt := artifact.CreatedAt
+							if task.CompletedAt != nil && task.CompletedAt.After(completedAt) {
+								completedAt = *task.CompletedAt
+							}
+							stage.Status = model.ManjuScriptStageStatusAwaitingDecision
+							stage.CompletedAt = &completedAt
+							stage.Error = ""
+							if err := tx.SaveManjuScriptStage(stage); err != nil {
+								return err
+							}
+						}
 						continue
 					}
 				}
@@ -2040,6 +2062,12 @@ func activateNextScriptStage(tx *repository.Repository, run *model.ManjuScriptRu
 			stages[index].Status = model.ManjuScriptStageStatusInProgress
 			stages[index].StartedAt = &now
 			stages[index].Error = ""
+			stages[index].TaskID = ""
+			stages[index].ArtifactID = ""
+			stages[index].InputJSON = ""
+			stages[index].ConfirmedBy = ""
+			stages[index].ConfirmedAt = nil
+			stages[index].CompletedAt = nil
 			if err := tx.SaveManjuScriptStage(&stages[index]); err != nil {
 				return "", err
 			}

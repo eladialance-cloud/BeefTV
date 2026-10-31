@@ -493,8 +493,8 @@ func (s *Service) ManualCorrectProductionArtifact(
 	if input.Content == "" {
 		return nil, fmt.Errorf("%w: 修正正文不能为空", ErrProductionArtifactInvalid)
 	}
-	if stageKey != ProductionStageStoryboard {
-		return nil, fmt.Errorf("%w: 当前只允许人工修正 P3；P4 编译错误请回 P3 修正", ErrProductionStageNotReady)
+	if stageKey != ProductionStageDecisionAnchor && stageKey != ProductionStageStoryboard {
+		return nil, fmt.Errorf("%w: 当前只允许人工修正 P0B 或 P3；P4 编译错误请回 P3 修正", ErrProductionStageNotReady)
 	}
 
 	err := s.repo.Transaction(func(tx *repository.Repository) error {
@@ -543,17 +543,24 @@ func (s *Service) ManualCorrectProductionArtifact(
 		if receipt == nil || receipt.Status != model.ManjuLockStatusLocked || receipt.Revision != run.LockRevision {
 			return ErrProductionStageNotReady
 		}
-		if err := validateRequiredManjuProjectStatePatch("production:director_storyboard", input.Content); err != nil {
-			return err
+		switch stageKey {
+		case ProductionStageDecisionAnchor:
+			if err := validateP0BDecisionArtifact(input.Content); err != nil {
+				return err
+			}
+		case ProductionStageStoryboard:
+			if err := validateRequiredManjuProjectStatePatch("production:director_storyboard", input.Content); err != nil {
+				return err
+			}
+			candidateStateJSON, err := previewManjuProjectStatePatch(
+				tx, projectID, access.Project.Name, run.LockRevision,
+				"production:director_storyboard", input.Content, actorID,
+			)
+			if err != nil {
+				return err
+			}
+			_ = candidateStateJSON
 		}
-		candidateStateJSON, err := previewManjuProjectStatePatch(
-			tx, projectID, access.Project.Name, run.LockRevision,
-			"production:director_storyboard", input.Content, actorID,
-		)
-		if err != nil {
-			return err
-		}
-		_ = candidateStateJSON
 		return nil
 	})
 	if err != nil {
@@ -609,10 +616,18 @@ func (s *Service) ManualCorrectProductionArtifact(
 			return err
 		}
 		phase := "P3"
-		if stageKey == ProductionStageFeed {
+		draftPhase := "P3"
+		downstreamMessage := "上游 P3 工件经人工修正，等待重新生成"
+		if stageKey == ProductionStageDecisionAnchor {
+			phase = "P0B"
+			draftPhase = "P0B"
+			downstreamMessage = "上游 P0B 工件经人工修正，等待重新生成"
+		} else if stageKey == ProductionStageFeed {
 			phase = "P4"
+			draftPhase = "P4"
 		} else if stageKey == ProductionStageQC {
 			phase = "P5"
+			draftPhase = "P5"
 		}
 		if err := recordManjuArtifactAudit(
 			tx, projectID, runID, target.ID, artifact.ID, phase, artifact.Kind,
@@ -622,7 +637,7 @@ func (s *Service) ManualCorrectProductionArtifact(
 		}
 		sourceArtifactID := target.ArtifactID
 		draft, err := createPassedManualDraft(
-			tx, actorID, projectID, "P3", runID, target.ID, input.Content, validation,
+			tx, actorID, projectID, draftPhase, runID, target.ID, input.Content, validation,
 		)
 		if err != nil {
 			return err
@@ -642,7 +657,7 @@ func (s *Service) ManualCorrectProductionArtifact(
 			downstream.Status = model.ManjuProductionStageStatusNotStarted
 			downstream.TaskID = ""
 			downstream.ArtifactID = ""
-			downstream.Error = "上游 P3 工件经人工修正，等待重新生成"
+			downstream.Error = downstreamMessage
 			downstream.ConfirmedBy = ""
 			downstream.ConfirmedAt = nil
 			downstream.CompletedAt = nil
@@ -650,15 +665,17 @@ func (s *Service) ManualCorrectProductionArtifact(
 				return err
 			}
 		}
-		previs, err := tx.ManjuProductionPrevis(projectID, runID)
-		if err != nil {
-			return err
-		}
-		if previs != nil {
-			previs.Status = model.ManjuProductionPrevisStatusFailed
-			previs.Error = "P3 工件经人工修正，请重新生成 P4.5"
-			if err := tx.SaveManjuProductionPrevis(previs); err != nil {
+		if stageKey == ProductionStageStoryboard {
+			previs, err := tx.ManjuProductionPrevis(projectID, runID)
+			if err != nil {
 				return err
+			}
+			if previs != nil {
+				previs.Status = model.ManjuProductionPrevisStatusFailed
+				previs.Error = "P3 工件经人工修正，请重新生成 P4.5"
+				if err := tx.SaveManjuProductionPrevis(previs); err != nil {
+					return err
+				}
 			}
 		}
 		run.CurrentStage = stageKey
@@ -666,7 +683,7 @@ func (s *Service) ManualCorrectProductionArtifact(
 			return err
 		}
 		return createManualCorrectionAudit(
-			tx, actorID, projectID, "P3", runID, target.ID,
+			tx, actorID, projectID, phase, runID, target.ID,
 			sourceArtifactID, artifact.ID, draft.ID, artifact.ContentHash,
 			validation, input.Note, now,
 		)

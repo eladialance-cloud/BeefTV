@@ -751,6 +751,22 @@ func TestRoundtableRefineMaterializesExactlyOneNewScriptVersion(t *testing.T) {
 	if artifact.Version != 2 || !strings.Contains(artifact.Content, "林澈停在门内") {
 		t.Fatalf("new script artifact must be v2, got %+v", artifact)
 	}
+	if _, err := f.service.ConfirmScriptStage(
+		f.ownerID, f.projectID, run.Run.ID, manju.ScriptStageScriptDraft,
+	); err != nil {
+		t.Fatal(err)
+	}
+	detail, err = f.service.ScriptRunDetail(f.ownerID, f.projectID, run.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	review := findScriptStage(t, detail, manju.ScriptStageRoundtableReview)
+	if review.Status != manju.ScriptStageStatusInProgress ||
+		review.TaskID != "" ||
+		review.ArtifactID != "" ||
+		review.CompletedAt != nil {
+		t.Fatalf("reopened roundtable must not retain the previous review task or artifact: %+v", review)
+	}
 }
 
 func TestRoundtableRegenerationRejectedWhileAwaitingDecision(t *testing.T) {
@@ -763,6 +779,48 @@ func TestRoundtableRegenerationRejectedWhileAwaitingDecision(t *testing.T) {
 	)
 	if !errors.Is(err, manju.ErrScriptStageNotReady) {
 		t.Fatalf("roundtable regeneration must be blocked while awaiting decision, got %v", err)
+	}
+}
+
+func TestScriptRunDetailRepairsStaleCompletedArtifactOnInProgressRoundtable(t *testing.T) {
+	f := newFixture(t)
+	run := prepareRoundtableAwaitingDecision(t, f)
+	task := &model.Task{
+		ID: "task-roundtable-stale-artifact", UserID: f.ownerID, ProjectID: f.projectID,
+		Type: "canvas_text", Status: model.TaskStatusSucceeded,
+		ResultJSON: `{"mode":"text","text":"# 五席圆桌审核\ngrade: A\n等待用户选择。"}`,
+	}
+	if err := f.db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	var reviewArtifact model.ManjuScriptArtifact
+	if err := f.db.First(&reviewArtifact, "id = ?", "artifact-roundtable-v1").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.Model(&reviewArtifact).Update("task_id", task.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	startedAt := reviewArtifact.CreatedAt.Add(time.Minute)
+	if err := f.db.Model(&model.ManjuScriptStage{}).
+		Where("run_id = ? AND key = ?", run.Run.ID, manju.ScriptStageRoundtableReview).
+		Updates(map[string]any{
+			"status":     manju.ScriptStageStatusInProgress,
+			"task_id":    task.ID,
+			"started_at": startedAt,
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	detail, err := f.service.ScriptRunDetail(f.ownerID, f.projectID, run.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	review := findScriptStage(t, detail, manju.ScriptStageRoundtableReview)
+	if review.Status != manju.ScriptStageStatusInProgress ||
+		review.TaskID != "" ||
+		review.ArtifactID != "" ||
+		!strings.Contains(review.Error, "上一版剧本") {
+		t.Fatalf("stale roundtable artifact must reopen the stage instead of blocking it: %+v", review)
 	}
 }
 

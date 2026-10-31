@@ -90,6 +90,7 @@ func registerHostedRoutes(ctx context.Context, hosted bootstrap.HostedContext) e
 		})
 	})
 	hostedapi.RegisterManjuRoutes(hosted.API, manjuService, creditActor)
+	hostedapi.RegisterManjuAdminRoutes(hosted.API, creditActor, hosted.Service.RequireAdmin)
 
 	// 价格：三张价格规则表统一走后台 CRUD，运行时按生效区间报价。
 	pricingService := credits.NewPricing(hosted.Repository, credits.Config{})

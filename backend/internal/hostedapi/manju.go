@@ -637,6 +637,12 @@ func writeManjuError(c *gin.Context, err error) {
 		writeError(c, kernel.BadAuthRequest(err.Error()))
 	case errors.Is(err, manju.ErrProductionArtifactInvalid):
 		writeError(c, kernel.BadAuthRequest("生产阶段成果不符合阶段合同"))
+	case errors.Is(err, manju.ErrP3StoryboardContract):
+		writeError(c, kernel.BadAuthRequest(err.Error()))
+	case errors.Is(err, manju.ErrP0BDecisionContract):
+		writeError(c, kernel.BadAuthRequest(err.Error()))
+	case errors.Is(err, manju.ErrP4FeedContract):
+		writeError(c, kernel.BadAuthRequest(err.Error()))
 	default:
 		writeError(c, err)
 	}

@@ -66,6 +66,56 @@ const P3_PACKAGE: ManjuCanvasPackage = {
 };
 
 describe("canvas manju package", () => {
+    test("keeps multiple P2 generation variants that share one logical asset code", () => {
+        const pkg: ManjuCanvasPackage = {
+            version: 1,
+            projectId: "project-scene-variants",
+            stage: "p2_assets",
+            assetRunId: "run-scene-variants",
+            sourceArtifact: "ASSET_DELIVERY_M1.md",
+            title: "P2 数字资产",
+            hash: "scene-variants",
+            tasks: [
+                {
+                    id: "p2-scene-master",
+                    kind: "image",
+                    code: "图1",
+                    assetCode: "SCN-旧宅",
+                    title: "旧宅（场景母版）",
+                    prompt: "旧宅场景母版完整提示词",
+                    category: "environment",
+                    sourceKind: "ASSET_DELIVERY_M1",
+                },
+                {
+                    id: "p2-scene-grid",
+                    kind: "image",
+                    code: "图1-2",
+                    assetCode: "SCN-旧宅",
+                    title: "旧宅（场景九宫格）",
+                    prompt: "旧宅场景九宫格完整提示词",
+                    category: "environment",
+                    sourceKind: "ASSET_DELIVERY_M1",
+                },
+            ],
+        };
+
+        const pipeline = createManjuCanvasPackage(pkg, [], { x: 0, y: 0 });
+        const rows = pipeline.nodes.find((node) => node.metadata?.batchTable?.manjuAssetTable)?.metadata?.batchTable?.rows || [];
+
+        expect(rows.map((row) => [
+            row.manjuAsset?.code,
+            row.manjuAsset?.taskCode,
+            row.manjuAsset?.taskId,
+        ])).toEqual([
+            ["SCN-旧宅", "图1", "p2-scene-master"],
+            ["SCN-旧宅", "图1-2", "p2-scene-grid"],
+        ]);
+        expect(rows.map((row) => row.prompt)).toEqual([
+            "旧宅场景母版完整提示词",
+            "旧宅场景九宫格完整提示词",
+        ]);
+    });
+
     test("appends manual asset rows with the next code for each category", () => {
         let table = {
             operation: "creative" as const,
@@ -1158,6 +1208,7 @@ describe("canvas manju package", () => {
         expect(p2Row?.manjuAsset).toEqual({
             taskId: "p2-character-1",
             code: "CHR-林澈",
+            taskCode: "图1",
             kind: "character",
             name: "林澈角色四格",
         });

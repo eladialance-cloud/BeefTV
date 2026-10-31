@@ -295,7 +295,7 @@ export function useCanvasBatchTable({ nodesRef, connectionsRef, setNodes, setCon
                               manjuStage: isManjuStoryboardTable ? ("p3_images" as const) : ("p2_assets" as const),
                               manjuTaskId: isManjuStoryboardTable ? row.manjuStoryboard?.taskId : row.manjuAsset?.taskId,
                               manjuAssetCode: isManjuStoryboardTable ? undefined : row.manjuAsset?.code,
-                              manjuTaskCode: isManjuStoryboardTable ? row.manjuStoryboard?.code : undefined,
+                              manjuTaskCode: isManjuStoryboardTable ? row.manjuStoryboard?.code : row.manjuAsset?.taskCode,
                               manjuAssetTableId: nodeId,
                               manjuAssetRowId: row.id,
                               manjuGlobalStylePrompt: sourceNode.metadata?.manjuGlobalStylePrompt,

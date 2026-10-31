@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"infinite-canvas/backend/internal/model"
 )
 
 func TestAssetBlockContractPinsOfficialChecker(t *testing.T) {
@@ -112,16 +114,28 @@ func TestAssetBlockCheckerStillRejectsRoleWithoutVoiceQuickLabel(t *testing.T) {
 	}
 }
 
-func TestAssetBlockPromptUsesPlaceholdersInsteadOfCopyableFigureExamples(t *testing.T) {
-	prompt := assetBlockPromptContract(mustLoadAssetBlockContract())
-	if strings.Contains(prompt, "图1") {
-		t.Fatalf("asset block prompt must not contain a concrete 图1 example that the model can copy:\n%s", prompt)
-	}
-	if !strings.Contains(prompt, "#### 图N · 名称（角色四格）") {
-		t.Fatalf("asset block prompt is missing the placeholder heading skeleton:\n%s", prompt)
-	}
-	if !strings.Contains(prompt, "不得把示例原样写入正文") {
-		t.Fatalf("asset block prompt must explicitly forbid copying examples:\n%s", prompt)
+func TestAssetCompilePromptUsesOfficialContextWithoutPlatformHeadingOverride(t *testing.T) {
+	prompt := buildAssetStagePrompt(
+		"测试项目",
+		model.ManjuAssetRun{AssetMode: AssetModeM1Value},
+		model.ManjuAssetStage{Key: AssetStageCompile, Title: "资产交付编译"},
+		model.ManjuScriptRun{},
+		nil,
+		nil,
+		nil,
+		nil,
+		"",
+		"",
+	)
+	for _, forbidden := range []string{
+		"【资产块标题与机检硬格式】",
+		"#### 图N · 名称（角色四格）",
+		"资产编码：CHR-…",
+		"覆盖前文任何章节编号式标题要求",
+	} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("asset compile prompt must not override official rules with platform-only format %q:\n%s", forbidden, prompt)
+		}
 	}
 }
 

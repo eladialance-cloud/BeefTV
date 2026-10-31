@@ -6,6 +6,7 @@
 
 - `web`：正式用户端，来自仓库根目录 `Dockerfile` 和 `web/`。
 - `admin`：管理后台静态站，挂载在同域 `/admin/`。
+- `portal`：轻量交互式用户门户（`portal/`，含阶段推进交互与文件中心），挂载在同域 `/portal/`。
 - `backend`：Go 服务端，不发布宿主机端口。
 - `postgres`：独立 PostgreSQL，不发布宿主机端口。
 - 持久卷：`visideep_postgres_data`、`visideep_backend_data`。
@@ -14,6 +15,7 @@
 
 - `127.0.0.1:3100`：用户端。
 - `127.0.0.1:3101`：管理后台。
+- `127.0.0.1:3102`：交互式用户门户。
 
 ## 初始化
 

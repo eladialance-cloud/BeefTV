@@ -11,12 +11,14 @@ export function reconcileRecoveredCanvasNode(
     staleNodeId: string,
     recoveredNodeId: string,
     fallbackMetadata?: Partial<CanvasNodeMetadata>,
+    fallbackNode?: CanvasNodeData,
 ): CanvasProject {
     const staleNodeIdValue = staleNodeId.trim();
     const recoveredNodeIdValue = recoveredNodeId.trim();
     if (!staleNodeIdValue || !recoveredNodeIdValue || staleNodeIdValue === recoveredNodeIdValue) return project;
 
-    const staleNode = project.nodes.find((node) => node.id === staleNodeIdValue);
+    const staleNode = project.nodes.find((node) => node.id === staleNodeIdValue)
+        ?? (fallbackNode?.id === staleNodeIdValue ? fallbackNode : undefined);
     const recoveredNode = project.nodes.find((node) => node.id === recoveredNodeIdValue);
     if (!recoveredNode) return project;
 

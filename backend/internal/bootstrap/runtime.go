@@ -184,7 +184,7 @@ func Open(_ context.Context, raw Config) (result *Runtime, openErr error) {
 	taskService := svc.TaskService()
 	localRoot, err := localapp.New(localapp.Options{
 		Workspace: workspace.NewService(repo), Projects: projectService, Assets: assetService, Tasks: taskService,
-		Generation: taskService, ProviderConfig: providerConfig, Lifecycle: localKernel,
+		Generation: creationAwareGenerationPort{service: svc}, ProviderConfig: providerConfig, Lifecycle: localKernel,
 	})
 	if err != nil {
 		cleanupService()

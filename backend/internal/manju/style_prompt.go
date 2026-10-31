@@ -252,7 +252,7 @@ func hydrateLockStylePrompts(snapshot *LockSnapshot) error {
 		return nil
 	}
 	if strings.TrimSpace(snapshot.StyleCardName) == "" {
-		if card, ok := styleCardByID[strings.TrimSpace(snapshot.StyleCardID)]; ok {
+		if card, ok := getStyleCardByID(strings.TrimSpace(snapshot.StyleCardID)); ok {
 			snapshot.StyleCardName = card.Name
 			snapshot.StyleFamily = card.Family
 			snapshot.StyleFightRating = card.FightRating

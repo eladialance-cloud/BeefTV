@@ -430,6 +430,9 @@ async function bindBackendCanvasGenerationResultUnlocked(input: BindBackendCanva
     const receipt = response.result ?? {};
     if (receipt.bindingStatus === "deleted" && !receipt.canvas) return;
     const canonical = canonicalCanvasFromReceipt(capturedCanvasId, receipt);
+    const localOriginalNode = useCanvasStore.getState().projects
+        .find((project) => project.id === capturedCanvasId)
+        ?.nodes.find((node) => node.id === input.nodeId);
     const adopted = await adoptConfirmedProjection(canonical, capturedScope.userScope, capturedScope);
     assertBindDispatchScope(capturedScope, liveScope);
     let finalProject = adopted;
@@ -438,7 +441,7 @@ async function bindBackendCanvasGenerationResultUnlocked(input: BindBackendCanva
             prompt: task.prompt,
             composerContent: task.prompt,
             model: task.model,
-        });
+        }, localOriginalNode);
         if (reconciled !== adopted) {
             finalProject = reconciled;
             try {

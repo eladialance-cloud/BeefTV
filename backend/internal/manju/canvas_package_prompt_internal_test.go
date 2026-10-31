@@ -117,3 +117,60 @@ func TestP2CanvasTaskAcceptsSceneMasterWithPunctuationSeparatedFields(t *testing
 		t.Fatalf("scene master prompt was not preserved: %+v", tasks)
 	}
 }
+
+func TestP2CanvasTasksPreserveLegacyDuplicateFigureBlocks(t *testing.T) {
+	content := `#### 图1 · 旧宅（场景母版）
+16:9 无人空镜。
+资产编码：SCN-旧宅
+
+#### 图1 · 旧宅（场景九宫格）
+全图共 9 格。
+资产编码：SCN-旧宅`
+
+	tasks, err := parseP2CanvasTasks(content, AssetModeM1Value, "16:9")
+	if err != nil {
+		t.Fatalf("locked legacy artifacts with duplicate scene figures must remain importable: %v", err)
+	}
+	if len(tasks) != 2 {
+		t.Fatalf("tasks = %d, want master and grid variants", len(tasks))
+	}
+	if tasks[0].Code != "图1" || tasks[0].AssetCode != "SCN-旧宅" {
+		t.Fatalf("scene master task identity mismatch: %+v", tasks[0])
+	}
+	if tasks[1].Code != "图1-2" || tasks[1].AssetCode != "SCN-旧宅" {
+		t.Fatalf("scene grid task must receive a unique task code while sharing the asset code: %+v", tasks[1])
+	}
+	if tasks[0].ID == tasks[1].ID {
+		t.Fatal("scene variants must not share a canvas task id")
+	}
+	for index, needle := range []string{"场景母版", "场景九宫格"} {
+		if !strings.Contains(tasks[index].Prompt, needle) {
+			t.Fatalf("task %d lost its canonical block: %+v", index, tasks[index])
+		}
+	}
+}
+
+func TestP2CanvasTasksResolveFigureCodesFromProjectStatePatch(t *testing.T) {
+	content := `#### 图11 · 城墙与垛口（场景母版）
+16:9 无人空镜。
+
+#### 图11 · 城墙与垛口（场景九宫格）
+全图共 9 格。
+
+<!-- MANJU_PROJECT_STATE_PATCH_JSON
+{"world_anchor":{},"characters":{"梁秉文":{"id":"CHR-001","fig_no":1,"char_states":{}}},"scenes":{"城墙与垛口":{"id":"SCN-01","fig_no":11,"coords":"城头","set_states":{"default":"黎明"},"media_layer":"薄霜","lighting":"冷灰天光"}},"props":{}}
+-->`
+
+	tasks, err := parseP2CanvasTasks(content, AssetModeM1Value, "16:9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 2 {
+		t.Fatalf("tasks = %d, want 2", len(tasks))
+	}
+	for _, task := range tasks {
+		if task.AssetCode != "SCN-01" {
+			t.Fatalf("project-state figure mapping must provide the stable asset code: %+v", task)
+		}
+	}
+}

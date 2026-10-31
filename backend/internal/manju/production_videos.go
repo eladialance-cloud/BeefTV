@@ -278,6 +278,12 @@ func (s *Service) StartProductionVideos(actorID, projectID, runID string) (*Prod
 
 	for _, plan := range plans {
 		executionPrompt := composeProductionVideoPrompt(plan.GlobalStyle, plan.Prompt)
+		capabilityOperation := "text_to_video"
+		if providerContext.AssetMode != AssetModeM0Value &&
+			plan.ReferenceImage != nil &&
+			strings.TrimSpace(plan.ReferenceImage.ResourceID) != "" {
+			capabilityOperation = "reference_to_video"
+		}
 		input := map[string]any{
 			"mode":   "video",
 			"prompt": executionPrompt,
@@ -289,6 +295,8 @@ func (s *Service) StartProductionVideos(actorID, projectID, runID string) (*Prod
 			},
 			"metadata": map[string]any{
 				"clientOperationId":         fmt.Sprintf("manju:production:%s:video:%s:%d", runID, plan.ID, plan.Attempt),
+				"videoEditOperation":        capabilityOperation,
+				"manjuProductionOperation":  "manju_production_video",
 				"manjuProjectId":            projectID,
 				"manjuProductionRunId":      runID,
 				"manjuProductionStageKey":   ProductionStageFeed,
@@ -304,7 +312,7 @@ func (s *Service) StartProductionVideos(actorID, projectID, runID string) (*Prod
 		request := localtask.CreateRequest{
 			ProjectID: projectID,
 			Type:      "canvas_video",
-			Operation: "manju_production_video",
+			Operation: capabilityOperation,
 			Prompt:    executionPrompt,
 			Model:     providerContext.ModelKey,
 			Input:     input,
